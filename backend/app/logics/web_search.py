@@ -4,7 +4,7 @@ import os
 
 load_dotenv()
 search_url = "https://google.serper.dev/search"
-X_API_KEY= os.getenv("X-API-KEY")
+X_API_KEY = os.getenv("X-API-KEY")
 
 
 def web_search(query:str):

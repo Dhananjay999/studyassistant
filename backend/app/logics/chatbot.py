@@ -6,19 +6,20 @@ import os
 import requests
 from .. import schemas
 
+# Load environment variables
+load_dotenv()
+
 #constants and important 
 db_path = os.path.join(os.path.dirname(__file__), "../../chroma_db")
 client = chromadb.PersistentClient(path=os.path.abspath(db_path))
-
 
 embedding_model = SentenceTransformer("multi-qa-MPNET-base-dot-v1")
 client = chromadb.PersistentClient(path=db_path)
 embeddings_db = client.get_or_create_collection(name="embeddings")
 
-
-load_dotenv()
-MODEL = "llama3-8b-8192" 
-GROQ_API_KEY= os.getenv("GROQ_API_KEY")  # Get the API key from environment variables
+# Get API key from environment variables
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")
 
 
 def chatbot(query:schemas.FinalChat):
