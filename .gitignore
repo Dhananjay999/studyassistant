@@ -1,7 +1,0 @@
-__pycache__
-aeva_venv
-.DS_Store
-test_data
-.env
-chroma_db
-next_features.txt

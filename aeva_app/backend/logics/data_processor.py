@@ -3,7 +3,7 @@ import os , fitz  , chromadb ,spacy
 from sentence_transformers import SentenceTransformer
 
 base_dir = os.path.dirname(os.path.abspath(__file__))  # This file's folder (logics/)
-path_db = os.path.abspath(os.path.join(base_dir, "../../chroma_db"))  # go up two levels
+path_db = os.path.abspath(os.path.join(base_dir, "../chroma_db"))  # go up two levels
 
 chunk_size = 250
 embedding_model = SentenceTransformer("multi-qa-MPNET-base-dot-v1")
