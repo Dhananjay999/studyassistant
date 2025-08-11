@@ -1,12 +1,12 @@
 fastapi
 uvicorn[standard]
 PyMuPDF
+PyPDF2
 sentence-transformers
 chromadb
 requests
 python-dotenv
 python-multipart
-spacy==3.7.2
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
-
+spacy
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 

@@ -1,6 +1,11 @@
+# from fastapi import HTTPException,status
+# import os , fitz  , chromadb ,spacy
+# from sentence_transformers import SentenceTransformer
+
 from fastapi import HTTPException,status
-import os , fitz  , chromadb ,spacy
+import os, PyPDF2, chromadb, spacy
 from sentence_transformers import SentenceTransformer
+
 
 base_dir = os.path.dirname(os.path.abspath(__file__))  # This file's folder (logics/)
 path_db = os.path.abspath(os.path.join(base_dir, "../chroma_db"))  # go up two levels
@@ -13,6 +18,7 @@ english_model = spacy.load("en_core_web_sm")
 
 
 def parse_doc(url):
+    print("parsing documents",url)
     if not url:
         raise HTTPException(status_code=status.HTTP_204_NO_CONTENT,details="Url of the Directory of uploaded files is not provided")
     if not os.listdir(url):
@@ -21,16 +27,20 @@ def parse_doc(url):
     for filename in os.listdir(url):
         if filename.endswith(".pdf"):
             filePath = os.path.join(url,filename)
-            doc = fitz.open(filePath)
-            for page_number,page in enumerate(doc): 
-                data.append({
-                "page_number": page_number +1,
-                "context": page.get_text(),
-                "doc_name": filename
-                 })
-        
-            else:
+            try:
+                with open(filePath, 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    for page_number, page in enumerate(pdf_reader.pages):
+                        text = page.extract_text()
+                        data.append({
+                            "page_number": page_number + 1,
+                            "context": text,
+                            "doc_name": filename
+                        })
                 print(f"parsing of document {filename} successful")
+            except Exception as e:
+                print(f"Error parsing {filename}: {str(e)}")
+                continue
     else:
         print("all files parsed successfully")
     return data
