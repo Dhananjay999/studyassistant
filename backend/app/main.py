@@ -1,5 +1,5 @@
+from app.routers import chatbot, doc_processor
 from fastapi import FastAPI
-from routers import doc_processor, chatbot
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
