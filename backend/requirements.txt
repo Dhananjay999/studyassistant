@@ -4,4 +4,3 @@ PyPDF2
 requests
 python-dotenv
 python-multipart
-spacy
