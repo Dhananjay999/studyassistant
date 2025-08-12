@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 PyPDF2
-
+chromadb
 requests
 python-dotenv
 python-multipart
