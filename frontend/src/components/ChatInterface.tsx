@@ -101,7 +101,7 @@ const ChatInterface = () => {
 
   const sendChatMessage = async (message: string, searchMode: string, nResults: number = 5) => {
     try {
-      const response = await api.post('/chat', {
+      const response = await api.post('/chat/', {
         message: message,
         n_results: nResults,
         search_mode: searchMode === 'pdf' ? 'study_material' : 'web_search'

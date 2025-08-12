@@ -24,3 +24,7 @@ app.add_middleware(
 
 app.include_router(doc_processor.router)
 app.include_router(chatbot.router)
+
+@app.get('/')
+def root():
+    return {"message": "Hello World"}
