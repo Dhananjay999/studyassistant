@@ -180,3 +180,4 @@ Thumbs.db
 secrets.json
 config.json
 .vercel
+**/__pycache__/

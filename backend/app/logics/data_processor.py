@@ -30,7 +30,9 @@ def parse_doc(url):
             try:
                 with open(filePath, 'rb') as file:
                     pdf_reader = PyPDF2.PdfReader(file)
+                    print('pdf_reader------->', pdf_reader)
                     for page_number, page in enumerate(pdf_reader.pages):
+                        print('page------->', page, 'page_number------->', page_number)
                         text = page.extract_text()
                         data.append({
                             "page_number": page_number + 1,
