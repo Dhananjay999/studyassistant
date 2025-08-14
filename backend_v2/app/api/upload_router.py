@@ -51,3 +51,15 @@ async def get_upload_stats():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving stats: {str(e)}"
         ) 
+    
+@router.get("/delete")
+async def delete_collection():
+    """Delete the entire collection"""
+    try:
+        upload_service.delete_collection()
+        return {"message": "Collection deleted successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting collection: {str(e)}"
+        ) 

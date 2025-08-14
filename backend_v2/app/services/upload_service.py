@@ -41,13 +41,6 @@ class UploadService:
                         "source": "uploaded_pdf"
                     } for chunk in chunks
                 ]
-
-                print('documents------->', documents)
-                print('ids------->', ids)
-                print('metadatas------->', metadatas)
-
-                # break
-
                 
                 # Store embeddings
                 self.embedding_repo.add_documents(documents, ids, metadatas)
@@ -78,3 +71,7 @@ class UploadService:
                 "status": "error",
                 "error": str(e)
             } 
+    
+    def delete_collection(self) -> None:
+        """Delete the entire collection"""
+        self.embedding_repo.delete_collection()

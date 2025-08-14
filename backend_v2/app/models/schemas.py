@@ -1,3 +1,5 @@
+from enum import Enum
+from typing_extensions import Literal
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional
 
@@ -53,3 +55,10 @@ class SearchContext(BaseModel):
     original_query: str
     context: List[str]
     metadata: List[Dict[str, Any]] 
+
+class QueryClassification(Enum):
+    STUDY = "study"
+    WEB_SEARCH = "web_search"
+    MODERATION = "moderation"
+    MISC = "misc"
+    SORRY = "sorry"

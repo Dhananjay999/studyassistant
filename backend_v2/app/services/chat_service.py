@@ -54,44 +54,50 @@ class ChatService:
         )
         
         # Generate LLM response
-        answer = self.llm_service.generate_response(context)
-        
-        return self.llm_service.create_chat_response(context, answer)
+        answer = self.llm_service.generate_context_based_response(context)
+        return self.llm_service.format_chat_response(answer, context)
     
     def _handle_web_search_query(self, request: UserChatRequest) -> Dict[str, Any]:
         """Handle web search query"""
         # Perform web search
-        search_results = self.web_search_service.search(
-            request.message, 
-            request.n_results
-        )
 
-        print('search_results------->', search_results)
+        query_classification = self.llm_service.get_query_classification(request.message)
+
+        if query_classification.value == 'web_search':
+
+            search_results = self.web_search_service.search(
+                request.message, 
+                request.n_results
+            )
         
-        # Format results for context
-        contexts = self.web_search_service.format_search_results_for_context(search_results)
-        metadata = self.web_search_service.format_search_metadata(search_results)
+            # Format results for context
+            contexts = self.web_search_service.format_search_results_for_context(search_results)
+            metadata = self.web_search_service.format_search_metadata(search_results)
         
-        if not contexts:
-            return {
-                "answer_source": "web_search",
-                "answer": "No relevant web search results found. Please try rephrasing your query.",
-                "relevant_chunks": [],
-                "metadata": []
-            }
+            if not contexts:
+                return {
+                    "answer_source": "web_search",
+                    "answer": "No relevant web search results found. Please try rephrasing your query.",
+                    "relevant_chunks": [],
+                    "metadata": []
+                }
+            
+            # Create search context
+            context = SearchContext(
+                answer_mode=request.search_mode,
+                original_query=request.message,
+                context=contexts,
+                metadata=metadata
+            )
         
-        # Create search context
-        context = SearchContext(
-            answer_mode=request.search_mode,
-            original_query=request.message,
-            context=contexts,
-            metadata=metadata
-        )
+            # Generate LLM response
+            answer = self.llm_service.generate_context_based_response(context)
+            
+            return self.llm_service.format_chat_response(answer, context)
         
-        # Generate LLM response
-        answer = self.llm_service.generate_response(context)
-        
-        return self.llm_service.create_chat_response(context, answer)
+        else:
+            answer = self.llm_service.generate_query_based_response(request.message, query_classification)
+            return self.llm_service.format_chat_response(answer)
     
     def get_embedding_stats(self) -> Dict[str, Any]:
         """Get statistics about stored embeddings"""

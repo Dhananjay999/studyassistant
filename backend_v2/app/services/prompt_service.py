@@ -1,6 +1,6 @@
 from typing import List, Dict
-from ..models.schemas import SearchContext
-from ..config.prompts import PROMPT_CONFIG
+from ..models.schemas import QueryClassification, SearchContext
+from ..config.prompts import PROMPT_CONFIG, QUERY_BASED_SYSTEM_PROMPT, QUERY_CLASSIFICATION_SYSTEM_PROMPT
 
 class PromptService:
     """Service for generating prompts for LLM interactions"""
@@ -29,4 +29,16 @@ class PromptService:
             {"role": "user", "content": question_prompt}
         ]
     
+    def build_messages_for_query_based_llm(self, query: str, query_classification: str) -> List[Dict[str, str]]:
+        """Build complete message list for LLM API call"""
+        system_prompt = QUERY_BASED_SYSTEM_PROMPT(query_classification)
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query}
+        ]
+    
+    def get_query_classification_prompt(self, query: str) -> str:
+        """Get query classification"""
+        final_prompt = QUERY_CLASSIFICATION_SYSTEM_PROMPT(query)
+        return final_prompt
  

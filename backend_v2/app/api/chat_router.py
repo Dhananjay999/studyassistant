@@ -13,8 +13,6 @@ async def chat_endpoint(request: UserChatRequest):
     """Process chat requests"""
     try:
         if not request.message.strip():
-            print('request------->', request)
-
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message cannot be empty"
