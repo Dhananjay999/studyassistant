@@ -50,6 +50,24 @@ npm run dev
 - Click on "New codespace" to launch a new Codespace environment.
 - Edit files directly within the Codespace and commit and push your changes once you're done.
 
+## Environment Setup
+
+Before running the project, you need to set up environment variables:
+
+1. Copy the example environment file:
+```sh
+cp env.example .env
+```
+
+2. Update the `.env` file with your configuration:
+```env
+# API Configuration
+VITE_API_BASE_URL=https://studyassistant-production.up.railway.app
+
+# Optional: Override default settings
+VITE_API_DEFAULT_RESULTS=5
+```
+
 ## What technologies are used for this project?
 
 This project is built with:

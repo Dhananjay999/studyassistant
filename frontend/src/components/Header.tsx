@@ -10,8 +10,8 @@ const Header = () => {
             <Brain className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-foreground">StudyMind AI</h1>
-            <p className="text-xs text-muted-foreground">Academic Study Assistant</p>
+            <h1 className="text-xl font-bold text-foreground">StudyAssistant</h1>
+            <p className="text-xs text-muted-foreground">AI Academic Study Assistant</p>
           </div>
         </div>
         
