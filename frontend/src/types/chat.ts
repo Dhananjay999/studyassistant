@@ -34,6 +34,25 @@ export interface APIRequest {
   search_mode: SearchMode;
 }
 
+export interface UploadedFilesResponse {
+  user_id: string;
+  file_names: string[];
+  total_files: number;
+}
+
+export interface DeleteFileResponse {
+  user_id: string;
+  file_name: string;
+  chunks_deleted: number;
+  message: string;
+}
+
+export interface DeleteAllFilesResponse {
+  user_id: string;
+  chunks_deleted: number;
+  message: string;
+}
+
 // Component Types
 export interface Message {
   readonly id: string;

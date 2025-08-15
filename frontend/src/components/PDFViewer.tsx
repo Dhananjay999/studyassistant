@@ -26,7 +26,7 @@ interface PDFViewerProps {
 export const PDFViewer = ({ file, isVisible, onToggleVisibility, className }: PDFViewerProps) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1.0);
+  const [scale, setScale] = useState<number>(0.5); // Start at 50% zoom
   const [rotation, setRotation] = useState<number>(0);
 
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
@@ -36,8 +36,8 @@ export const PDFViewer = ({ file, isVisible, onToggleVisibility, className }: PD
 
   const goToPrevPage = () => setPageNumber(page => Math.max(1, page - 1));
   const goToNextPage = () => setPageNumber(page => Math.min(numPages, page + 1));
-  const zoomIn = () => setScale(scale => Math.min(2.0, scale + 0.2));
-  const zoomOut = () => setScale(scale => Math.max(0.5, scale - 0.2));
+  const zoomIn = () => setScale(scale => Math.min(3.0, scale + 0.2));
+  const zoomOut = () => setScale(scale => Math.max(0.25, scale - 0.2));
   const rotate = () => setRotation(rotation => (rotation + 90) % 360);
 
   if (!isVisible) {
@@ -58,12 +58,12 @@ export const PDFViewer = ({ file, isVisible, onToggleVisibility, className }: PD
   return (
     <Card className={cn("h-full flex flex-col overflow-hidden", className)}>
       {/* Header with controls */}
-      <div className="border-b p-3 bg-muted/30">
+      <div className="border-b p-2 md:p-3 bg-muted/30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">PDF Viewer</span>
+            <span className="text-xs md:text-sm font-medium">PDF Viewer</span>
             {file && (
-              <span className="text-xs text-muted-foreground truncate max-w-32">
+              <span className="text-xs text-muted-foreground truncate max-w-24 md:max-w-32">
                 {file.name}
               </span>
             )}
@@ -73,47 +73,47 @@ export const PDFViewer = ({ file, isVisible, onToggleVisibility, className }: PD
               variant="ghost"
               size="icon"
               onClick={zoomOut}
-              disabled={scale <= 0.5}
-              className="h-8 w-8"
+              disabled={scale <= 0.25}
+              className="h-7 w-7 md:h-8 md:w-8"
             >
-              <ZoomOut className="w-4 h-4" />
+              <ZoomOut className="w-3 h-3 md:w-4 md:h-4" />
             </Button>
-            <span className="text-xs px-2 min-w-16 text-center">
+            <span className="text-xs px-1 md:px-2 min-w-12 md:min-w-16 text-center">
               {Math.round(scale * 100)}%
             </span>
             <Button
               variant="ghost"
               size="icon"
               onClick={zoomIn}
-              disabled={scale >= 2.0}
-              className="h-8 w-8"
+              disabled={scale >= 3.0}
+              className="h-7 w-7 md:h-8 md:w-8"
             >
-              <ZoomIn className="w-4 h-4" />
+              <ZoomIn className="w-3 h-3 md:w-4 md:h-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={rotate}
-              className="h-8 w-8"
+              className="h-7 w-7 md:h-8 md:w-8"
             >
-              <RotateCw className="w-4 h-4" />
+              <RotateCw className="w-3 h-3 md:w-4 md:h-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={onToggleVisibility}
-              className="h-8 w-8"
+              className="h-7 w-7 md:h-8 md:w-8"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3 h-3 md:w-4 md:h-4" />
             </Button>
           </div>
         </div>
       </div>
 
       {/* PDF Content */}
-      <div className="flex-1 overflow-auto bg-gray-50 p-4">
+      <div className="flex-1 overflow-auto bg-gray-50 p-2 md:p-4">
         {file ? (
-          <div className="flex flex-col items-center">
+          <div className="flex flex-col items-center min-h-full">
             <Document
               file={file}
               onLoadSuccess={onDocumentLoadSuccess}
@@ -134,10 +134,14 @@ export const PDFViewer = ({ file, isVisible, onToggleVisibility, className }: PD
                 rotate={rotation}
                 loading={
                   <div className="flex items-center justify-center p-4">
-                    <div className="animate-pulse bg-gray-200 w-96 h-128 rounded"></div>
+                    <div className="animate-pulse bg-gray-200 w-80 h-96 rounded"></div>
                   </div>
                 }
-                className="shadow-lg mb-4"
+                className="shadow-lg mb-2 md:mb-4 max-w-full"
+                width={undefined}
+                height={undefined}
+                renderTextLayer={false}
+                renderAnnotationLayer={false}
               />
             </Document>
           </div>
@@ -150,19 +154,19 @@ export const PDFViewer = ({ file, isVisible, onToggleVisibility, className }: PD
 
       {/* Footer with navigation */}
       {file && numPages > 0 && (
-        <div className="border-t p-3 bg-muted/30">
+        <div className="border-t p-2 md:p-3 bg-muted/30">
           <div className="flex items-center justify-between">
             <Button
               variant="ghost"
               size="sm"
               onClick={goToPrevPage}
               disabled={pageNumber <= 1}
-              className="flex items-center gap-1"
+              className="flex items-center gap-1 text-xs md:text-sm"
             >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
+              <ChevronLeft className="w-3 h-3 md:w-4 md:h-4" />
+              <span className="hidden sm:inline">Previous</span>
             </Button>
-            <span className="text-sm">
+            <span className="text-xs md:text-sm">
               Page {pageNumber} of {numPages}
             </span>
             <Button
@@ -170,10 +174,10 @@ export const PDFViewer = ({ file, isVisible, onToggleVisibility, className }: PD
               size="sm"
               onClick={goToNextPage}
               disabled={pageNumber >= numPages}
-              className="flex items-center gap-1"
+              className="flex items-center gap-1 text-xs md:text-sm"
             >
-              Next
-              <ChevronRight className="w-4 h-4" />
+              <span className="hidden sm:inline">Next</span>
+              <ChevronRight className="w-3 h-3 md:w-4 md:h-4" />
             </Button>
           </div>
         </div>

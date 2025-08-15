@@ -59,22 +59,22 @@ const Features = () => {
   ];
 
   return (
-    <section id="features" className="py-20 bg-background">
-      <div className="container">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
+    <section id="features" className="py-12 md:py-20 bg-background">
+      <div className="container px-3 md:px-6">
+        <div className="text-center mb-12 md:mb-16">
+          <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-3 md:mb-4">
             Powerful Features for
             <span className="block bg-gradient-to-r from-academic-teal to-academic-burgundy bg-clip-text text-transparent">
               Academic Success
             </span>
           </h2>
-          <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+          <p className="text-base md:text-xl text-muted-foreground max-w-3xl mx-auto">
             Everything you need to excel in your studies, powered by advanced AI technology
           </p>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-16">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-12 md:mb-16">
           {stats.map((stat, index) => {
             const IconComponent = stat.icon;
             return (
@@ -94,7 +94,7 @@ const Features = () => {
         </div>
 
         {/* Features Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
           {features.map((feature, index) => {
             const IconComponent = feature.icon;
             return (

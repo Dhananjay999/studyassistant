@@ -1,5 +1,6 @@
 import { API_ENDPOINTS, API_HEADERS, API_CONFIG, SEARCH_MODES } from '@/constants/api';
 import { APIRequest, APIResponse } from '@/types';
+import { getFingerprintId } from '@/utils/fingerprint';
 
 class ApiService {
   private baseUrl: string;
@@ -14,10 +15,20 @@ class ApiService {
     const url = `${this.baseUrl}${endpoint}`;
     
     try {
+      // Get fingerprint ID for user identification
+      const fingerprintId = await getFingerprintId();
+      
       // For FormData, don't set Content-Type header (browser sets it automatically)
-      const headers = options.body instanceof FormData 
+      const baseHeaders = options.body instanceof FormData 
         ? { 'accept': 'application/json' }
         : { ...this.headers, ...options.headers };
+      
+      // Add fingerprint ID to all requests
+      const headers = {
+        ...baseHeaders,
+        'X-Fingerprint-ID': fingerprintId,
+        'user-id': fingerprintId,
+      };
 
       const response = await fetch(url, {
         ...options,
@@ -83,6 +94,37 @@ class ApiService {
       },
       body: formData,
     });
+  }
+
+  async getUploadedFiles(): Promise<{ user_id: string; file_names: string[]; total_files: number }> {
+    const fingerprintId = await getFingerprintId();
+    return this.makeRequest<{ user_id: string; file_names: string[]; total_files: number }>(
+      `${API_ENDPOINTS.GET_FILES}${fingerprintId}`,
+      {
+        method: 'GET',
+      }
+    );
+  }
+
+  async deleteFile(fileName: string): Promise<{ user_id: string; file_name: string; chunks_deleted: number; message: string }> {
+    const fingerprintId = await getFingerprintId();
+    const encodedFileName = encodeURIComponent(fileName);
+    return this.makeRequest<{ user_id: string; file_name: string; chunks_deleted: number; message: string }>(
+      `${API_ENDPOINTS.DELETE_FILE}?file_name=${encodedFileName}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
+  async deleteAllFiles(): Promise<{ user_id: string; chunks_deleted: number; message: string }> {
+    const fingerprintId = await getFingerprintId();
+    return this.makeRequest<{ user_id: string; chunks_deleted: number; message: string }>(
+      API_ENDPOINTS.DELETE_ALL_FILES,
+      {
+        method: 'DELETE',
+      }
+    );
   }
 }
 

@@ -1,7 +1,10 @@
 // API Endpoints
 export const API_ENDPOINTS = {
   CHAT: '/chat/',
-  UPLOAD: '/upload/'
+  UPLOAD: '/upload/',
+  GET_FILES: '/upload/files/',
+  DELETE_FILE: '/upload/files',
+  DELETE_ALL_FILES: '/upload/files/all'
 } as const;
 
 // API Headers

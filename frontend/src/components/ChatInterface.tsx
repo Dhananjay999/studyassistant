@@ -5,6 +5,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { PDFViewer } from "@/components/PDFViewer";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import ReactMarkdown from "react-markdown";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { 
   Send, 
   Upload, 
@@ -16,7 +29,10 @@ import {
   User,
   Info,
   Expand,
-  Minimize
+  Minimize,
+  Brain,
+  ChevronDown,
+  RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SEARCH_MODES } from "@/constants";
@@ -31,6 +47,8 @@ import {
   isValidMessage,
   isValidFile 
 } from "@/utils";
+import { useToast } from "@/hooks/use-toast";
+import NewSessionDialog from "@/components/NewSessionDialog";
 
 const ChatInterface = () => {
   // Separate chat histories for each mode
@@ -63,7 +81,23 @@ const ChatInterface = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [currentPDF, setCurrentPDF] = useState<File | null>(null);
+  const [showMobilePDF, setShowMobilePDF] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<number | null>(null);
+  const [rememberDeleteDecision, setRememberDeleteDecision] = useState(false);
+  const [skipDeleteConfirmation, setSkipDeleteConfirmation] = useState(false);
+  const [uploadedFileNames, setUploadedFileNames] = useState<string[]>([]);
+  const [isLoadingUploadedFiles, setIsLoadingUploadedFiles] = useState(false);
+  const [isFilePanelExpanded, setIsFilePanelExpanded] = useState(false);
+  const [showPreviewNotAvailable, setShowPreviewNotAvailable] = useState(false);
+  const [previewNotAvailableFileName, setPreviewNotAvailableFileName] = useState('');
+  const [showMobileFileSheet, setShowMobileFileSheet] = useState(false);
+  const [showNewSessionConfirmation, setShowNewSessionConfirmation] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const { toast } = useToast();
 
   // Prevent body scroll when fullscreen
   useEffect(() => {
@@ -85,6 +119,39 @@ const ChatInterface = () => {
   const setIsLoading = selectedMode === 'pdf' ? setPdfLoading : setWebLoading;
   const showMetadata = selectedMode === 'pdf' ? pdfMetadata : webMetadata;
   const setShowMetadata = selectedMode === 'pdf' ? setPdfMetadata : setWebMetadata;
+
+  // Fetch uploaded files on component mount
+  useEffect(() => {
+    const fetchUploadedFiles = async () => {
+      if (selectedMode === 'pdf') {
+        setIsLoadingUploadedFiles(true);
+        try {
+          const response = await apiService.getUploadedFiles();
+          setUploadedFileNames(response.file_names);
+        } catch (error) {
+          console.error('Failed to fetch uploaded files:', error);
+        } finally {
+          setIsLoadingUploadedFiles(false);
+        }
+      }
+    };
+
+    fetchUploadedFiles();
+  }, [selectedMode]);
+
+  // Scroll to bottom when messages change
+  const scrollToBottom = () => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [currentMessages]);
 
   const chatModes: ChatMode[] = [
     {
@@ -123,10 +190,30 @@ const ChatInterface = () => {
       const searchMode = chatModes.find(mode => mode.id === selectedMode)?.searchMode || SEARCH_MODES.STUDY_MATERIAL;
       const data = await apiService.sendChatMessage(inputValue, searchMode);
       
+      // Check if the response contains raw PDF text content and handle it appropriately
+      let processedContent = data.answer;
+      
+      // If this is a PDF-related response and the content seems like raw extracted text,
+      // provide a more user-friendly response
+      if (selectedMode === 'pdf' && data.metadata.some(meta => meta.source === 'uploaded_pdf')) {
+        // Check if the content looks like raw PDF text (very long, unformatted)
+        if (data.answer.length > 1000 && !data.answer.includes('\n\n')) {
+          processedContent = `I've analyzed your PDF document. The content appears to be ${data.answer.length} characters long. 
+
+**Please ask specific questions about the PDF content**, such as:
+- "What is the main topic of this document?"
+- "Summarize the key points"
+- "What are the main conclusions?"
+- "Explain the methodology used"
+
+I can help you understand and work with the content more effectively when you ask targeted questions.`;
+        }
+      }
+      
       const botResponse: Message = {
         id: createMessageId(),
         type: 'bot',
-        content: data.answer,
+        content: processedContent,
         timestamp: new Date(),
         metadata: {
           sources: data.metadata.map(mapAPIMetadataToSourceInfo)
@@ -176,7 +263,11 @@ const ChatInterface = () => {
       // Set the first PDF as the current PDF for viewing
       if (!currentPDF) {
         setCurrentPDF(validPdfFiles[0]);
-        setShowPDFViewer(true);
+        if (isMobile) {
+          setShowMobilePDF(true);
+        } else {
+          setShowPDFViewer(true);
+        }
       }
       
       // Add success message
@@ -206,8 +297,226 @@ const ChatInterface = () => {
     }
   };
 
-  const removeFile = (index: number) => {
-    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+  const removeFile = async (index: number) => {
+    const fileToDelete = attachedFiles[index];
+    if (!fileToDelete) return;
+
+    try {
+      // Call API to delete file from server
+      const response = await apiService.deleteFile(fileToDelete.name);
+      
+      // Remove from local state
+      setAttachedFiles(prev => {
+        const newFiles = prev.filter((_, i) => i !== index);
+        
+        // If the deleted file is the current PDF, close the viewer and clear current PDF
+        if (currentPDF && prev[index] && currentPDF.name === prev[index].name) {
+          setCurrentPDF(null);
+          setShowPDFViewer(false);
+          setShowMobilePDF(false);
+        }
+        
+        return newFiles;
+      });
+
+      // Show success toast
+      toast({
+        title: "File Deleted Successfully",
+        description: response.message,
+        className: "bg-gradient-to-r from-academic-teal/10 to-academic-burgundy/10 border-2 border-academic-teal/30 text-academic-teal shadow-lg",
+        action: (
+          <div className="w-2 h-2 bg-academic-teal rounded-full animate-pulse"></div>
+        ),
+        duration: 2000, // Auto-close after 2 seconds
+      });
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      
+      // Show error toast
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete file. Please try again.",
+        className: "bg-gradient-to-r from-academic-burgundy/10 to-academic-rose/10 border-2 border-academic-burgundy/30 text-academic-burgundy shadow-lg",
+        action: (
+          <div className="w-2 h-2 bg-academic-burgundy rounded-full animate-pulse"></div>
+        ),
+        duration: 2000, // Auto-close after 2 seconds
+      });
+    }
+  };
+
+  const removeUploadedFileName = async (fileName: string) => {
+    try {
+      // Call API to delete file from server
+      const response = await apiService.deleteFile(fileName);
+      
+      // Remove from local state
+      setUploadedFileNames(prev => prev.filter(name => name !== fileName));
+
+      // Show success toast
+      toast({
+        title: "File Deleted Successfully",
+        description: response.message,
+        className: "bg-gradient-to-r from-academic-teal/10 to-academic-burgundy/10 border-2 border-academic-teal/30 text-academic-teal shadow-lg",
+        action: (
+          <div className="w-2 h-2 bg-academic-teal rounded-full animate-pulse"></div>
+        ),
+        duration: 2000, // Auto-close after 2 seconds
+      });
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      
+      // Show error toast
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete file. Please try again.",
+        className: "bg-gradient-to-r from-academic-burgundy/10 to-academic-rose/10 border-2 border-academic-burgundy/30 text-academic-burgundy shadow-lg",
+        action: (
+          <div className="w-2 h-2 bg-academic-burgundy rounded-full animate-pulse"></div>
+        ),
+        duration: 2000, // Auto-close after 2 seconds
+      });
+    }
+  };
+
+  const handleDeleteFile = async (index: number) => {
+    if (skipDeleteConfirmation) {
+      // Direct delete if user chose to remember their decision
+      await removeFile(index);
+    } else {
+      setFileToDelete(index);
+      setShowDeleteConfirmation(true);
+    }
+  };
+
+  const confirmDeleteFile = async () => {
+    try {
+      if (fileToDelete !== null) {
+        await removeFile(fileToDelete);
+        setFileToDelete(null);
+      } else if (previewNotAvailableFileName) {
+        // Check if this is an uploaded file name (not an attached file)
+        const isUploadedFileName = uploadedFileNames.includes(previewNotAvailableFileName);
+        if (isUploadedFileName) {
+          await removeUploadedFileName(previewNotAvailableFileName);
+        }
+      }
+      
+      // If user checked "remember my decision", skip future confirmations
+      if (rememberDeleteDecision) {
+        setSkipDeleteConfirmation(true);
+      }
+    } catch (error) {
+      // Error is already handled in removeFile/removeUploadedFileName functions
+      console.error('Error in confirmDeleteFile:', error);
+    } finally {
+      setShowDeleteConfirmation(false);
+      setRememberDeleteDecision(false); // Reset checkbox for next time
+      setPreviewNotAvailableFileName(''); // Reset file name
+    }
+  };
+
+  const cancelDeleteFile = () => {
+    setFileToDelete(null);
+    setShowDeleteConfirmation(false);
+    setRememberDeleteDecision(false); // Reset checkbox
+    setPreviewNotAvailableFileName(''); // Reset file name
+  };
+
+  const handleUploadedFileNameClick = (fileName: string) => {
+    setPreviewNotAvailableFileName(fileName);
+    setShowPreviewNotAvailable(true);
+  };
+
+  const handleStartNewSession = () => {
+    setShowNewSessionConfirmation(true);
+  };
+
+  const confirmNewSession = async () => {
+    try {
+      if (selectedMode === 'pdf') {
+        // Delete all files from server
+        const response = await apiService.deleteAllFiles();
+        
+        // Clear PDF-related data
+        setPdfMessages([
+          {
+            id: '1',
+            type: 'bot',
+            content: 'Hello! I\'m your AI study assistant. Upload your PDFs and ask me questions about your documents. How can I help you study today?',
+            timestamp: new Date(),
+          }
+        ]);
+        setAttachedFiles([]);
+        setUploadedFileNames([]);
+        setCurrentPDF(null);
+        setShowPDFViewer(false);
+        setShowMobilePDF(false);
+        setPdfMetadata({});
+
+        // Show success toast
+        toast({
+          title: "New Session Started",
+          description: `Successfully cleared PDF session. ${response.message}`,
+          className: "bg-gradient-to-r from-academic-teal/10 to-academic-burgundy/10 border-2 border-academic-teal/30 text-academic-teal shadow-lg",
+          action: (
+            <div className="w-2 h-2 bg-academic-teal rounded-full animate-pulse"></div>
+          ),
+          duration: 2000,
+        });
+      } else {
+        // Clear web search data only
+        setWebMessages([
+          {
+            id: '1',
+            type: 'bot',
+            content: 'Hello! I\'m your AI study assistant. I can search the web for academic information and research. What would you like to learn about today?',
+            timestamp: new Date(),
+          }
+        ]);
+        setWebMetadata({});
+
+        // Show success toast
+        toast({
+          title: "New Session Started",
+          description: "Successfully cleared web search session.",
+          className: "bg-gradient-to-r from-academic-teal/10 to-academic-burgundy/10 border-2 border-academic-teal/30 text-academic-teal shadow-lg",
+          action: (
+            <div className="w-2 h-2 bg-academic-teal rounded-full animate-pulse"></div>
+          ),
+          duration: 2000,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to start new session:', error);
+      
+      // Show error toast
+      toast({
+        title: "Session Reset Failed",
+        description: "Failed to start new session. Please try again.",
+        className: "bg-gradient-to-r from-academic-burgundy/10 to-academic-rose/10 border-2 border-academic-burgundy/30 text-academic-burgundy shadow-lg",
+        action: (
+          <div className="w-2 h-2 bg-academic-burgundy rounded-full animate-pulse"></div>
+        ),
+        duration: 2000,
+      });
+    } finally {
+      setShowNewSessionConfirmation(false);
+    }
+  };
+
+  const cancelNewSession = () => {
+    setShowNewSessionConfirmation(false);
+  };
+
+  const handleDeleteUploadedFileName = async (fileName: string) => {
+    if (skipDeleteConfirmation) {
+      // Direct delete if user chose to remember their decision
+      await removeUploadedFileName(fileName);
+    } else {
+      setPreviewNotAvailableFileName(fileName);
+      setShowDeleteConfirmation(true);
+    }
   };
 
   const toggleMetadata = (messageId: string) => {
@@ -215,6 +524,14 @@ const ChatInterface = () => {
       ...prev,
       [messageId]: !prev[messageId]
     }));
+  };
+
+  const togglePDFViewer = () => {
+    if (isMobile) {
+      setShowMobilePDF(!showMobilePDF);
+    } else {
+      setShowPDFViewer(!showPDFViewer);
+    }
   };
 
   return (
@@ -227,13 +544,13 @@ const ChatInterface = () => {
           : "py-10 md:py-20"
       )}
     >
-      <div className={cn("transition-all duration-500", isFullscreen ? "h-full" : "container px-4 md:px-6")}>
+      <div className={cn("transition-all duration-500", isFullscreen ? "h-full" : "container px-3 md:px-6")}>
         {!isFullscreen && (
-          <div className="text-center mb-8 md:mb-12">
-            <h2 className="text-2xl md:text-4xl font-bold mb-4">
+          <div className="text-center mb-6 md:mb-12">
+            <h2 className="text-xl md:text-4xl font-bold mb-3 md:mb-4">
               Start Your Study Session
             </h2>
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-base md:text-xl text-muted-foreground max-w-2xl mx-auto">
               Upload your documents or ask questions about any academic topic
             </p>
           </div>
@@ -244,39 +561,34 @@ const ChatInterface = () => {
           isFullscreen 
             ? "h-full" 
             : "max-w-7xl mx-auto",
-          !isFullscreen && !showPDFViewer && "flex justify-center"
+          !isFullscreen && (!showPDFViewer || selectedMode !== 'pdf') && "flex justify-center"
         )}>
-          {selectedMode === 'pdf' && (showPDFViewer || currentPDF) ? (
+          {selectedMode === 'pdf' && (attachedFiles.length > 0 || currentPDF) && showPDFViewer ? (
             <PanelGroup 
               direction="horizontal" 
-              className={cn("transition-all duration-500", isFullscreen ? "h-full" : "h-[600px]")}
+              className={cn("transition-all duration-500", isFullscreen ? "h-full" : "h-[500px]")}
             >
               {/* PDF Viewer Panel */}
-              {showPDFViewer && (
-                <>
-                  <Panel defaultSize={30} minSize={20} maxSize={60}>
+              <Panel defaultSize={35} minSize={20} maxSize={60}>
                     <PDFViewer
                       file={currentPDF}
-                      isVisible={showPDFViewer}
+                      isVisible={true}
                       onToggleVisibility={() => setShowPDFViewer(!showPDFViewer)}
                       className="h-full"
                     />
                   </Panel>
                   <PanelResizeHandle className="bg-border hover:bg-academic-teal/50 transition-colors" />
-                </>
-              )}
               
               {/* Chat Interface Panel */}
-              <Panel defaultSize={showPDFViewer ? 70 : 100} minSize={40}>
+              <Panel defaultSize={65} minSize={40}>
                 <Card className={cn(
                   "overflow-hidden shadow-xl transition-all duration-500", 
-                  isFullscreen ? "h-full flex flex-col" : "",
-                  !isFullscreen && !showPDFViewer ? "max-w-4xl w-full" : ""
+                  isFullscreen ? "h-full flex flex-col" : "max-w-4xl w-full"
                 )}>
                   {/* Chat Mode Selection */}
                   <div className="border-b p-3 md:p-4 bg-muted/30">
                     <div className="flex items-center justify-between">
-                      <div className="flex flex-col md:flex-row gap-2 md:gap-3 flex-1">
+                      <div className="flex flex-row gap-2 md:gap-3 flex-1">
                         {chatModes.map((mode) => {
                           const IconComponent = mode.icon;
                           return (
@@ -284,42 +596,90 @@ const ChatInterface = () => {
                               key={mode.id}
                               onClick={() => setSelectedMode(mode.id)}
                               className={cn(
-                                "flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg transition-all duration-200 flex-1 text-left",
+                                "flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-xl transition-all duration-200 flex-1 text-left",
                                 selectedMode === mode.id
-                                  ? "bg-academic-teal text-white shadow-md"
+                                  ? "bg-academic-teal text-white shadow-lg"
                                   : "bg-background hover:bg-muted text-muted-foreground hover:text-foreground"
                               )}
                             >
                               <IconComponent className="w-4 h-4 md:w-5 md:h-5 flex-shrink-0" />
                               <div className="min-w-0">
-                                <div className="font-medium text-sm md:text-base">{mode.label}</div>
+                                <div className="font-semibold text-xs md:text-base">{mode.label}</div>
                                 <div className="text-xs opacity-80 hidden md:block">{mode.description}</div>
                               </div>
                             </button>
                           );
                         })}
                       </div>
-                      <Button
-                        variant="academicOutline"
-                        size="icon"
-                        onClick={() => setIsFullscreen(!isFullscreen)}
-                        className="ml-2 md:ml-4 h-8 w-8 md:h-10 md:w-10 flex-shrink-0"
-                        title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                      >
+                      <div className="flex items-center gap-2 md:gap-3 ml-2 md:ml-4">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={handleStartNewSession}
+                          className="h-8 w-8 md:h-10 md:w-10 border-academic-burgundy/30 text-academic-burgundy hover:bg-academic-burgundy/10 hover:border-academic-burgundy/50 transition-all duration-200 rounded-xl shadow-md"
+                          title="Start new chat session"
+                        >
+                          <RefreshCw className="w-3 h-3 md:w-4 md:h-4" />
+                        </Button>
+                        <Button
+                          variant="academicOutline"
+                          size="icon"
+                          onClick={() => setIsFullscreen(!isFullscreen)}
+                          className="h-8 w-8 md:h-10 md:w-10 flex-shrink-0 rounded-xl shadow-md"
+                          title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                        >
                         {isFullscreen ? (
                           <Minimize className="w-3 h-3 md:w-4 md:h-4" />
                         ) : (
                           <Expand className="w-3 h-3 md:w-4 md:h-4" />
                         )}
                       </Button>
+                      </div>
                     </div>
                   </div>
 
+                  {/* Login Prompt Banner */}
+                  {!isFullscreen && showLoginPrompt && (
+                    <div className="border-b border-academic-teal/20 bg-gradient-to-r from-academic-teal/5 to-academic-burgundy/5 p-2 md:p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 md:gap-3">
+                          <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-academic-teal/10 flex items-center justify-center flex-shrink-0">
+                            <Brain className="w-3 h-3 md:w-4 md:h-4 text-academic-teal" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs md:text-base font-medium text-foreground leading-tight">
+                              Save your chat history
+                            </p>
+                            <p className="text-xs text-muted-foreground leading-tight hidden sm:block">
+                              Login or sign up to save your conversations and access them later
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
+                          <Button variant="academic" size="sm" className="text-xs px-3 md:px-4 py-1 md:py-2 h-7 md:h-9">
+                            Login / Sign Up
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setShowLoginPrompt(false)}
+                            className="h-6 w-6 md:h-8 md:w-8 text-muted-foreground hover:text-foreground flex-shrink-0"
+                          >
+                            <X className="w-3 h-3 md:w-4 md:h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Messages */}
-                  <div className={cn(
-                    "overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 transition-all duration-500", 
-                    isFullscreen ? "flex-1" : "h-80 md:h-96"
-                  )}>
+                  <div 
+                    ref={messagesContainerRef}
+                    className={cn(
+                      "overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 transition-all duration-500", 
+                      isFullscreen ? "flex-1" : "h-80 md:h-96"
+                    )}
+                  >
                     {currentMessages.map((message) => (
                       <div
                         key={message.id}
@@ -342,51 +702,21 @@ const ChatInterface = () => {
                               : "bg-muted text-foreground"
                           )}
                         >
-                          <p className="text-sm">{message.content}</p>
-                          
-                          {/* Metadata toggle button for bot messages */}
-                          {message.type === 'bot' && message.metadata && message.metadata.sources.length > 0 && (
-                            <div className="mt-2 pt-2 border-t border-border/20">
-                              <button
-                                onClick={() => toggleMetadata(message.id)}
-                                className="flex items-center gap-2 text-xs opacity-70 hover:opacity-100 transition-opacity"
+                          {message.type === 'bot' ? (
+                            <div className="prose-chat">
+                              <ReactMarkdown
+                                components={{
+                                  a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+                                }}
                               >
-                                <Info className="w-3 h-3" />
-                                <span>
-                                  {showMetadata[message.id] ? 'Hide' : 'Show'} sources ({message.metadata.sources.length})
-                                </span>
-                              </button>
-                              
-                              {/* Metadata display when expanded */}
-                              {showMetadata[message.id] && (
-                                <div className="mt-2 space-y-1">
-                                  {message.metadata.sources.map((source, index) => (
-                                    <div key={index} className="flex items-center gap-2 text-xs opacity-70 bg-background/20 p-2 rounded">
-                                      {source.type === 'web' ? (
-                                        <>
-                                          <Globe className="w-3 h-3 flex-shrink-0" />
-                                          <div className="min-w-0 flex-1">
-                                            <div className="truncate font-medium">{source.title}</div>
-                                            <div className="truncate text-xs opacity-60">{source.name}</div>
-                                          </div>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <FileText className="w-3 h-3 flex-shrink-0" />
-                                          <div className="min-w-0 flex-1">
-                                            <div className="truncate font-medium">{source.title}</div>
-                                            <div className="truncate text-xs opacity-60">
-                                              {source.name} • Page {source.pageNumber}
-                                            </div>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                                {message.content}
+                              </ReactMarkdown>
                             </div>
+                          ) : (
+                            <p className="text-sm">{message.content}</p>
                           )}
+                          
+                      
                           
                           {message.attachments && message.attachments.length > 0 && (
                             <div className="mt-2 space-y-1">
@@ -425,29 +755,92 @@ const ChatInterface = () => {
                   </div>
 
                   {/* File attachments preview */}
-                  {attachedFiles.length > 0 && (
-                    <div className="px-4 py-2 border-t bg-muted/30">
-                      <div className="flex flex-wrap gap-2">
+                  {selectedMode === 'pdf' && (attachedFiles.length > 0 || uploadedFileNames.length > 0) && (
+                    <div className="border-t bg-muted/30">
+                      <div className="px-3 md:px-4 py-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">Uploaded Files</span>
+                          <button
+                            onClick={() => {
+                              if (isMobile) {
+                                setShowMobileFileSheet(true);
+                              } else {
+                                setIsFilePanelExpanded(!isFilePanelExpanded);
+                              }
+                            }}
+                            className="text-xs text-academic-teal hover:text-academic-teal/80 transition-colors flex items-center gap-1"
+                          >
+                            {isFilePanelExpanded ? 'Collapse' : 'Expand'}
+                            <ChevronDown className={cn("w-3 h-3 transition-transform", isFilePanelExpanded && "rotate-180")} />
+                          </button>
+                        </div>
+                        <div className={cn(
+                          "flex flex-wrap gap-2 transition-all duration-30",
+                          isFilePanelExpanded ? "max-h-32 overflow-y-auto 0 mt-2" : "max-h-0 overflow-hidden"
+                        )}>
+                          {/* Currently attached files (with preview) */}
                         {attachedFiles.map((file, index) => (
-                          <Badge key={index} variant="secondary" className="flex items-center gap-2">
+                          <Badge 
+                              key={`attached-${index}`} 
+                            variant="secondary" 
+                            className={cn(
+                                "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer flex-shrink-0",
+                                currentPDF?.name === file.name && (showPDFViewer || showMobilePDF) && "bg-academic-teal text-white hover:bg-academic-teal/90 shadow-md"
+                            )}
+                            onClick={() => {
+                                // Set the clicked file as the current PDF
+                                setCurrentPDF(file);
+                                if (isMobile) {
+                                  setShowMobilePDF(true);
+                                } else {
+                                  setShowPDFViewer(true);
+                              }
+                            }}
+                          >
                             <FileText className="w-3 h-3" />
-                            <span className="text-xs">{file.name}</span>
+                            <span className="text-xs font-medium">{file.name}</span>
                             <button
-                              onClick={() => removeFile(index)}
-                              className="hover:bg-background/50 rounded-full p-0.5"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                  handleDeleteFile(index);
+                                }}
+                                className="hover:bg-background/50 rounded-full p-1 transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                          
+                          {/* Previously uploaded files (no preview) */}
+                          {uploadedFileNames.map((fileName, index) => (
+                            <Badge 
+                              key={`uploaded-${index}`} 
+                              variant="outline" 
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer border-dashed border-academic-burgundy/30 text-academic-burgundy/70 hover:border-academic-burgundy/50 hover:text-academic-burgundy flex-shrink-0"
+                              onClick={() => handleUploadedFileNameClick(fileName)}
+                            >
+                              <FileText className="w-3 h-3" />
+                              <span className="text-xs font-medium">{fileName}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteUploadedFileName(fileName);
+                              }}
+                              className="hover:bg-background/50 rounded-full p-1 transition-colors"
                             >
                               <X className="w-3 h-3" />
                             </button>
                           </Badge>
                         ))}
+                        </div>
                       </div>
                     </div>
                   )}
 
                   {/* Input */}
-                  <div className="border-t p-4">
-                    <div className="flex gap-3 items-end">
-                      <div className="flex-1">
+                  <div className="border-t p-3 md:p-4 bg-gradient-to-r from-background via-muted/20 to-background">
+                    <div className="flex gap-3 items-end align-center">
+                      <div className="flex-1 relative">
                         <Textarea
                           value={inputValue}
                           onChange={(e) => setInputValue(e.target.value)}
@@ -456,7 +849,7 @@ const ChatInterface = () => {
                               ? "Ask a question about your uploaded documents..."
                               : "Search for academic information on the web..."
                           }
-                          className="min-h-[60px] resize-none "
+                          className="min-h-[56px] md:min-h-[60px] resize-none border-2 border-border/50 focus:border-academic-teal/50 rounded-xl bg-background/80 backdrop-blur-sm shadow-sm transition-all duration-200 placeholder:text-muted-foreground/70 pr-12 scrollbar-hide"
                           disabled={uploadLoading}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
@@ -465,33 +858,36 @@ const ChatInterface = () => {
                             }
                           }}
                         />
-                      </div>
-                      <div className="flex gap-2 mb-2">
                         {selectedMode === 'pdf' && (
                           <Button
-                            variant="academicOutline"
+                            variant="ghost"
                             size="icon"
                             onClick={() => fileInputRef.current?.click()}
                             disabled={uploadLoading}
-                            className="h-10 w-10"
+                            title="Upload PDF"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 hover:bg-academic-teal/10 text-muted-foreground hover:text-academic-teal transition-colors rounded-lg"
                           >
                             {uploadLoading ? (
                               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                             ) : (
-                              <Paperclip className="w-4 h-4" />
+                              <Upload className="w-4 h-4" />
                             )}
                           </Button>
                         )}
-                        <Button
-                          variant="academic"
-                          size="icon"
-                          onClick={handleSendMessage}
-                          disabled={(!isValidMessage(inputValue) && attachedFiles.length === 0) || uploadLoading}
-                          className="h-10 w-10"
-                        >
-                          <Send className="w-4 h-4" />
-                        </Button>
                       </div>
+                      <Button
+                        variant="academic"
+                        size="icon"
+                        onClick={handleSendMessage}
+                        disabled={(!isValidMessage(inputValue) && attachedFiles.length === 0) || uploadLoading}
+                        className="h-12 w-12 md:h-10 md:w-10 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                      >
+                        {uploadLoading ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4 text-white" />
+                        )}
+                      </Button>
                     </div>
                   </div>
                 </Card>
@@ -500,13 +896,12 @@ const ChatInterface = () => {
           ) : (
             <Card className={cn(
               "overflow-hidden shadow-xl transition-all duration-500", 
-              isFullscreen ? "h-full flex flex-col" : "",
-              !isFullscreen ? "max-w-4xl w-full" : ""
+              isFullscreen ? "h-full flex flex-col" : "max-w-4xl w-full"
             )}>
               {/* Chat Mode Selection */}
               <div className="border-b p-3 md:p-4 bg-muted/30">
                 <div className="flex items-center justify-between">
-                  <div className="flex flex-col md:flex-row gap-2 md:gap-3 flex-1">
+                  <div className="flex flex-row gap-2 md:gap-3 flex-1">
                     {chatModes.map((mode) => {
                       const IconComponent = mode.icon;
                       return (
@@ -514,26 +909,37 @@ const ChatInterface = () => {
                           key={mode.id}
                           onClick={() => setSelectedMode(mode.id)}
                           className={cn(
-                            "flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg transition-all duration-200 flex-1 text-left",
+                            "flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-xl transition-all duration-200 flex-1 text-left",
                             selectedMode === mode.id
-                              ? "bg-academic-teal text-white shadow-md"
+                              ? "bg-academic-teal text-white shadow-lg"
                               : "bg-background hover:bg-muted text-muted-foreground hover:text-foreground"
                           )}
                         >
                           <IconComponent className="w-4 h-4 md:w-5 md:h-5 flex-shrink-0" />
                           <div className="min-w-0">
-                            <div className="font-medium text-sm md:text-base">{mode.label}</div>
+                            <div className="font-semibold text-xs md:text-base">{mode.label}</div>
                             <div className="text-xs opacity-80 hidden md:block">{mode.description}</div>
                           </div>
                         </button>
                       );
                     })}
                   </div>
+                      <div className="flex items-center gap-2 md:gap-3 ml-2 md:ml-4">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={handleStartNewSession}
+                          className="h-8 w-8 md:h-10 md:w-10 border-academic-burgundy/30 text-academic-burgundy hover:bg-academic-burgundy/10 hover:border-academic-burgundy/50 transition-all duration-200 rounded-xl shadow-md"
+                          title="Start new chat session"
+                        >
+                          <RefreshCw className="w-3 h-3 md:w-4 md:h-4" />
+                        </Button>
+
                   <Button
                     variant="academicOutline"
                     size="icon"
                     onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="ml-2 md:ml-4 h-8 w-8 md:h-10 md:w-10 flex-shrink-0"
+                          className="h-8 w-8 md:h-10 md:w-10 flex-shrink-0 rounded-xl shadow-md"
                     title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                   >
                     {isFullscreen ? (
@@ -542,14 +948,52 @@ const ChatInterface = () => {
                       <Expand className="w-3 h-3 md:w-4 md:h-4" />
                     )}
                   </Button>
+                      </div>
                 </div>
               </div>
 
+              {/* Login Prompt Banner */}
+              {!isFullscreen && showLoginPrompt && (
+                <div className="border-b border-academic-teal/20 bg-gradient-to-r from-academic-teal/5 to-academic-burgundy/5 p-2 md:p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 md:gap-3">
+                      <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-academic-teal/10 flex items-center justify-center flex-shrink-0">
+                        <Brain className="w-3 h-3 md:w-4 md:h-4 text-academic-teal" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs md:text-base font-medium text-foreground leading-tight">
+                          Save your chat history
+                        </p>
+                        <p className="text-xs text-muted-foreground leading-tight hidden sm:block">
+                          Login or sign up to save your conversations and access them later
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
+                      <Button variant="academic" size="sm" className="text-xs px-3 md:px-4 py-1 md:py-2 h-7 md:h-9">
+                        Login / Sign Up
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowLoginPrompt(false)}
+                        className="h-6 w-6 md:h-8 md:w-8 text-muted-foreground hover:text-foreground flex-shrink-0"
+                      >
+                        <X className="w-3 h-3 md:w-4 md:h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Messages */}
-              <div className={cn(
-                "overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 transition-all duration-500", 
-                isFullscreen ? "flex-1" : "h-80 md:h-96"
-              )}>
+              <div 
+                ref={messagesContainerRef}
+                className={cn(
+                  "overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 transition-all duration-500", 
+                  isFullscreen ? "flex-1" : "h-80 md:h-96"
+                )}
+              >
                 {currentMessages.map((message) => (
                   <div
                     key={message.id}
@@ -572,51 +1016,21 @@ const ChatInterface = () => {
                           : "bg-muted text-foreground"
                       )}
                     >
-                      <p className="text-sm">{message.content}</p>
-                      
-                      {/* Metadata toggle button for bot messages */}
-                      {message.type === 'bot' && message.metadata && (
-                        <div className="mt-2 pt-2 border-t border-border/20">
-                          <button
-                            onClick={() => toggleMetadata(message.id)}
-                            className="flex items-center gap-2 text-xs opacity-70 hover:opacity-100 transition-opacity"
+                      {message.type === 'bot' ? (
+                        <div className="prose-chat">
+                          <ReactMarkdown
+                            components={{
+                              a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+                            }}
                           >
-                            <Info className="w-3 h-3" />
-                            <span>
-                              {showMetadata[message.id] ? 'Hide' : 'Show'} sources ({message.metadata.sources.length})
-                            </span>
-                          </button>
-                          
-                          {/* Metadata display when expanded */}
-                          {showMetadata[message.id] && (
-                            <div className="mt-2 space-y-1">
-                              {message.metadata.sources.map((source, index) => (
-                                <div key={index} className="flex items-center gap-2 text-xs opacity-70 bg-background/20 p-2 rounded">
-                                  {source.type === 'web' ? (
-                                    <>
-                                      <Globe className="w-3 h-3 flex-shrink-0" />
-                                      <div className="min-w-0 flex-1">
-                                        <div className="truncate font-medium">{source.title}</div>
-                                        <div className="truncate text-xs opacity-60">{source.name}</div>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <FileText className="w-3 h-3 flex-shrink-0" />
-                                      <div className="min-w-0 flex-1">
-                                        <div className="truncate font-medium">{source.title}</div>
-                                        <div className="truncate text-xs opacity-60">
-                                          {source.name} • Page {source.pageNumber}
-                                        </div>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                            {message.content}
+                          </ReactMarkdown>
                         </div>
+                      ) : (
+                        <p className="text-sm">{message.content}</p>
                       )}
+                      
+                    
                       
                       {message.attachments && message.attachments.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -655,28 +1069,91 @@ const ChatInterface = () => {
               </div>
 
               {/* File attachments preview */}
-              {attachedFiles.length > 0 && (
-                <div className="px-3 md:px-4 py-2 border-t bg-muted/30">
-                  <div className="flex flex-wrap gap-2">
+              {selectedMode === 'pdf' && (attachedFiles.length > 0 || uploadedFileNames.length > 0) && (
+                <div className="border-t bg-muted/30">
+                  <div className="px-3 md:px-4 py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground">Uploaded Files</span>
+                      <button
+                        onClick={() => {
+                          if (isMobile) {
+                            setShowMobileFileSheet(true);
+                          } else {
+                            setIsFilePanelExpanded(!isFilePanelExpanded);
+                          }
+                        }}
+                        className="text-xs text-academic-teal hover:text-academic-teal/80 transition-colors flex items-center gap-1"
+                      >
+                        {isFilePanelExpanded ? 'Collapse' : 'Expand'}
+                        <ChevronDown className={cn("w-3 h-3 transition-transform", isFilePanelExpanded && "rotate-180")} />
+                      </button>
+                    </div>
+                    <div className={cn(
+                      "flex flex-wrap gap-2 transition-all duration-300",
+                      isFilePanelExpanded ? "max-h-32 overflow-y-auto  mt-2" : "max-h-0 overflow-hidden"
+                    )}>
+                      {/* Currently attached files (with preview) */}
                     {attachedFiles.map((file, index) => (
-                      <Badge key={index} variant="secondary" className="flex items-center gap-2">
+                      <Badge 
+                          key={`attached-${index}`} 
+                        variant="secondary" 
+                        className={cn(
+                            "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer flex-shrink-0",
+                            currentPDF?.name === file.name && (showPDFViewer || showMobilePDF) && "bg-academic-teal text-white hover:bg-academic-teal/90 shadow-md"
+                        )}
+                        onClick={() => {
+                            // Set the clicked file as the current PDF
+                            setCurrentPDF(file);
+                            if (isMobile) {
+                              setShowMobilePDF(true);
+                            } else {
+                              setShowPDFViewer(true);
+                          }
+                        }}
+                      >
                         <FileText className="w-3 h-3" />
-                        <span className="text-xs">{file.name}</span>
+                        <span className="text-xs font-medium">{file.name}</span>
                         <button
-                          onClick={() => removeFile(index)}
-                          className="hover:bg-background/50 rounded-full p-0.5"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFile(index);
+                          }}
+                          className="hover:bg-background/50 rounded-full p-1 transition-colors"
                         >
                           <X className="w-3 h-3" />
                         </button>
                       </Badge>
                     ))}
+                    
+                    {/* Previously uploaded files (no preview) */}
+                    {uploadedFileNames.map((fileName, index) => (
+                      <Badge 
+                        key={`uploaded-${index}`} 
+                        variant="outline" 
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer border-dashed border-academic-burgundy/30 text-academic-burgundy/70 hover:border-academic-burgundy/50 hover:text-academic-burgundy flex-shrink-0"
+                        onClick={() => handleUploadedFileNameClick(fileName)}
+                      >
+                        <FileText className="w-3 h-3" />
+                        <span className="text-xs font-medium">{fileName}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteUploadedFileName(fileName);
+                          }}
+                          className="hover:bg-background/50 rounded-full p-1 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Input */}
-              <div className="border-t bg-gradient-to-r from-background via-muted/20 to-background p-4 md:p-6">
-                <div className="flex gap-3 md:gap-4 items-end">
+              <div className="border-t bg-gradient-to-r from-background via-muted/20 to-background p-3 md:p-6">
+                <div className="flex gap-3 md:gap-4 items-center">
                   <div className="flex-1 relative">
                     <Textarea
                       value={inputValue}
@@ -686,7 +1163,7 @@ const ChatInterface = () => {
                           ? "Ask questions about your uploaded PDFs..." 
                           : "Ask me anything about your studies..."
                       }
-                      className="resize-none min-h-[48px] md:min-h-[52px] border-2 border-border/50 focus:border-academic-teal/50 rounded-xl bg-background/80 backdrop-blur-sm shadow-sm transition-all duration-200 placeholder:text-muted-foreground/70 pr-16"
+                      className="resize-none min-h-[56px] md:min-h-[52px] border-2 border-border/50 focus:border-academic-teal/50 rounded-xl bg-background/80 backdrop-blur-sm shadow-sm transition-all duration-200 placeholder:text-muted-foreground/70 pr-12 scrollbar-hide"
                       rows={1}
                       disabled={uploadLoading}
                       onKeyDown={(e) => {
@@ -705,7 +1182,7 @@ const ChatInterface = () => {
                         onClick={() => fileInputRef.current?.click()}
                         disabled={uploadLoading}
                         title="Upload PDF"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 hover:bg-academic-teal/10 text-muted-foreground hover:text-academic-teal transition-colors"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 hover:bg-academic-teal/10 text-muted-foreground hover:text-academic-teal transition-colors rounded-lg"
                       >
                         {uploadLoading ? (
                           <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -719,7 +1196,7 @@ const ChatInterface = () => {
                   <Button
                     onClick={handleSendMessage}
                     disabled={(!inputValue.trim() && attachedFiles.length === 0) || isLoading}
-                    className="h-12 w-12 md:h-14 md:w-14 rounded-xl bg-gradient-to-r from-academic-teal to-academic-burgundy hover:from-academic-teal/90 hover:to-academic-burgundy/90 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-gradient-to-r from-academic-teal to-academic-burgundy hover:from-academic-teal/90 hover:to-academic-burgundy/90 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     size="icon"
                   >
                     {isLoading ? (
@@ -743,6 +1220,287 @@ const ChatInterface = () => {
           />
         </div>
       </div>
+
+      {/* Mobile PDF Drawer */}
+      <Drawer open={showMobilePDF} onOpenChange={setShowMobilePDF}>
+        <DrawerContent className="h-[80vh]">
+          <DrawerHeader>
+            <DrawerTitle className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              {currentPDF?.name}
+            </DrawerTitle>
+          </DrawerHeader>
+          <div className="flex-1 overflow-hidden">
+            <PDFViewer
+              file={currentPDF}
+              isVisible={showMobilePDF}
+              onToggleVisibility={() => setShowMobilePDF(false)}
+              className="h-full"
+            />
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      {/* Delete File Confirmation Dialog - Desktop */}
+      {!isMobile && (
+        <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
+          <AlertDialogContent className="max-w-md border-2 border-academic-burgundy/20 bg-gradient-to-br from-background to-academic-light-rose/5 backdrop-blur-sm">
+            <AlertDialogHeader className="text-center">
+              <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-gradient-to-r from-academic-burgundy to-academic-rose flex items-center justify-center">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+                          <AlertDialogTitle className="text-lg font-bold bg-gradient-to-r from-academic-burgundy to-academic-rose bg-clip-text text-transparent text-center">
+              Remove Document
+            </AlertDialogTitle>
+              <AlertDialogDescription className="text-sm text-muted-foreground leading-relaxed">
+                Removing this document will permanently delete it from your study session. You will lose access to ask questions about this document.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            
+            {/* Remember Decision Checkbox - Left Aligned */}
+            <div className="flex items-start space-x-3 mb-6">
+              <input
+                type="checkbox"
+                id="remember-delete-desktop"
+                checked={rememberDeleteDecision}
+                onChange={(e) => setRememberDeleteDecision(e.target.checked)}
+                className="w-4 h-4 mt-0.5 text-academic-teal bg-background border-academic-teal/30 rounded focus:ring-academic-teal/50 focus:ring-2 flex-shrink-0"
+              />
+              <label htmlFor="remember-delete-desktop" className="text-sm text-muted-foreground cursor-pointer leading-relaxed">
+                Remember my decision for future deletions
+              </label>
+            </div>
+            
+            <AlertDialogFooter className="flex flex-col gap-3">
+              <AlertDialogAction 
+                onClick={confirmDeleteFile} 
+                className="w-full bg-gradient-to-r from-academic-teal to-academic-burgundy text-white hover:from-academic-teal/90 hover:to-academic-burgundy/90 shadow-lg hover:shadow-xl transition-all duration-200 text-sm py-3"
+              >
+                Remove Document
+              </AlertDialogAction>
+              <AlertDialogCancel 
+                onClick={cancelDeleteFile}
+                className="w-full border-2 border-academic-teal/30 text-academic-teal hover:bg-academic-teal/10 hover:border-academic-teal/50 transition-all duration-200 text-sm py-3 rounded-lg"
+              >
+                Keep Document
+              </AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Delete File Confirmation Dialog - Mobile Bottom Sheet */}
+      {isMobile && (
+        <Drawer open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
+          <DrawerContent className="h-[65vh]">
+            <DrawerHeader className="text-center">
+              <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-gradient-to-r from-academic-burgundy to-academic-rose flex items-center justify-center">
+                <FileText className="w-6 h-6 text-white" />
+              </div>
+              <DrawerTitle className="text-lg font-bold bg-gradient-to-r from-academic-burgundy to-academic-rose bg-clip-text text-transparent">
+                Remove Document
+              </DrawerTitle>
+              <p className="text-sm text-muted-foreground leading-relaxed mt-2">
+                Removing this document will permanently delete it from your study session. You will lose access to ask questions about this document.
+              </p>
+            </DrawerHeader>
+            
+            <div className="flex-1 px-6 pb-6">
+              {/* Remember Decision Checkbox - Left Aligned */}
+              <div className="flex items-start space-x-3 mb-6">
+                <input
+                  type="checkbox"
+                  id="remember-delete-mobile"
+                  checked={rememberDeleteDecision}
+                  onChange={(e) => setRememberDeleteDecision(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 text-academic-teal bg-background border-academic-teal/30 rounded focus:ring-academic-teal/50 focus:ring-2 flex-shrink-0"
+                />
+                <label htmlFor="remember-delete-mobile" className="text-sm text-muted-foreground cursor-pointer leading-relaxed">
+                  Remember my decision for future deletions
+                </label>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-3">
+                <Button
+                  onClick={confirmDeleteFile}
+                  className="w-full bg-gradient-to-r from-academic-teal to-academic-burgundy text-white hover:from-academic-teal/90 hover:to-academic-burgundy/90 shadow-lg hover:shadow-xl transition-all duration-200 py-3"
+                >
+                  Remove Document
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={cancelDeleteFile}
+                  className="w-full border-2 border-academic-teal/30 text-academic-teal hover:bg-academic-teal/10 hover:border-academic-teal/50 transition-all duration-200 py-3"
+                >
+                  Keep Document
+                </Button>
+              </div>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      )}
+
+      {/* Preview Not Available Popup - Desktop */}
+      {!isMobile && (
+        <AlertDialog open={showPreviewNotAvailable} onOpenChange={setShowPreviewNotAvailable}>
+          <AlertDialogContent className="max-w-sm border-2 border-academic-burgundy/20 bg-gradient-to-br from-background to-academic-light-rose/5 backdrop-blur-sm">
+            <AlertDialogHeader className="text-center">
+              <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-gradient-to-r from-academic-burgundy to-academic-rose flex items-center justify-center">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <AlertDialogTitle className="text-base font-bold bg-gradient-to-r from-academic-burgundy to-academic-rose bg-clip-text text-transparent text-center">
+                Preview Not Available
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-sm text-muted-foreground leading-relaxed text-center">
+                Sorry, we don't have preview of this file: <span className="font-medium text-foreground">{previewNotAvailableFileName}</span>
+                <br /><br />
+                This file was uploaded in a previous session and is available for asking questions, but preview functionality is not available.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="flex justify-center">
+              <AlertDialogAction 
+                onClick={() => setShowPreviewNotAvailable(false)}
+                className="w-full bg-gradient-to-r from-academic-teal to-academic-burgundy text-white hover:from-academic-teal/90 hover:to-academic-burgundy/90 shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                Got it
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Preview Not Available Popup - Mobile Bottom Sheet */}
+      {isMobile && (
+        <Drawer open={showPreviewNotAvailable} onOpenChange={setShowPreviewNotAvailable}>
+          <DrawerContent className="h-[50vh]">
+            <DrawerHeader className="text-center">
+              <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-gradient-to-r from-academic-burgundy to-academic-rose flex items-center justify-center">
+                <FileText className="w-6 h-6 text-white" />
+              </div>
+              <DrawerTitle className="text-base font-bold bg-gradient-to-r from-academic-burgundy to-academic-rose bg-clip-text text-transparent">
+                Preview Not Available
+              </DrawerTitle>
+              <p className="text-sm text-muted-foreground leading-relaxed mt-2">
+                Sorry, we don't have preview of this file: <span className="font-medium text-foreground">{previewNotAvailableFileName}</span>
+              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed mt-2">
+                This file was uploaded in a previous session and is available for asking questions, but preview functionality is not available.
+              </p>
+            </DrawerHeader>
+            
+            <div className="flex-1 px-6 pb-6 flex items-end">
+              <Button
+                onClick={() => setShowPreviewNotAvailable(false)}
+                className="w-full bg-gradient-to-r from-academic-teal to-academic-burgundy text-white hover:from-academic-teal/90 hover:to-academic-burgundy/90 shadow-lg hover:shadow-xl transition-all duration-200 py-3"
+              >
+                Got it
+              </Button>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      )}
+
+      {/* Mobile File Bottom Sheet */}
+      <Drawer open={showMobileFileSheet} onOpenChange={setShowMobileFileSheet}>
+        <DrawerContent className="h-[70vh]">
+          <DrawerHeader>
+            <DrawerTitle className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              Uploaded Files
+            </DrawerTitle>
+          </DrawerHeader>
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="space-y-4">
+              {/* Currently attached files (with preview) */}
+              {attachedFiles.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-3">Current Session Files</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {attachedFiles.map((file, index) => (
+                      <Badge 
+                        key={`mobile-attached-${index}`} 
+                        variant="secondary" 
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 cursor-pointer flex-shrink-0",
+                          currentPDF?.name === file.name && (showPDFViewer || showMobilePDF) && "bg-academic-teal text-white hover:bg-academic-teal/90 shadow-md"
+                        )}
+                        onClick={() => {
+                          // Set the clicked file as the current PDF
+                          setCurrentPDF(file);
+                          setShowMobilePDF(true);
+                          setShowMobileFileSheet(false);
+                        }}
+                      >
+                        <FileText className="w-3 h-3" />
+                        <span className="text-xs font-medium">{file.name}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFile(index);
+                          }}
+                          className="hover:bg-background/50 rounded-full p-1 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Previously uploaded files (no preview) */}
+              {uploadedFileNames.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-3">Previous Session Files</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {uploadedFileNames.map((fileName, index) => (
+                      <Badge 
+                        key={`mobile-uploaded-${index}`} 
+                        variant="outline" 
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 cursor-pointer border-dashed border-academic-burgundy/30 text-academic-burgundy/70 hover:border-academic-burgundy/50 hover:text-academic-burgundy flex-shrink-0"
+                        onClick={() => {
+                          handleUploadedFileNameClick(fileName);
+                          setShowMobileFileSheet(false);
+                        }}
+                      >
+                        <FileText className="w-3 h-3" />
+                        <span className="text-xs font-medium">{fileName}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteUploadedFileName(fileName);
+                          }}
+                          className="hover:bg-background/50 rounded-full p-1 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {attachedFiles.length === 0 && uploadedFileNames.length === 0 && (
+                <div className="text-center py-8">
+                  <FileText className="w-12 h-12 text-muted-foreground/50 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">No files uploaded yet</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1">Upload PDFs to start asking questions</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      {/* New Session Dialog */}
+      <NewSessionDialog
+        open={showNewSessionConfirmation}
+        onOpenChange={setShowNewSessionConfirmation}
+        selectedMode={selectedMode}
+        onConfirm={confirmNewSession}
+        onCancel={cancelNewSession}
+      />
     </section>
   );
 };
