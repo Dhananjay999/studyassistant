@@ -1,2 +1,1 @@
-from .schemas import *
-from .user import User 
+# Pydantic models package 

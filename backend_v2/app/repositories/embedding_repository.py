@@ -8,7 +8,7 @@ class EmbeddingRepository:
     """Repository for managing embeddings in ChromaDB"""
     
     def __init__(self):
-        self.client = chromadb.HttpClient(host="localhost", port=8000)
+        self.client = chromadb.PersistentClient(path=os.path.abspath(settings.CHROMA_DB_PATH))
         self.collection = self.client.get_or_create_collection(name=settings.EMBEDDING_COLLECTION_NAME)
         self.embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL)
     

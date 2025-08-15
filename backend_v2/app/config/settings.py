@@ -23,17 +23,6 @@ class Settings:
     CHROMA_DB_PATH: str = os.path.join(os.path.dirname(__file__), "../../chroma_db")
     EMBEDDING_COLLECTION_NAME: str = "embeddings"
     
-    # PostgreSQL Database Configuration
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", 
-        "postgresql://username:password@localhost:5432/aeva_db"
-    )
-    
-    # JWT Configuration
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-    
     # Model Configuration
     EMBEDDING_MODEL: str = "multi-qa-MPNET-base-dot-v1"
     CHUNK_SIZE: int = 250
