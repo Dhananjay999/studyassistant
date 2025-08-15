@@ -1,4 +1,3 @@
-from yarl import Query
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Request, Header
 from typing import List, Optional
 from ..models.schemas import UploadResponse, ErrorResponse, UserID
