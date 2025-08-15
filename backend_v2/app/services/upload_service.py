@@ -1,6 +1,6 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import UploadFile
-from ..models.schemas import UploadResponse
+from ..models.schemas import UploadResponse, UserID
 from ..utils.pdf_processor import PDFProcessor
 from ..repositories.embedding_repository import EmbeddingRepository
 
@@ -11,7 +11,7 @@ class UploadService:
         self.pdf_processor = PDFProcessor()
         self.embedding_repo = EmbeddingRepository()
     
-    def process_uploaded_files(self, files: List[UploadFile]) -> UploadResponse:
+    def process_uploaded_files(self, files: List[UploadFile], user_id: UserID) -> UploadResponse:
         """Process uploaded PDF files and store embeddings"""
         if not files:
             raise ValueError("No files provided")
@@ -43,7 +43,7 @@ class UploadService:
                 ]
                 
                 # Store embeddings
-                self.embedding_repo.add_documents(documents, ids, metadatas)
+                self.embedding_repo.add_documents(documents=documents, ids=ids, metadatas=metadatas, user_id=user_id)
                 
                 total_chunks += len(chunks)
                 processed_files += 1
@@ -58,7 +58,7 @@ class UploadService:
         )
     
     def get_upload_stats(self) -> Dict[str, Any]:
-        """Get statistics about uploaded documents"""
+        """Get statistics about uploaded documents for a specific user"""
         try:
             count = self.embedding_repo.get_collection_count()
             return {

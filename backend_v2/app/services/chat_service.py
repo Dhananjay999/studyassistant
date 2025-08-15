@@ -1,5 +1,5 @@
 from typing import Dict, Any, List
-from ..models.schemas import UserChatRequest, SearchContext
+from ..models.schemas import UserChatRequest, SearchContext, UserID
 from ..repositories.embedding_repository import EmbeddingRepository
 from ..services.web_search_service import WebSearchService
 from ..services.llm_service import LLMService
@@ -12,11 +12,11 @@ class ChatService:
         self.web_search_service = WebSearchService()
         self.llm_service = LLMService()
     
-    def process_chat_request(self, request: UserChatRequest) -> Dict[str, Any]:
+    def process_chat_request(self, request: UserChatRequest, user_id: UserID) -> Dict[str, Any]:
         """Process chat request and return response"""
         try:
             if request.search_mode == "study_material":
-                return self._handle_study_material_query(request)
+                return self._handle_study_material_query(request, user_id)
             elif request.search_mode == "web_search":
                 return self._handle_web_search_query(request)
             else:
@@ -25,12 +25,13 @@ class ChatService:
         except Exception as e:
             raise Exception(f"Error processing chat request: {str(e)}")
     
-    def _handle_study_material_query(self, request: UserChatRequest) -> Dict[str, Any]:
+    def _handle_study_material_query(self, request: UserChatRequest, user_id: UserID) -> Dict[str, Any]:
         """Handle study material search using embeddings"""
         # Search for relevant chunks in embeddings
         search_results = self.embedding_repo.search_similar(
-            request.message, 
-            request.n_results
+            query=request.message, 
+            user_id=user_id,
+            n_results=request.n_results
         )
         
         # Extract documents and metadata
@@ -100,7 +101,7 @@ class ChatService:
             return self.llm_service.format_chat_response(answer)
     
     def get_embedding_stats(self) -> Dict[str, Any]:
-        """Get statistics about stored embeddings"""
+        """Get statistics about stored embeddings for a specific user"""
         try:
             count = self.embedding_repo.get_collection_count()
             return {

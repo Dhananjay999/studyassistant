@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, status, UploadFile, File
-from typing import List
-from ..models.schemas import UploadResponse, ErrorResponse
+from yarl import Query
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Request, Header
+from typing import List, Optional
+from ..models.schemas import UploadResponse, ErrorResponse, UserID
 from ..services.upload_service import UploadService
 
 router = APIRouter(prefix="/upload", tags=["File Upload"])
@@ -9,7 +10,10 @@ router = APIRouter(prefix="/upload", tags=["File Upload"])
 upload_service = UploadService()
 
 @router.post("/", response_model=UploadResponse)
-async def upload_documents(files: List[UploadFile] = File(...)):
+async def upload_documents(
+    files: List[UploadFile] = File(...),
+    user_id: UserID = Header(..., alias="user-id", description="User ID for document ownership")
+):
     """Upload and process PDF documents"""
     try:
         if not files:
@@ -26,7 +30,7 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                     detail=f"Invalid file type: {file.filename}. Only PDF files are allowed."
                 )
         
-        response = upload_service.process_uploaded_files(files)
+        response = upload_service.process_uploaded_files(files, user_id)
         return response
         
     except ValueError as e:
@@ -62,4 +66,16 @@ async def delete_collection():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting collection: {str(e)}"
+        )  
+
+@router.get("/debug")
+async def debug_collection():
+    """Debug endpoint to check collection information"""
+    try:
+        debug_info = upload_service.embedding_repo.debug_collection_info()
+        return debug_info
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting debug info: {str(e)}"
         ) 

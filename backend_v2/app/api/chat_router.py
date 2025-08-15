@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
-from typing import List
-from ..models.schemas import UserChatRequest, ChatResponse, ErrorResponse
+from fastapi import APIRouter, HTTPException, status, Request, Header
+from typing import List, Optional
+from ..models.schemas import UserChatRequest, ChatResponse, ErrorResponse, UserID
 from ..services.chat_service import ChatService
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -9,16 +9,19 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 chat_service = ChatService()
 
 @router.post("/", response_model=ChatResponse)
-async def chat_endpoint(request: UserChatRequest):
+async def chat_endpoint(
+    chat_request: UserChatRequest,
+    user_id: UserID = Header(..., alias="user-id", description="User ID for chat session")
+):
     """Process chat requests"""
     try:
-        if not request.message.strip():
+        if not chat_request.message.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message cannot be empty"
             )
         
-        response = chat_service.process_chat_request(request)
+        response = chat_service.process_chat_request(request=chat_request,user_id=user_id)
         return ChatResponse(**response)
         
     except ValueError as e:

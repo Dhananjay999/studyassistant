@@ -1,7 +1,10 @@
 from enum import Enum
 from typing_extensions import Literal
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
+
+# User ID type definition - change this type to modify user_id type across the entire application
+UserID = str  # Can be changed to int, UUID, or any other type in the future
 
 class UserChatRequest(BaseModel):
     """User chat request model"""
@@ -23,7 +26,7 @@ class UserChatRequest(BaseModel):
         if v not in allowed_modes:
             raise ValueError(f"search_mode must be one of: {allowed_modes}")
         return v
-
+    
 class ChatResponse(BaseModel):
     """Chat response model"""
     answer_source: str = Field(..., description="Source of the answer")
