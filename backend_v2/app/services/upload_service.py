@@ -75,3 +75,24 @@ class UploadService:
     def delete_collection(self) -> None:
         """Delete the entire collection"""
         self.embedding_repo.delete_collection()
+    
+    def get_file_names_by_user_id(self, user_id: UserID) -> List[str]:
+        """Get list of file names for a specific user"""
+        try:
+            return self.embedding_repo.get_file_names_by_user_id(user_id)
+        except Exception as e:
+            raise Exception(f"Error retrieving file names for user {user_id}: {str(e)}")
+    
+    def delete_file_by_user_id(self, user_id: UserID, file_name: str) -> int:
+        """Delete all embeddings for a specific file of a user"""
+        try:
+            return self.embedding_repo.delete_file_by_user_id(user_id, file_name)
+        except Exception as e:
+            raise Exception(f"Error deleting file {file_name} for user {user_id}: {str(e)}")
+    
+    def delete_all_files_by_user_id(self, user_id: UserID) -> int:
+        """Delete all embeddings for a specific user"""
+        try:
+            return self.embedding_repo.delete_all_files_by_user_id(user_id)
+        except Exception as e:
+            raise Exception(f"Error deleting all files for user {user_id}: {str(e)}")

@@ -69,4 +69,62 @@ class EmbeddingRepository:
                 "sample_metadata": all_docs.get('metadatas', [])[:3] if all_docs.get('metadatas') else []
             }
         except Exception as e:
-            return {"error": str(e)} 
+            return {"error": str(e)}
+    
+    def get_file_names_by_user_id(self, user_id: UserID) -> List[str]:
+        """Get list of unique file names for a specific user"""
+        try:
+            # Get all documents for the specific user
+            all_docs = self.collection.get(
+                where={"user_id": str(user_id)}
+            )
+            
+            # Extract unique file names from metadata
+            file_names = set()
+            if all_docs.get('metadatas'):
+                for metadata in all_docs['metadatas']:
+                    if metadata and 'doc_name' in metadata:
+                        file_names.add(metadata['doc_name'])
+            
+            return sorted(list(file_names))
+        except Exception as e:
+            raise Exception(f"Error retrieving file names for user {user_id}: {str(e)}")
+    
+    def delete_file_by_user_id(self, user_id: UserID, file_name: str) -> int:
+        """Delete all embeddings for a specific file of a user"""
+        try:
+            # Get all documents for the specific user and file
+            all_docs = self.collection.get(
+                where={"$and": [
+                    {"user_id": str(user_id)},
+                    {"doc_name": file_name}
+                ]}
+            )
+            
+            if not all_docs.get('ids'):
+                return 0  # No documents found
+            
+            # Delete the documents by their IDs
+            self.collection.delete(ids=all_docs['ids'])
+            
+            return len(all_docs['ids'])
+        except Exception as e:
+            raise Exception(f"Error deleting file {file_name} for user {user_id}: {str(e)}")
+    
+    def delete_all_files_by_user_id(self, user_id: UserID) -> int:
+        """Delete all embeddings for a specific user"""
+        try:
+            # Get all documents for the specific user
+            all_docs = self.collection.get(
+                where={"user_id": str(user_id)}
+            )
+            
+            if not all_docs.get('ids'):
+                return 0  # No documents found
+            
+            # Delete the documents by their IDs
+            self.collection.delete(ids=all_docs['ids'])
+            
+            return len(all_docs['ids'])
+        except Exception as e:
+            raise Exception(f"Error deleting all files for user {user_id}: {str(e)}") 

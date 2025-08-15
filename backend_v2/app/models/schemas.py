@@ -40,6 +40,25 @@ class UploadResponse(BaseModel):
     files_processed: int = Field(..., description="Number of files processed")
     chunks_created: int = Field(..., description="Number of chunks created")
 
+class FileListResponse(BaseModel):
+    """File list response model"""
+    user_id: UserID = Field(..., description="User ID")
+    file_names: List[str] = Field(..., description="List of file names")
+    total_files: int = Field(..., description="Total number of files")
+
+class DeleteFileResponse(BaseModel):
+    """Delete file response model"""
+    user_id: UserID = Field(..., description="User ID")
+    file_name: str = Field(..., description="Name of the deleted file")
+    chunks_deleted: int = Field(..., description="Number of chunks deleted")
+    message: str = Field(..., description="Status message")
+
+class DeleteAllFilesResponse(BaseModel):
+    """Delete all files response model"""
+    user_id: UserID = Field(..., description="User ID")
+    chunks_deleted: int = Field(..., description="Number of chunks deleted")
+    message: str = Field(..., description="Status message")
+
 class ErrorResponse(BaseModel):
     """Error response model"""
     error: str = Field(..., description="Error message")
