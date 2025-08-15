@@ -1,7 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat_router, upload_router
+from app.api import chat_router, upload_router, auth_router
 from app.config.settings import settings
+from app.config.database import engine
+from app.models.user import Base
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
 
 # Create FastAPI app
 app = FastAPI(
@@ -20,6 +25,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router.router)
 app.include_router(chat_router.router)
 app.include_router(upload_router.router)
 
