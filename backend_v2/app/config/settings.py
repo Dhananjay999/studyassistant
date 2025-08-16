@@ -23,6 +23,18 @@ class Settings:
     CHROMA_DB_PATH: str = os.path.join(os.path.dirname(__file__), "../../chroma_db")
     EMBEDDING_COLLECTION_NAME: str = "embeddings"
     
+    # PostgreSQL Database Configuration
+    DB_HOST: str = os.getenv("DB_HOST", "aws-1-ap-southeast-1.pooler.supabase.com")
+    DB_NAME: str = os.getenv("DB_NAME", "postgres")
+    DB_USER: str = os.getenv("DB_USER", "postgres.kpyhigcqxrhliiyeteiv")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
+    DB_PORT: str = os.getenv("DB_PORT", "6543")
+    
+    # JWT Configuration
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    
     # Model Configuration
     EMBEDDING_MODEL: str = "multi-qa-MPNET-base-dot-v1"
     CHUNK_SIZE: int = 250

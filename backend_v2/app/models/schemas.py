@@ -84,3 +84,33 @@ class QueryClassification(Enum):
     MODERATION = "moderation"
     MISC = "misc"
     SORRY = "sorry"
+
+# User Authentication Schemas
+class UserCreate(BaseModel):
+    """User creation model"""
+    email: str = Field(..., description="User email")
+    password: str = Field(..., description="User password")
+    fullname: str = Field(..., description="User full name")
+
+class UserLogin(BaseModel):
+    """User login model"""
+    email: str = Field(..., description="User email")
+    password: str = Field(..., description="User password")
+
+class UserResponse(BaseModel):
+    """User response model"""
+    id: int = Field(..., description="User ID")
+    email: str = Field(..., description="User email")
+    fullname: str = Field(..., description="User full name")
+
+class LoginResponse(BaseModel):
+    """Login response model"""
+    user: UserResponse = Field(..., description="User information")
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")
+    message: str = Field(..., description="Login status message")
+
+class TokenData(BaseModel):
+    """Token data model"""
+    user_id: int = Field(..., description="User ID from token")
+    email: str = Field(..., description="User email from token")

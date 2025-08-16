@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat_router, upload_router
+from app.api import chat_router, upload_router, auth_router
 from app.config.settings import settings
+from app.config.database import db_manager
 
 # Create FastAPI app
 app = FastAPI(
@@ -22,6 +23,7 @@ app.add_middleware(
 # Include routers
 app.include_router(chat_router.router)
 app.include_router(upload_router.router)
+app.include_router(auth_router.router)
 
 @app.get("/")
 async def root():
@@ -39,6 +41,11 @@ async def health_check():
         "status": "healthy",
         "version": settings.API_VERSION
     }
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on application shutdown"""
+    db_manager.close_pool()
 
 if __name__ == "__main__":
     import uvicorn

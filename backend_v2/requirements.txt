@@ -5,3 +5,7 @@ python-dotenv
 chromadb
 sentence_transformers
 PyPDF2
+psycopg2-binary
+sqlalchemy
+python-jose[cryptography]
+passlib[bcrypt]
