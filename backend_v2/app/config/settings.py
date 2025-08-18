@@ -29,6 +29,12 @@ class Settings:
     DB_USER: str = os.getenv("DB_USER", "postgres.kpyhigcqxrhliiyeteiv")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     DB_PORT: str = os.getenv("DB_PORT", "6543")
+
+    # ChromaDB Configuration
+    CHROMA_DB_API_KEY: str = os.getenv("CHROMA_DB_API_KEY", "")
+    CHROMA_DB_TENANT: str = os.getenv("CHROMA_DB_TENANT", "")
+    CHROMA_DB_DATABASE: str = os.getenv("CHROMA_DB_DATABASE", "")
+    CHROMA_DB_HOST: str = os.getenv("CHROMA_DB_HOST", "api.trychroma.com")
     
     # JWT Configuration
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
