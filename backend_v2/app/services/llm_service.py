@@ -60,11 +60,16 @@ class LLMService:
         }
 
         try:
+            # Disable SSL verification for development
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            
             response = requests.post(
                 self.api_url,
                 headers=self.headers,
                 json=data,
-                timeout=60
+                timeout=60,
+                verify=False  # Disable SSL verification
             )
             response.raise_for_status()
             result = response.json()

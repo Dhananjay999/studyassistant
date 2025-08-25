@@ -31,7 +31,8 @@ class ChatService:
         search_results = self.embedding_repo.search_similar(
             query=request.message, 
             user_id=user_id,
-            n_results=request.n_results
+            n_results=request.n_results,
+            pdf_names=request.pdf_names
         )
         
         # Extract documents and metadata

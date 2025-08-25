@@ -43,7 +43,8 @@ class Settings:
     
     # Model Configuration
     EMBEDDING_MODEL: str = "multi-qa-MPNET-base-dot-v1"
-    CHUNK_SIZE: int = 250
+    CHUNK_SIZE: int = 1000  # Increased for better context
+    MAX_CHUNKS_PER_PAGE: int = 10  # Limit chunks per page for large PDFs
     
     # API Keys
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
@@ -55,8 +56,13 @@ class Settings:
     DEFAULT_SEARCH_RESULTS: int = 5
     
     # File Upload Configuration
-    MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
+    MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB (increased for large PDFs)
     ALLOWED_FILE_TYPES: List[str] = [".pdf"]
+    
+    # Large PDF Processing Configuration
+    MAX_PAGES_PER_PDF: int = 1000  # Maximum pages to process
+    BATCH_SIZE_FOR_EMBEDDINGS: int = 20  # Smaller batches to prevent timeouts
+    EMBEDDING_TIMEOUT: int = 120  # 2 minutes timeout for embedding creation
 
 # Global settings instance
 settings = Settings() 

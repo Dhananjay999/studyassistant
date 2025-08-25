@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from fastapi import UploadFile
 from ..models.schemas import UploadResponse, UserID
 from ..utils.pdf_processor import PDFProcessor
@@ -12,7 +12,7 @@ class UploadService:
         self.embedding_repo = EmbeddingRepository()
     
     def process_uploaded_files(self, files: List[UploadFile], user_id: UserID) -> UploadResponse:
-        """Process uploaded PDF files and store embeddings"""
+        """Process uploaded PDF files and store embeddings with rollback on failure"""
         if not files:
             raise ValueError("No files provided")
         
@@ -23,13 +23,18 @@ class UploadService:
             try:
                 # Validate file
                 if not self.pdf_processor.validate_pdf_file(file):
-                    raise ValueError(f"Invalid file: {file.filename}. Only PDF files under 10MB are allowed.")
+                    raise ValueError(f"Invalid file: {file.filename}. Only PDF files under 50MB are allowed.")
+                
+                print(f"Processing file: {file.filename}")
                 
                 # Process PDF and extract chunks
                 chunks = self.pdf_processor.extract_text_from_pdf(file)
-                
+
                 if not chunks:
+                    print(f"No content found in {file.filename}, skipping...")
                     continue  # Skip files with no content
+                
+                print(f"Extracted {len(chunks)} chunks from {file.filename}")
                 
                 # Prepare data for embedding storage
                 documents = [chunk.content for chunk in chunks]
@@ -42,13 +47,23 @@ class UploadService:
                     } for chunk in chunks
                 ]
                 
-                # Store embeddings
+                # Store embeddings (with automatic rollback on failure)
                 self.embedding_repo.add_documents(documents=documents, ids=ids, metadatas=metadatas, user_id=user_id)
                 
                 total_chunks += len(chunks)
                 processed_files += 1
                 
+                print(f"Successfully processed {file.filename}")
+                
             except Exception as e:
+                print(f"Error processing file {file.filename}: {str(e)}")
+                # Remove any partial embeddings for this file if they exist
+                try:
+                    self.embedding_repo.delete_file_by_user_id_silent(user_id, file.filename)
+                    print(f"Cleaned up partial embeddings for {file.filename}")
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to cleanup partial embeddings for {file.filename}: {str(cleanup_error)}")
+                
                 raise Exception(f"Error processing file {file.filename}: {str(e)}")
         
         return UploadResponse(

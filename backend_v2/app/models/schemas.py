@@ -11,6 +11,7 @@ class UserChatRequest(BaseModel):
     message: str = Field(..., description="User's query message")
     n_results: int = Field(default=5, description="Number of results to return")
     search_mode: str = Field(default="study_material", description="Search mode: study_material or web_search")
+    pdf_names: Optional[List[str]] = Field(default=None, description="List of specific PDF names to search in (only for study_material mode)")
     
     @field_validator('n_results')
     def validate_n_results(cls, v):

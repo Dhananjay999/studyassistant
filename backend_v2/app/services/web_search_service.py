@@ -22,11 +22,16 @@ class WebSearchService:
         params = {"q": query}
         
         try:
+            # Disable SSL verification for development
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            
             response = requests.post(
                 self.search_url, 
                 json=params, 
                 headers=headers,
-                timeout=30
+                timeout=30,
+                verify=False  # Disable SSL verification
             )
             response.raise_for_status()
             
