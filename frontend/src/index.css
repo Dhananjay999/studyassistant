@@ -8,104 +8,66 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 220 25% 97%;
-    --foreground: 180 65% 15%;
-
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
-    --card-foreground: 180 65% 15%;
-
+    --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 180 65% 15%;
-
-    --primary: 180 65% 15%;
-    --primary-foreground: 220 25% 97%;
-
-    --secondary: 351 65% 45%;
-    --secondary-foreground: 220 25% 97%;
-
-    --muted: 351 25% 85%;
-    --muted-foreground: 180 25% 45%;
-
-    --accent: 351 45% 65%;
-    --accent-foreground: 220 25% 97%;
-
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-
-    --border: 351 25% 85%;
-    --input: 220 15% 92%;
-    --ring: 180 65% 15%;
-
-    /* Academic theme colors */
-    --academic-teal: 180 65% 15%;
-    --academic-burgundy: 351 65% 35%;
-    --academic-rose: 351 45% 65%;
-    --academic-light-rose: 351 25% 85%;
-    
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(var(--academic-teal)), hsl(var(--academic-burgundy)));
-    --gradient-secondary: linear-gradient(135deg, hsl(var(--academic-rose)), hsl(var(--academic-light-rose)));
-    --gradient-subtle: linear-gradient(180deg, hsl(var(--background)), hsl(var(--academic-light-rose) / 0.3));
-    
-    /* Shadows */
-    --shadow-elegant: 0 10px 30px -10px hsl(var(--academic-teal) / 0.2);
-    --shadow-glow: 0 0 40px hsl(var(--academic-rose) / 0.3);
-
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
-
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --academic-teal: 173 58% 39%;
+    --academic-burgundy: 197 37% 24%;
+    --academic-rose: 12 76% 61%;
+    --academic-light-rose: 43 74% 66%;
   }
 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
-
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-
     --primary: 210 40% 98%;
     --primary-foreground: 222.2 47.4% 11.2%;
-
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
-
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
-
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
-
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --academic-teal: 173 58% 39%;
+    --academic-burgundy: 197 37% 24%;
+    --academic-rose: 12 76% 61%;
+    --academic-light-rose: 43 74% 66%;
   }
 }
 
@@ -113,7 +75,6 @@ All colors MUST be HSL.
   * {
     @apply border-border;
   }
-
   body {
     @apply bg-background text-foreground;
   }
@@ -121,83 +82,83 @@ All colors MUST be HSL.
 
 @layer components {
   .prose-chat {
-    @apply prose prose-sm prose-gray max-w-none;
-  }
-  
-  .prose-chat > *:first-child {
-    margin-top: 0 !important;
-  }
-  
-  .prose-chat > *:last-child {
-    margin-bottom: 0 !important;
-  }
-  
-  .prose-chat h1 {
-    @apply text-lg font-bold mb-2 text-foreground;
-  }
-  
-  .prose-chat h2 {
-    @apply text-base font-bold mb-2 text-foreground;
-  }
-  
-  .prose-chat h3 {
-    @apply text-sm font-bold mb-1 text-foreground;
+    @apply text-sm leading-relaxed;
   }
   
   .prose-chat p {
-    @apply mb-2 last:mb-0 text-sm text-foreground;
-  }
-  
-  .prose-chat p:first-child {
-    @apply mt-0;
-  }
-  
-  .prose-chat > p:first-child {
-    @apply mt-0;
+    @apply mb-2 last:mb-0;
   }
   
   .prose-chat ul {
-    @apply list-disc list-outside mb-2 space-y-1 pl-5;
+    @apply list-disc list-inside mb-2;
   }
   
   .prose-chat ol {
-    @apply list-decimal list-outside mb-2 space-y-1 pl-5;
+    @apply list-decimal list-inside mb-2;
   }
   
   .prose-chat li {
-    @apply text-sm text-foreground;
+    @apply mb-1;
   }
   
-  .prose-chat li::marker {
-    color: hsl(var(--academic-teal)) !important;
+  /* KaTeX Math Styling */
+  .katex {
+    font-size: 1.1em;
   }
   
-  .prose-chat ul li::marker {
-    color: hsl(var(--academic-teal)) !important;
+  .katex-display {
+    margin: 1em 0;
   }
   
-  .prose-chat ol li::marker {
-    color: hsl(var(--academic-teal)) !important;
+  /* Dark mode adjustments for KaTeX */
+  .dark .katex {
+    color: hsl(var(--foreground));
   }
   
-  .prose-chat code {
-    @apply bg-muted/50 px-1 py-0.5 rounded text-xs font-mono text-foreground;
+  .dark .katex .mord {
+    color: hsl(var(--foreground));
   }
   
-  .prose-chat pre {
-    @apply bg-muted/50 p-2 rounded text-xs font-mono overflow-x-auto mb-2 text-foreground;
+  .dark .katex .mbin,
+  .dark .katex .mrel {
+    color: hsl(var(--foreground));
   }
   
-  .prose-chat blockquote {
-    @apply border-l-4 border-academic-teal pl-3 italic text-sm mb-2 text-foreground;
+  .dark .katex .mopen,
+  .dark .katex .mclose {
+    color: hsl(var(--foreground));
+  }
+  
+  .dark .katex .mpunct {
+    color: hsl(var(--foreground));
+  }
+  
+  .dark .katex .mord.text {
+    color: hsl(var(--foreground));
+  }
+  
+  .dark .katex .mord.mathnormal {
+    color: hsl(var(--foreground));
+  }
+  
+  .dark .katex .mord.mathdefault {
+    color: hsl(var(--foreground));
   }
   
   .prose-chat strong {
-    @apply font-semibold text-foreground;
+    @apply font-semibold;
   }
   
   .prose-chat em {
-    @apply italic text-foreground;
+    @apply italic;
+  }
+  
+  .prose-chat code {
+    @apply bg-background/50 px-1 py-0.5 rounded text-sm font-mono;
+  }
+  
+  .prose-chat pre {
+    @apply bg-background/50 p-2 rounded text-sm font-mono overflow-x-auto;
   }
   
   .prose-chat a {
@@ -205,11 +166,167 @@ All colors MUST be HSL.
   }
   
   .scrollbar-hide {
-    -ms-overflow-style: none;  /* Internet Explorer 10+ */
-    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
   
   .scrollbar-hide::-webkit-scrollbar {
-    display: none;  /* Safari and Chrome */
+    display: none;
+  }
+  
+  /* Mobile-specific improvements */
+  @media (max-width: 768px) {
+    /* Better touch targets for mobile */
+    button, 
+    [role="button"],
+    input[type="button"],
+    input[type="submit"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    
+    /* Better scrolling on mobile */
+    .overflow-y-auto {
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Improve text selection */
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    /* Better input focus on mobile */
+    input:focus,
+    textarea:focus {
+      font-size: 16px; /* Prevents zoom on iOS */
+    }
+    
+    /* Mobile sources panel improvements */
+    .mobile-sources-panel {
+      @apply p-4;
+    }
+    
+    .mobile-sources-panel .card {
+      @apply p-4 mb-3;
+    }
+    
+    .mobile-sources-panel .checkbox {
+      @apply w-5 h-5;
+    }
+    
+    .mobile-sources-panel .button {
+      @apply h-10 px-4;
+    }
+    
+    /* Mobile bottom sheet improvements */
+    [data-radix-drawer-content] {
+      @apply rounded-t-xl;
+    }
+    
+    /* Better mobile file items */
+    .mobile-file-item {
+      @apply p-4 border rounded-lg mb-3 transition-all duration-200;
+    }
+    
+    .mobile-file-item:hover {
+      @apply bg-muted/50;
+    }
+    
+    .mobile-file-item.selected {
+      @apply ring-2 ring-academic-teal/30 bg-academic-teal/5;
+    }
+  }
+  
+  /* Chat animations */
+  .chat-message-enter {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  
+  .chat-message-enter-active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 200ms ease-in, transform 200ms ease-out;
+  }
+  
+  .chat-message-exit {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  
+  .chat-message-exit-active {
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 200ms ease-in, transform 200ms ease-out;
+  }
+  
+  /* Loading animation */
+  .loading-dots {
+    display: inline-block;
+  }
+  
+  .loading-dots::after {
+    content: '';
+    animation: loading-dots 1.5s infinite;
+  }
+  
+  @keyframes loading-dots {
+    0%, 20% {
+      content: '';
+    }
+    40% {
+      content: '.';
+    }
+    60% {
+      content: '..';
+    }
+    80%, 100% {
+      content: '...';
+    }
+  }
+  
+  /* Gradient backgrounds */
+  .bg-gradient-academic {
+    background: linear-gradient(135deg, hsl(var(--academic-teal)) 0%, hsl(var(--academic-burgundy)) 100%);
+  }
+  
+  .bg-gradient-academic-reverse {
+    background: linear-gradient(135deg, hsl(var(--academic-burgundy)) 0%, hsl(var(--academic-teal)) 100%);
+  }
+  
+  /* Glass morphism effects */
+  .glass {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  
+  .dark .glass {
+    background: rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  /* Hover effects */
+  .hover-lift {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  }
+  
+  /* Focus styles */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-academic-teal/50 focus:ring-offset-2 focus:ring-offset-background;
+  }
+  
+  /* Custom button variants */
+  .btn-academic {
+    @apply bg-gradient-to-r from-academic-teal to-academic-burgundy text-white hover:from-academic-teal/90 hover:to-academic-burgundy/90 shadow-lg hover:shadow-xl transition-all duration-200;
+  }
+  
+  .btn-academic-outline {
+    @apply border-2 border-academic-teal/30 text-academic-teal hover:bg-academic-teal/10 hover:border-academic-teal/50 transition-all duration-200;
   }
 }

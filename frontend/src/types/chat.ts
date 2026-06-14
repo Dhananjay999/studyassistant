@@ -89,4 +89,29 @@ export interface ChatState {
 // Utility function types
 export type MessageIdGenerator = () => string;
 export type MetadataMapper = (meta: APIMetadata) => SourceInfo;
-export type PDFMetadataGuard = (meta: APIMetadata) => meta is PDFMetadata; 
+export type PDFMetadataGuard = (meta: APIMetadata) => meta is PDFMetadata;
+
+// Authentication Types
+export interface User {
+  id: number;
+  email: string;
+  fullname: string;
+}
+
+export interface AuthResponse {
+  user: User;
+  access_token: string;
+  token_type: string;
+  message: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  fullname: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+} 

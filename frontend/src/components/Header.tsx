@@ -1,12 +1,27 @@
 import { Button } from "@/components/ui/button";
-import { BookOpen, Brain, MessageSquare } from "lucide-react";
+import { BookOpen, Brain, MessageSquare, User as UserIcon, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
 import AuthModal from "./AuthModal";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+import { User } from "@/types";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ThemeToggle } from "./ThemeToggle";
 
 const Header = () => {
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const { user, isAuthenticated, logout, loading } = useAuth();
+  const { toast } = useToast();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -26,6 +41,31 @@ const Header = () => {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [lastScrollY]);
+
+  const handleAuthSuccess = (user: User, token: string) => {
+    // This will be handled by the AuthModal component
+    setIsAuthModalOpen(false);
+  };
+
+  const handleLogout = () => {
+    logout();
+    toast({
+      title: "Logged Out Successfully",
+      description: "You have been logged out of your account.",
+      className: "bg-gradient-to-r from-academic-teal/10 to-academic-burgundy/10 border-2 border-academic-teal/30 text-academic-teal shadow-lg",
+    });
+  };
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (!user?.fullname) return "U";
+    return user.fullname
+      .split(" ")
+      .map(name => name.charAt(0))
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   return (
     <>
@@ -60,21 +100,54 @@ const Header = () => {
           </nav>
 
           <div className="flex items-center gap-2 md:gap-3">
-            <Button 
-              variant="academic" 
-              size="sm" 
-              className="text-xs md:text-sm px-3 md:px-4 py-1.5 md:py-2"
-              onClick={() => setIsAuthModalOpen(true)}
-            >
-              Login / Sign Up
-            </Button>
+            <ThemeToggle />
+            {!loading && (
+              <>
+                {isAuthenticated && user ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="bg-gradient-to-r from-academic-teal to-academic-burgundy text-white text-xs font-medium">
+                            {getUserInitials()}
+                          </AvatarFallback>
+                        </Avatar>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-56" align="end" forceMount>
+                      <DropdownMenuLabel className="font-normal">
+                        <div className="flex flex-col space-y-1">
+                          <p className="text-sm font-medium leading-none">{user.fullname}</p>
+                          <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
+                        </div>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleLogout} className="text-academic-burgundy">
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Log out</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Button 
+                    variant="academic" 
+                    size="sm" 
+                    className="text-xs md:text-sm px-3 md:px-4 py-1.5 md:py-2"
+                    onClick={() => setIsAuthModalOpen(true)}
+                  >
+                    Login / Sign Up
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         </div>
       </header>
       
       <AuthModal 
         isOpen={isAuthModalOpen} 
-        onClose={() => setIsAuthModalOpen(false)} 
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={handleAuthSuccess}
       />
     </>
   );

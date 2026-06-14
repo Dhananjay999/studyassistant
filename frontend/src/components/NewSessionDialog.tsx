@@ -67,26 +67,26 @@ const NewSessionDialog: React.FC<NewSessionDialogProps> = ({
         <RefreshCw className="w-6 h-6 text-white" />
       </div>
       <h2 className="text-lg font-bold bg-gradient-to-r from-academic-burgundy to-academic-rose bg-clip-text text-transparent mb-2 text-center">
-        Start New Session
-      </h2>
+          Start New Session
+        </h2>
       <p className="text-sm text-muted-foreground leading-relaxed mb-6 text-center">
-        This will clear all {selectedMode === 'pdf' ? 'PDF files and chat history' : 'web search conversations'} from your current session.
-        <br />
-        <span className="text-academic-burgundy font-medium">This action cannot be undone.</span>
-      </p>
+          This will clear all {selectedMode === 'pdf' ? 'PDF files and chat history' : 'web search conversations'} from your current session.
+          <br />
+          <span className="text-academic-burgundy font-medium">This action cannot be undone.</span>
+        </p>
       <div className="flex gap-3 w-full">
-        <button
-          onClick={onCancel}
+          <button
+            onClick={onCancel}
           className="flex-1 px-3 py-3 border-2 border-academic-teal/30 text-academic-teal hover:bg-academic-teal/10 hover:border-academic-teal/50 transition-all duration-200 rounded-lg text-sm font-medium"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={onConfirm}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
           className="flex-1 px-3 py-3 bg-gradient-to-r from-academic-teal to-academic-burgundy text-white hover:from-academic-teal/90 hover:to-academic-burgundy/90 shadow-lg hover:shadow-xl transition-all duration-200 rounded-lg text-sm font-medium"
-        >
-          Start New
-        </button>
+          >
+            Start New
+          </button>
       </div>
     </div>
   );

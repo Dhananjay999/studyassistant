@@ -3,22 +3,36 @@ from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Optional
 from ..config.settings import settings
 from ..models.schemas import UserID
+from pathlib import Path
 
 
 class EmbeddingRepository:
     """Repository for managing embeddings in ChromaDB"""
 
     def __init__(self):
-        self.client = chromadb.CloudClient(
-  api_key='ck-Ebcmu7Zd6LYcRBgzYZ9SyXUzKHw4s9HFtYjNKbMZHTxs',
-  tenant='feaddcfe-415a-4309-acc3-ec837bd56d2e',
-  database='studyAssistant'
-)
+        self.client = self._create_client()
         
         self.collection = self.client.get_or_create_collection(
             name=settings.EMBEDDING_COLLECTION_NAME
         )
-        self.embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL)
+        self.embedding_model = None
+
+    def _create_client(self):
+        """Create a Chroma client, preferring a local persistent store for development."""
+        local_path = Path(settings.CHROMA_DB_PATH)
+        local_path.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if settings.CHROMA_DB_API_KEY and settings.CHROMA_DB_TENANT and settings.CHROMA_DB_DATABASE:
+                return chromadb.CloudClient(
+                    api_key=settings.CHROMA_DB_API_KEY,
+                    tenant=settings.CHROMA_DB_TENANT,
+                    database=settings.CHROMA_DB_DATABASE,
+                )
+        except Exception:
+            pass
+
+        return chromadb.PersistentClient(path=str(local_path))
 
     def create_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Create embeddings for multiple texts at once with timeout handling"""
@@ -33,6 +47,9 @@ class EmbeddingRepository:
         signal.alarm(settings.EMBEDDING_TIMEOUT)
         
         try:
+            if self.embedding_model is None:
+                self.embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL)
+
             print(f"Creating embeddings for {len(texts)} texts...")
             start_time = time.time()
             

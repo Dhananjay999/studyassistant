@@ -16,25 +16,28 @@ class Settings:
     # CORS Configuration
     ALLOWED_ORIGINS: List[str] = os.getenv(
         "ALLOWED_ORIGINS", 
-        "http://localhost:8080,http://localhost:3000"
+        "http://localhost:5173,http://localhost:8080,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:8080"
     ).split(",")
     
     # Database Configuration
-    CHROMA_DB_PATH: str = os.path.join(os.path.dirname(__file__), "../../chroma_db")
     EMBEDDING_COLLECTION_NAME: str = "embeddings"
     
     # PostgreSQL Database Configuration
-    DB_HOST: str = os.getenv("DB_HOST", "aws-1-ap-southeast-1.pooler.supabase.com")
-    DB_NAME: str = os.getenv("DB_NAME", "postgres")
-    DB_USER: str = os.getenv("DB_USER", "postgres.kpyhigcqxrhliiyeteiv")
+    DB_HOST: str = os.getenv("DB_HOST", "localhost")
+    DB_NAME: str = os.getenv("DB_NAME", "aeva")
+    DB_USER: str = os.getenv("DB_USER", "aeva")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
-    DB_PORT: str = os.getenv("DB_PORT", "6543")
+    DB_PORT: str = os.getenv("DB_PORT", "5432")
 
     # ChromaDB Configuration
     CHROMA_DB_API_KEY: str = os.getenv("CHROMA_DB_API_KEY", "")
     CHROMA_DB_TENANT: str = os.getenv("CHROMA_DB_TENANT", "")
     CHROMA_DB_DATABASE: str = os.getenv("CHROMA_DB_DATABASE", "")
     CHROMA_DB_HOST: str = os.getenv("CHROMA_DB_HOST", "api.trychroma.com")
+    CHROMA_DB_PATH: str = os.getenv(
+        "CHROMA_DB_PATH",
+        os.path.join(os.path.dirname(__file__), "../../chroma_db")
+    )
     
     # JWT Configuration
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")

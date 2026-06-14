@@ -1,5 +1,5 @@
 import { API_ENDPOINTS, API_HEADERS, API_CONFIG, SEARCH_MODES } from '@/constants/api';
-import { APIRequest, APIResponse } from '@/types';
+import { APIRequest, APIResponse, AuthResponse, RegisterRequest, LoginRequest } from '@/types';
 import { getFingerprintId } from '@/utils/fingerprint';
 
 class ApiService {
@@ -18,16 +18,20 @@ class ApiService {
       // Get fingerprint ID for user identification
       const fingerprintId = await getFingerprintId();
       
+      // Get JWT token from localStorage
+      const token = localStorage.getItem('access_token');
+      
       // For FormData, don't set Content-Type header (browser sets it automatically)
       const baseHeaders = options.body instanceof FormData 
         ? { 'accept': 'application/json' }
         : { ...this.headers, ...options.headers };
       
-      // Add fingerprint ID to all requests
+      // Add fingerprint ID and JWT token to all requests
       const headers = {
         ...baseHeaders,
         'X-Fingerprint-ID': fingerprintId,
         'user-id': fingerprintId,
+        ...(token && { 'Authorization': `Bearer ${token}` }),
       };
 
       const response = await fetch(url, {
@@ -125,6 +129,21 @@ class ApiService {
         method: 'DELETE',
       }
     );
+  }
+
+  // Authentication methods
+  async register(userData: RegisterRequest): Promise<AuthResponse> {
+    return this.makeRequest<AuthResponse>(API_ENDPOINTS.REGISTER, {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async login(credentials: LoginRequest): Promise<AuthResponse> {
+    return this.makeRequest<AuthResponse>(API_ENDPOINTS.LOGIN, {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    });
   }
 }
 

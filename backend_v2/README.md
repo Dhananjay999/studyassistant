@@ -62,13 +62,18 @@ backend_v2/
    GROQ_API_KEY=your_groq_api_key
    X-API-KEY=your_serper_api_key
    DEBUG=False
-   ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+   ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost:3000
    ```
 
 4. **Run the Application**:
    ```bash
    python main.py
    ```
+
+   By default the backend now boots with local-friendly defaults:
+   - PostgreSQL points to `localhost:5432`
+   - ChromaDB uses a persistent local folder at `./chroma_db` when cloud credentials are not set
+   - CORS allows the common Vite ports used by the frontend
 
 ## Usage
 

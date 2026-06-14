@@ -28,12 +28,21 @@ class DatabaseManager:
             )
             logger.info("Database connection pool initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize database pool: {e}")
-            raise
+            self.pool = None
+            logger.warning(
+                "Database connection pool not available during startup: %s",
+                e
+            )
     
     @contextmanager
     def get_connection(self):
         """Get database connection from pool"""
+        if not self.pool:
+            raise RuntimeError(
+                "Database pool is not initialized. Set DB_HOST/DB_NAME/DB_USER/DB_PASSWORD "
+                "to a reachable PostgreSQL instance before using auth endpoints."
+            )
+
         conn = None
         try:
             conn = self.pool.getconn()

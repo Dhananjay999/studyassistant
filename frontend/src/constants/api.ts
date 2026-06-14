@@ -4,7 +4,10 @@ export const API_ENDPOINTS = {
   UPLOAD: '/upload/',
   GET_FILES: '/upload/files/',
   DELETE_FILE: '/upload/files',
-  DELETE_ALL_FILES: '/upload/files/all'
+  DELETE_ALL_FILES: '/upload/files/all',
+  // Authentication endpoints
+  REGISTER: '/auth/register',
+  LOGIN: '/auth/login'
 } as const;
 
 // API Headers
