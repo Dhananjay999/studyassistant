@@ -1,1 +1,0 @@
-# Backend V2 - Clean Architecture Implementation 

@@ -1,0 +1,64 @@
+[tool.poetry]
+name = "aeva-backend"
+version = "2.0.0"
+description = "Aeva study assistant backend"
+authors = ["Aeva Team"]
+readme = "README.md"
+packages = [{ include = "aeva", from = "." }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+flask = "^3.1.0"
+flask-smorest = "^0.45.0"
+flask-cors = "^5.0.0"
+marshmallow = "^3.26.0"
+dependency-injector = "^4.45.0"
+supabase = "^2.11.0"
+google-genai = ">=1.0.0"
+pyjwt = "^2.10.0"
+Pillow = "^11.1.0"
+python-dotenv = "^1.0.1"
+gunicorn = "^23.0.0"
+requests = "^2.32.0"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.9.0"
+mypy = "^1.14.0"
+poethepoet = "^0.32.0"
+pytest = "^8.3.0"
+
+[tool.poe.tasks]
+lint-check = "ruff check --config pyproject.toml"
+lint-fix = "ruff check --config pyproject.toml --fix"
+format-check = "ruff format --config pyproject.toml --check"
+format = "ruff format --config pyproject.toml"
+type-check = "mypy --config-file pyproject.toml"
+run = "flask --app aeva.app run --debug --port 8000"
+
+[tool.ruff]
+line-length = 80
+target-version = "py312"
+quote-style = "double"
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D100", "D104", "D107", "D203", "D213",
+    "ANN401", "COM812", "ISC001",
+    "PLR0913", "TRY003", "EM101", "EM102",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "F403"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -1,381 +1,134 @@
-import { API_CONFIG } from "@/constants";
+import { API_CONFIG, API_ENDPOINTS } from "@/constants/api";
+import type { AssistantRequest } from "@/types";
 
-// Browser-compatible EventEmitter implementation
-type EventListener = (...args: unknown[]) => void;
+type TokenGetter = () => string | null;
 
-class EventEmitter {
-  private events: Record<string, EventListener[]> = {};
+export interface StreamCallbacks {
+  onChunk: (content: string) => void;
+  onComplete: (fullContent: string, meta?: Record<string, unknown>) => void;
+  onClarification?: (data: Record<string, unknown>) => void;
+  onError: (error: string) => void;
+}
 
-  on(event: string, listener: EventListener): void {
-    if (!this.events[event]) {
-      this.events[event] = [];
+class StreamingService {
+  private getToken: TokenGetter = () => null;
+  private abortController: AbortController | null = null;
+  private rafId: number | null = null;
+  private pendingContent = "";
+
+  setTokenGetter(getter: TokenGetter) {
+    this.getToken = getter;
+  }
+
+  private flush(onChunk: (c: string) => void) {
+    if (this.pendingContent) {
+      onChunk(this.pendingContent);
+      this.pendingContent = "";
     }
-    this.events[event].push(listener);
+    this.rafId = null;
   }
 
-  off(event: string, listener: EventListener): void {
-    if (!this.events[event]) return;
-    const index = this.events[event].indexOf(listener);
-    if (index > -1) {
-      this.events[event].splice(index, 1);
-    }
-  }
+  async startStream(
+    request: AssistantRequest,
+    callbacks: StreamCallbacks,
+    useAssistant = true,
+  ): Promise<void> {
+    this.stopStream();
+    this.abortController = new AbortController();
 
-  emit(event: string, ...args: unknown[]): void {
-    if (!this.events[event]) return;
-    this.events[event].forEach(listener => {
-      try {
-        listener(...args);
-      } catch (error) {
-        console.error('Error in event listener:', error);
-      }
-    });
-  }
-
-  removeAllListeners(): void {
-    this.events = {};
-  }
-}
-
-// Constants for chunk types
-export const CHUNK_TYPE = {
-  RESPONSE: 'response',
-  ERROR: 'error',
-  COMPLETE: 'complete',
-  CHUNK: 'chunk',
-  METADATA: 'metadata'
-} as const;
-
-// Types for streaming events
-export interface StreamingChunk {
-  type: 'chunk';
-  content: string;
-  classification?: string;
-  messageId?: string;
-}
-
-export interface StreamingError {
-  type: 'error';
-  message: string;
-  details?: unknown;
-  messageId?: string;
-}
-
-export interface StreamingComplete {
-  type: 'complete';
-  metadata?: unknown;
-  messageId?: string;
-}
-
-export interface StreamingResponse {
-  type: 'response';
-  content: string;
-  messageId?: string;
-}
-
-export type StreamingEvent = 
-  | StreamingChunk 
-  | StreamingError 
-  | StreamingComplete 
-  | StreamingResponse;
-
-// Request parameters interface
-export interface StreamingRequestParams {
-  message: string;
-  n_results: number;
-  search_mode: string;
-  pdf_names?: string[];
-}
-
-// Configuration interface
-export interface StreamingConfig {
-  userId: string;
-  baseUrl?: string;
-  headers?: Record<string, string>;
-}
-
-class StreamingService extends EventEmitter {
-  private baseUrl: string;
-  private userId: string;
-  private headers: Record<string, string>;
-  private currentConnection: EventSource | null = null;
-  private isProcessing = false;
-  private accumulatedContent = '';
-
-  constructor(config: StreamingConfig) {
-    super();
-    this.baseUrl = config.baseUrl || API_CONFIG.BASE_URL;
-    this.userId = config.userId;
-    this.headers = {
-      'accept': 'application/json',
-      'user-id': this.userId,
-      'Content-Type': 'application/json',
-      ...config.headers
+    const token = this.getToken();
+    const headers: Record<string, string> = {
+      Accept: "text/event-stream",
+      "Content-Type": "application/json",
     };
-  }
+    if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  /**
-   * Start streaming chat response
-   */
-  async startStream(params: StreamingRequestParams, messageId?: string): Promise<void> {
-    if (this.isProcessing) {
-      console.warn('Stream already in progress');
-      return;
-    }
+    const url = useAssistant
+      ? `${API_CONFIG.BASE_URL}${API_ENDPOINTS.ASSISTANT_STREAM}`
+      : `${API_CONFIG.BASE_URL}${API_ENDPOINTS.CHAT_STREAM}`;
 
     try {
-      this.isProcessing = true;
-      this.accumulatedContent = '';
-      this.closeConnection();
-
-      const requestBody = {
-        message: params.message,
-        n_results: params.n_results,
-        search_mode: params.search_mode,
-        ...(params.pdf_names && { pdf_names: params.pdf_names })
-      };
-
-      // Make the POST request to get the stream
-      const response = await fetch(`${this.baseUrl}/chat/stream`, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(requestBody)
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(request),
+        signal: this.abortController.signal,
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Stream failed: ${response.status}`);
       }
 
-      if (!response.body) {
-        throw new Error('Response body is null');
-      }
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
 
-      // Process the stream
-      await this.processStream(response.body, messageId);
-
-    } catch (error) {
-      console.error('Streaming Service Error:', error);
-      this.emit('error', {
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
-      } as StreamingError);
-    } finally {
-      this.isProcessing = false;
-    }
-  }
-
-  /**
-   * Process the streaming response
-   */
-  private async processStream(body: ReadableStream<Uint8Array>, messageId?: string): Promise<void> {
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-
-    try {
-      let buffer = '';
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullContent = "";
+      let meta: Record<string, unknown> = {};
 
       while (true) {
         const { done, value } = await reader.read();
+        if (done) break;
 
-        if (done) {
-          // Process any remaining buffer
-          if (buffer.trim()) {
-            this.processBuffer(buffer, messageId);
-          }
-          break;
-        }
-
-        // Decode the chunk and add to buffer
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-
-        // Process complete lines
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.trim()) {
-            this.processLine(line, messageId);
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const parsed = JSON.parse(line.slice(6));
+
+            if (parsed.type === "clarification") {
+              callbacks.onClarification?.(parsed.data);
+              callbacks.onComplete("", { clarification: parsed.data });
+              return;
+            }
+
+            if (parsed.done) {
+              if (this.rafId) {
+                cancelAnimationFrame(this.rafId);
+                this.flush(callbacks.onChunk);
+              }
+              if (parsed.tool_used) meta.tool_used = parsed.tool_used;
+              if (parsed.content) meta.content = parsed.content;
+              callbacks.onComplete(fullContent, meta);
+              return;
+            }
+            if (parsed.content) {
+              fullContent += parsed.content;
+              this.pendingContent += parsed.content;
+              if (!this.rafId) {
+                this.rafId = requestAnimationFrame(() =>
+                  this.flush(callbacks.onChunk),
+                );
+              }
+            }
+          } catch {
+            /* skip malformed */
           }
         }
       }
 
-      // Emit complete event with accumulated content
-      this.emit('complete', {
-        type: 'complete',
-        metadata: {
-          totalContent: this.accumulatedContent
-        },
-        messageId: messageId
-      } as StreamingComplete);
-
-    } catch (error) {
-      console.error('Stream processing error:', error);
-      this.emit('error', {
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Stream processing error'
-      } as StreamingError);
-    } finally {
-      reader.releaseLock();
+      callbacks.onComplete(fullContent, meta);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      callbacks.onError(
+        err instanceof Error ? err.message : "Stream error",
+      );
     }
   }
 
-  /**
-   * Process a single line from the stream
-   */
-  private processLine(line: string, messageId?: string): void {
-    // Remove 'data: ' prefix if present
-    const data = line.replace(/^data: /, '').trim();
-    
-    if (!data) return;
-
-    try {
-      const parsed = JSON.parse(data);
-      
-      if (parsed.type === 'chunk') {
-        // Accumulate content
-        this.accumulatedContent += parsed.content;
-        
-        // Emit chunk event
-        this.emit('chunk', {
-          type: 'chunk',
-          content: parsed.content,
-          classification: parsed.classification,
-          messageId: messageId
-        } as StreamingChunk);
-
-        // Also emit response event with accumulated content
-        this.emit('response', {
-          type: 'response',
-          content: this.accumulatedContent,
-          messageId: messageId
-        } as StreamingResponse);
-
-      } else if (parsed.type === 'error') {
-        this.emit('error', {
-          type: 'error',
-          message: parsed.message || 'Unknown error',
-          details: parsed,
-          messageId: messageId
-        } as StreamingError);
-
-      } else if (parsed.type === 'complete') {
-        this.emit('complete', {
-          type: 'complete',
-          metadata: parsed.metadata,
-          messageId: messageId
-        } as StreamingComplete);
-
-      } else {
-        // Handle unknown events as chunks
-        if (parsed.content) {
-          this.accumulatedContent += parsed.content;
-          this.emit('chunk', {
-            type: 'chunk',
-            content: parsed.content,
-            classification: parsed.classification
-          } as StreamingChunk);
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to parse streaming data:', data, error);
+  stopStream() {
+    this.abortController?.abort();
+    this.abortController = null;
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
     }
-  }
-
-  /**
-   * Process remaining buffer content
-   */
-  private processBuffer(buffer: string, messageId?: string): void {
-    const lines = buffer.split('\n');
-    for (const line of lines) {
-      if (line.trim()) {
-        this.processLine(line, messageId);
-      }
-    }
-  }
-
-  /**
-   * Stop the current stream
-   */
-  stopStream(): void {
-    this.isProcessing = false;
-    this.closeConnection();
-    this.accumulatedContent = '';
-  }
-
-  /**
-   * Close the current connection
-   */
-  private closeConnection(): void {
-    if (this.currentConnection) {
-      this.currentConnection.close();
-      this.currentConnection = null;
-    }
-  }
-
-  /**
-   * Update the user ID
-   */
-  updateUserId(userId: string): void {
-    this.userId = userId;
-    this.headers['user-id'] = userId;
-  }
-
-  /**
-   * Update the base URL
-   */
-  updateBaseUrl(baseUrl: string): void {
-    this.baseUrl = baseUrl;
-  }
-
-  /**
-   * Get current accumulated content
-   */
-  getAccumulatedContent(): string {
-    return this.accumulatedContent;
-  }
-
-  /**
-   * Check if currently streaming
-   */
-  isStreaming(): boolean {
-    return this.isProcessing;
+    this.pendingContent = "";
   }
 }
 
-// Singleton instance
-let streamingServiceInstance: StreamingService | null = null;
-
-/**
- * Get or create the streaming service instance
- */
-export function getStreamingService(config?: StreamingConfig): StreamingService {
-  if (!streamingServiceInstance) {
-    if (!config) {
-      throw new Error('Streaming Service configuration is required for first initialization');
-    }
-    streamingServiceInstance = new StreamingService(config);
-  }
-  return streamingServiceInstance;
-}
-
-/**
- * Initialize the streaming service with configuration
- */
-export function initializeStreamingService(config: StreamingConfig): StreamingService {
-  streamingServiceInstance = new StreamingService(config);
-  return streamingServiceInstance;
-}
-
-/**
- * Destroy the streaming service instance
- */
-export function destroyStreamingService(): void {
-  if (streamingServiceInstance) {
-    streamingServiceInstance.stopStream();
-    streamingServiceInstance.removeAllListeners();
-    streamingServiceInstance = null;
-  }
-}
-
-export default StreamingService;
+export const streamingService = new StreamingService();

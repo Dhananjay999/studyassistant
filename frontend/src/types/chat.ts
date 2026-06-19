@@ -1,117 +1,147 @@
-import { FileText } from "lucide-react";
+export type MessageType = "user" | "bot";
+export type ChatMode = "media" | "web_search";
+export type ToolUsed = "web_search" | "media_llm" | "quiz_generator";
+export type QuestionType = "single_select" | "multi_select" | "true_false";
 
-// Type definitions
-export type MessageType = 'user' | 'bot';
-export type SearchMode = 'study_material' | 'web_search';
-export type SourceType = 'pdf' | 'web';
-export type ChatModeId = 'pdf' | 'web';
-
-// API Types
-export interface PDFMetadata {
-  page_number: number;
-  source: 'uploaded_pdf';
-  doc_name: string;
-}
-
-export interface WebMetadata {
+export interface SourceInfo {
   title: string;
-  link: string;
-  source: 'web_search';
+  url?: string;
+  snippet?: string;
 }
 
-export type APIMetadata = PDFMetadata | WebMetadata;
-
-export interface APIResponse {
-  answer_source: SearchMode;
-  answer: string;
-  relevant_chunks: string[];
-  metadata: APIMetadata[];
+export interface ClarificationQuestion {
+  id: string;
+  text: string;
+  options?: string[] | null;
 }
 
-export interface APIRequest {
-  message: string;
-  n_results: number;
-  search_mode: SearchMode;
+export interface ClarificationData {
+  reason: string;
+  questions: ClarificationQuestion[];
 }
 
-export interface UploadedFilesResponse {
-  user_id: string;
-  file_names: string[];
-  total_files: number;
+export interface QuizQuestion {
+  id: string;
+  type: QuestionType;
+  prompt: string;
+  options: string[];
 }
 
-export interface DeleteFileResponse {
-  user_id: string;
-  file_name: string;
-  chunks_deleted: number;
-  message: string;
+export interface QuizContent {
+  quiz_id: string;
+  title: string;
+  topic?: string;
+  questions: QuizQuestion[];
 }
 
-export interface DeleteAllFilesResponse {
-  user_id: string;
-  chunks_deleted: number;
-  message: string;
+export interface QuizEvaluation {
+  score: number;
+  correct_count: number;
+  total: number;
+  per_question: Array<{
+    question_id: string;
+    is_correct: boolean;
+    user_answer: string[];
+    correct_answer: string[];
+  }>;
 }
 
-// Component Types
+export interface QuizFeedback {
+  summary: string;
+  weak_topics: string[];
+  recommendations: string[];
+  per_question: Array<{ question_id: string; explanation: string }>;
+}
+
 export interface Message {
-  readonly id: string;
-  readonly type: MessageType;
-  readonly content: string;
-  readonly timestamp: Date;
-  readonly attachments?: readonly File[];
-  readonly metadata?: {
-    readonly sources: readonly SourceInfo[];
+  id: string;
+  type: MessageType;
+  content: string;
+  timestamp: Date;
+  metadata?: {
+    sources?: SourceInfo[];
+    mode?: ChatMode;
+    tool_used?: ToolUsed;
+    status?: "clarification_required" | "completed";
+    run_id?: string;
+    clarification?: ClarificationData;
+    quiz?: QuizContent;
+    quiz_result?: {
+      evaluation: QuizEvaluation;
+      feedback: QuizFeedback;
+    };
   };
 }
 
-export interface SourceInfo {
-  readonly name: string;
-  readonly pageNumber?: number;
-  readonly title: string;
-  readonly type: SourceType;
+export interface Session {
+  id: string;
+  user_id: string;
+  title: string;
+  mode: ChatMode;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface ChatMode {
-  readonly id: ChatModeId;
-  readonly label: string;
-  readonly icon: typeof FileText;
-  readonly description: string;
-  readonly searchMode: SearchMode;
+export interface MediaItem {
+  id: string;
+  user_id: string;
+  session_id: string | null;
+  file_name: string;
+  mime_type: string;
+  storage_path: string;
+  size_bytes: number;
+  created_at: string;
+  signed_url?: string;
 }
 
-export interface ChatState {
-  readonly messages: Message[];
-  readonly isLoading: boolean;
-  readonly metadata: Record<string, boolean>;
-}
-
-// Utility function types
-export type MessageIdGenerator = () => string;
-export type MetadataMapper = (meta: APIMetadata) => SourceInfo;
-export type PDFMetadataGuard = (meta: APIMetadata) => meta is PDFMetadata;
-
-// Authentication Types
 export interface User {
-  id: number;
+  id: string;
   email: string;
-  fullname: string;
+  full_name: string | null;
+  avatar_url: string | null;
 }
 
-export interface AuthResponse {
-  user: User;
-  access_token: string;
-  token_type: string;
+export interface APIEnvelope<T> {
+  msg: string;
+  data: T;
+}
+
+export interface ChatRequest {
   message: string;
+  session_id: string;
+  mode: ChatMode;
+  media_ids?: string[];
 }
 
-export interface RegisterRequest {
-  email: string;
-  password: string;
-  fullname: string;
+export interface ChatResponse {
+  answer: string;
+  mode: ChatMode;
+  sources: SourceInfo[];
+  message_id: string;
+  status?: "clarification_required" | "completed";
+  run_id?: string;
+  clarification?: ClarificationData;
+  tool_used?: ToolUsed;
+  content?: Record<string, unknown>;
 }
 
-export interface LoginRequest {
-  email: string;
-  password: string;
-} 
+export interface AssistantRequest {
+  message: string;
+  session_id: string;
+  media_ids?: string[];
+  run_id?: string;
+  clarification?: {
+    action: "answer" | "custom" | "skip";
+    answers?: Record<string, string>;
+    custom_text?: string;
+  };
+}
+
+export interface AssistantResponse {
+  status: "clarification_required" | "completed";
+  run_id?: string;
+  clarification?: ClarificationData;
+  tool_used?: ToolUsed;
+  content?: QuizContent | { answer?: string; sources?: SourceInfo[] };
+  message_id?: string;
+}

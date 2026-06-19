@@ -1,0 +1,1 @@
+"""MCP-inspired tool layer."""

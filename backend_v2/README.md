@@ -1,140 +1,70 @@
-# Aeva Backend V2 - Clean Architecture
+# Aeva Backend v2
 
-A modern, scalable backend implementation for the Aeva application following clean architecture principles and SOLID design patterns.
+Flask + flask-smorest study assistant API backed by Supabase.
 
-## Features
+## Setup
 
-- **Document Processing**: Upload PDF files and extract embeddings
-- **Semantic Search**: Search through uploaded documents using vector similarity
-- **Web Search**: Perform web searches using Serper API
-- **LLM Integration**: Generate responses using Groq LLM API
-- **Prompt Management**: Centralized prompt service for easy customization
-- **Clean Architecture**: Modular, maintainable code structure
-- **Type Safety**: Full TypeScript-like type hints with Pydantic
-- **Error Handling**: Comprehensive error handling and validation
+1. Copy `.env.sample` to `.env` and fill in values
+2. Run Supabase migrations in `supabase/migrations/`
+3. Install dependencies:
 
-## Architecture
-
+```bash
+poetry install
 ```
-backend_v2/
-├── app/
-│   ├── config/         # Configuration and settings
-│   ├── models/         # Pydantic schemas and data models
-│   ├── services/       # Business logic services
-│   ├── repositories/   # Data access layer
-│   ├── api/           # FastAPI routes and controllers
-│   └── utils/         # Utility functions and helpers
-├── main.py            # Application entry point
-└── requirements.txt   # Python dependencies
+
+4. Run the server:
+
+```bash
+poetry run poe run
+# or
+poetry run flask --app aeva.app run --debug --port 8000
 ```
 
 ## API Endpoints
 
-### Chat Endpoints
-- `POST /chat/` - Process chat requests
-- `GET /chat/stats` - Get chat service statistics
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/auth/login/google` | Start Google OAuth (redirects browser) |
+| GET | `/auth/callback` | OAuth callback; redirects to frontend with token |
+| POST | `/auth/refresh` | Refresh access token from refresh token |
+| GET | `/auth/me` | Current user profile |
+| PUT | `/auth/me` | Upsert profile |
+| GET | `/sessions/` | List chat sessions |
+| POST | `/sessions/` | Create session |
+| PATCH | `/sessions/{id}` | Update session |
+| DELETE | `/sessions/{id}` | Delete session |
+| GET | `/sessions/{id}/messages` | Get messages |
+| POST | `/media/` | Upload media |
+| GET | `/media/` | List media |
+| DELETE | `/media/{id}` | Delete media |
+| POST | `/chat/` | Send message |
+| POST | `/chat/stream` | Stream response (SSE) |
 
-### Upload Endpoints
-- `POST /upload/` - Upload and process PDF documents
-- `GET /upload/stats` - Get upload service statistics
+All endpoints except `/health` and the `/auth/login/google`, `/auth/callback`,
+`/auth/refresh` routes require `Authorization: Bearer <supabase_jwt>`.
 
+## Google login setup
 
+Login is fully backend-driven, so the frontend needs no Supabase keys.
 
-### System Endpoints
-- `GET /` - Root endpoint
-- `GET /health` - Health check
+1. In Supabase: Authentication -> Providers -> enable Google (set Google client
+   id/secret).
+2. In Supabase: Authentication -> URL Configuration -> add the backend callback
+   to "Redirect URLs": `http://localhost:8000/auth/callback` (and your prod URL).
+3. Set `FRONTEND_URL` so the backend knows where to send the user after login.
 
-## Setup
+Flow: FE opens `/auth/login/google` -> backend redirects to Google via Supabase
+(PKCE) -> Supabase calls `/auth/callback` -> backend exchanges the code and
+redirects to `FRONTEND_URL/auth/callback#access_token=...&refresh_token=...`.
 
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Environment Variables
 
-2. **Install Spacy Model**:
-   ```bash
-   python -m spacy download en_core_web_sm
-   ```
+See `.env.sample` for all required variables.
 
-3. **Environment Variables**:
-   Create a `.env` file with:
-   ```
-   GROQ_API_KEY=your_groq_api_key
-   X-API-KEY=your_serper_api_key
-   DEBUG=False
-   ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost:3000
-   ```
+## Linting
 
-4. **Run the Application**:
-   ```bash
-   python main.py
-   ```
-
-   By default the backend now boots with local-friendly defaults:
-   - PostgreSQL points to `localhost:5432`
-   - ChromaDB uses a persistent local folder at `./chroma_db` when cloud credentials are not set
-   - CORS allows the common Vite ports used by the frontend
-
-## Usage
-
-### Upload Documents
 ```bash
-curl -X POST "http://localhost:8000/upload/" \
-  -H "Content-Type: multipart/form-data" \
-  -F "files=@document.pdf"
+poetry run poe lint-check
+poetry run poe type-check
 ```
-
-### Chat with Study Material
-```bash
-curl -X POST "http://localhost:8000/chat/" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What is machine learning?",
-    "search_mode": "study_material",
-    "n_results": 5
-  }'
-```
-
-### Chat with Web Search
-```bash
-curl -X POST "http://localhost:8000/chat/" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Latest AI developments",
-    "search_mode": "web_search",
-    "n_results": 5
-  }'
-```
-
-
-
-## Key Improvements Over V1
-
-1. **Clean Architecture**: Clear separation of concerns
-2. **Prompt Management**: Dedicated PromptService with configuration file for easy customization
-3. **Type Safety**: Comprehensive type hints and validation
-4. **Error Handling**: Proper HTTP status codes and error messages
-5. **Modularity**: Each component has a single responsibility
-6. **Scalability**: Easy to extend and maintain
-7. **Documentation**: Auto-generated API docs with FastAPI
-8. **Configuration**: Centralized settings management
-9. **Testing Ready**: Structure supports easy unit testing
-
-## Dependencies
-
-- **FastAPI**: Modern web framework
-- **ChromaDB**: Vector database for embeddings
-- **SentenceTransformers**: Text embedding models
-- **PyPDF2**: PDF processing
-- **Spacy**: Natural language processing
-- **Groq API**: LLM service
-- **Serper API**: Web search service
-
-## Development
-
-The codebase follows these principles:
-- **SOLID Principles**: Single responsibility, open/closed, etc.
-- **Dependency Injection**: Services are injected where needed
-- **Repository Pattern**: Data access is abstracted
-- **Service Layer**: Business logic is separated from API layer
-- **Configuration Management**: Environment-based settings 

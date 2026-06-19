@@ -1,151 +1,235 @@
-import { API_ENDPOINTS, API_HEADERS, API_CONFIG, SEARCH_MODES } from '@/constants/api';
-import { APIRequest, APIResponse, AuthResponse, RegisterRequest, LoginRequest } from '@/types';
-import { getFingerprintId } from '@/utils/fingerprint';
+import { API_CONFIG, API_ENDPOINTS } from "@/constants/api";
+import type {
+  APIEnvelope,
+  AssistantRequest,
+  AssistantResponse,
+  ChatRequest,
+  ChatResponse,
+  MediaItem,
+  Message,
+  QuizContent,
+  QuizEvaluation,
+  QuizFeedback,
+  Session,
+  User,
+} from "@/types";
+
+type TokenGetter = () => string | null;
 
 class ApiService {
   private baseUrl: string;
-  private headers: Record<string, string>;
+  private getToken: TokenGetter = () => null;
 
-  constructor() {
-    this.baseUrl = API_CONFIG.BASE_URL;
-    this.headers = API_HEADERS;
+  constructor(baseUrl: string = API_CONFIG.BASE_URL) {
+    this.baseUrl = baseUrl;
   }
 
-  private async makeRequest<T>(endpoint: string, options: RequestInit): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
-    
-    try {
-      // Get fingerprint ID for user identification
-      const fingerprintId = await getFingerprintId();
-      
-      // Get JWT token from localStorage
-      const token = localStorage.getItem('access_token');
-      
-      // For FormData, don't set Content-Type header (browser sets it automatically)
-      const baseHeaders = options.body instanceof FormData 
-        ? { 'accept': 'application/json' }
-        : { ...this.headers, ...options.headers };
-      
-      // Add fingerprint ID and JWT token to all requests
-      const headers = {
-        ...baseHeaders,
-        'X-Fingerprint-ID': fingerprintId,
-        'user-id': fingerprintId,
-        ...(token && { 'Authorization': `Bearer ${token}` }),
-      };
+  setTokenGetter(getter: TokenGetter) {
+    this.getToken = getter;
+  }
 
-      const response = await fetch(url, {
+  private headers(isJson = true): Record<string, string> {
+    const h: Record<string, string> = {};
+    if (isJson) h["Content-Type"] = "application/json";
+    h["Accept"] = "application/json";
+    const token = this.getToken();
+    if (token) h["Authorization"] = `Bearer ${token}`;
+    return h;
+  }
+
+  private async request<T>(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      API_CONFIG.TIMEOUT,
+    );
+
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
         ...options,
-        headers,
+        headers: { ...this.headers(), ...options.headers },
+        signal: controller.signal,
       });
 
-      if (!response.ok) {
-        let errorMessage = `API request failed with status ${response.status}`;
-        
-        try {
-          const errorData = await response.json();
-          console.error('API Error Response:', errorData);
-          errorMessage = `API request failed: ${JSON.stringify(errorData)}`;
-        } catch (parseError) {
-          console.error('Could not parse error response');
-        }
-        
-        throw new Error(errorMessage);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.msg || `Request failed: ${res.status}`);
       }
 
-      // For upload endpoint, return void instead of trying to parse JSON
-      if (endpoint === API_ENDPOINTS.UPLOAD) {
-        return undefined as T;
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
+      return res.json();
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
-  async sendChatMessage(message: string, searchMode: string): Promise<APIResponse> {
-    const requestBody: APIRequest = {
-      message,
-      n_results: API_CONFIG.DEFAULT_RESULTS,
-      search_mode: searchMode as 'study_material' | 'web_search'
+  async getMe(): Promise<APIEnvelope<User>> {
+    return this.request(API_ENDPOINTS.AUTH_ME);
+  }
+
+  async createSession(
+    title = "New chat",
+    mode: "media" | "web_search" = "media",
+    mediaIds: string[] = [],
+  ): Promise<APIEnvelope<Session>> {
+    return this.request(API_ENDPOINTS.SESSIONS, {
+      method: "POST",
+      body: JSON.stringify({ title, mode, media_ids: mediaIds }),
+    });
+  }
+
+  async listSessions(): Promise<APIEnvelope<Session[]>> {
+    return this.request(API_ENDPOINTS.SESSIONS);
+  }
+
+  async deleteSession(id: string): Promise<APIEnvelope<{ id: string }>> {
+    return this.request(API_ENDPOINTS.SESSION_DETAIL(id), {
+      method: "DELETE",
+    });
+  }
+
+  async updateSession(
+    id: string,
+    title: string,
+  ): Promise<APIEnvelope<Session>> {
+    return this.request(API_ENDPOINTS.SESSION_DETAIL(id), {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  async getMessages(id: string): Promise<APIEnvelope<Message[]>> {
+    const res = await this.request<
+      APIEnvelope<
+        Array<{
+          id: string;
+          session_id: string;
+          role: string;
+          content: string;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        }>
+      >
+    >(API_ENDPOINTS.SESSION_MESSAGES(id));
+
+    return {
+      msg: res.msg,
+      data: res.data.map((m) => ({
+        id: m.id,
+        type: m.role === "user" ? "user" : "bot",
+        content: m.content,
+        timestamp: new Date(m.created_at),
+        metadata: {
+          sources: (m.metadata?.sources as Message["metadata"] extends infer M
+            ? M extends { sources?: infer S }
+              ? S
+              : never
+            : never) || [],
+          mode: m.metadata?.mode as "media" | "web_search" | undefined,
+          tool_used: m.metadata?.tool_used as Message["metadata"] extends infer M
+            ? M extends { tool_used?: infer T }
+              ? T
+              : never
+            : never,
+          status: m.metadata?.status as Message["metadata"] extends infer M
+            ? M extends { status?: infer S }
+              ? S
+              : never
+            : never,
+          run_id: m.metadata?.run_id as string | undefined,
+          clarification: m.metadata?.clarification as Message["metadata"] extends infer M
+            ? M extends { clarification?: infer C }
+              ? C
+              : never
+            : never,
+          quiz: m.metadata?.content as QuizContent | undefined,
+        },
+      })),
     };
-
-    return this.makeRequest<APIResponse>(API_ENDPOINTS.CHAT, {
-      method: 'POST',
-      body: JSON.stringify(requestBody),
-    });
   }
 
-  async uploadFiles(files: File[]): Promise<void> {
-    const formData = new FormData();
-    
-    files.forEach((file) => {
-      formData.append('files', file);
-      console.log('Appending file:', file.name, file.type, file.size);
+  async uploadMedia(
+    files: File[],
+    sessionId?: string,
+  ): Promise<APIEnvelope<MediaItem[]>> {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f));
+    if (sessionId) form.append("session_id", sessionId);
+
+    const res = await fetch(`${this.baseUrl}${API_ENDPOINTS.MEDIA}`, {
+      method: "POST",
+      headers: this.headers(false),
+      body: form,
     });
 
-    // Debug: Log FormData contents
-    for (const [key, value] of formData.entries()) {
-      console.log('FormData entry:', key, value);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.msg || "Upload failed");
     }
+    return res.json();
+  }
 
-    return this.makeRequest<void>(API_ENDPOINTS.UPLOAD, {
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-      },
-      body: formData,
+  async listMedia(sessionId?: string): Promise<APIEnvelope<MediaItem[]>> {
+    const qs = sessionId ? `?session_id=${sessionId}` : "";
+    return this.request(`${API_ENDPOINTS.MEDIA}${qs}`);
+  }
+
+  async deleteMedia(id: string): Promise<APIEnvelope<{ id: string }>> {
+    return this.request(API_ENDPOINTS.MEDIA_DETAIL(id), {
+      method: "DELETE",
     });
   }
 
-  async getUploadedFiles(): Promise<{ user_id: string; file_names: string[]; total_files: number }> {
-    const fingerprintId = await getFingerprintId();
-    return this.makeRequest<{ user_id: string; file_names: string[]; total_files: number }>(
-      `${API_ENDPOINTS.GET_FILES}${fingerprintId}`,
-      {
-        method: 'GET',
-      }
-    );
-  }
-
-  async deleteFile(fileName: string): Promise<{ user_id: string; file_name: string; chunks_deleted: number; message: string }> {
-    const fingerprintId = await getFingerprintId();
-    const encodedFileName = encodeURIComponent(fileName);
-    return this.makeRequest<{ user_id: string; file_name: string; chunks_deleted: number; message: string }>(
-      `${API_ENDPOINTS.DELETE_FILE}?file_name=${encodedFileName}`,
-      {
-        method: 'DELETE',
-      }
-    );
-  }
-
-  async deleteAllFiles(): Promise<{ user_id: string; chunks_deleted: number; message: string }> {
-    const fingerprintId = await getFingerprintId();
-    return this.makeRequest<{ user_id: string; chunks_deleted: number; message: string }>(
-      API_ENDPOINTS.DELETE_ALL_FILES,
-      {
-        method: 'DELETE',
-      }
-    );
-  }
-
-  // Authentication methods
-  async register(userData: RegisterRequest): Promise<AuthResponse> {
-    return this.makeRequest<AuthResponse>(API_ENDPOINTS.REGISTER, {
-      method: 'POST',
-      body: JSON.stringify(userData),
+  async sendAssistant(
+    req: AssistantRequest,
+  ): Promise<APIEnvelope<AssistantResponse>> {
+    return this.request(API_ENDPOINTS.ASSISTANT, {
+      method: "POST",
+      body: JSON.stringify(req),
     });
   }
 
-  async login(credentials: LoginRequest): Promise<AuthResponse> {
-    return this.makeRequest<AuthResponse>(API_ENDPOINTS.LOGIN, {
-      method: 'POST',
-      body: JSON.stringify(credentials),
+  async getQuiz(id: string): Promise<APIEnvelope<QuizContent>> {
+    return this.request(API_ENDPOINTS.QUIZ(id));
+  }
+
+  async submitQuiz(
+    id: string,
+    answers: Record<string, string[]>,
+  ): Promise<
+    APIEnvelope<{
+      attempt_id: string;
+      evaluation: QuizEvaluation;
+      feedback: QuizFeedback;
+    }>
+  > {
+    return this.request(API_ENDPOINTS.QUIZ_SUBMIT(id), {
+      method: "POST",
+      body: JSON.stringify({ answers }),
     });
+  }
+
+  get assistantStreamUrl(): string {
+    return `${this.baseUrl}${API_ENDPOINTS.ASSISTANT_STREAM}`;
+  }
+
+  async sendChat(req: ChatRequest): Promise<APIEnvelope<ChatResponse>> {
+    return this.request(API_ENDPOINTS.CHAT, {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+  }
+
+  getStreamHeaders(): Record<string, string> {
+    return this.headers();
+  }
+
+  get streamUrl(): string {
+    return `${this.baseUrl}${API_ENDPOINTS.CHAT_STREAM}`;
   }
 }
 
-// Export singleton instance
-export const apiService = new ApiService(); 
+export const apiService = new ApiService();
+export default apiService;

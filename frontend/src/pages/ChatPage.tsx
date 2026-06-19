@@ -1,623 +1,536 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { PDFViewer } from "@/components/PDFViewer";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerFooter } from "@/components/ui/drawer";
-import { 
-  ArrowLeft, 
-  Plus, 
-  Search, 
-  FileText, 
-  MessageSquare, 
-  Settings,
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Menu,
+  LogOut,
+  Sparkles,
+  FileText,
   X,
-  Check,
-  ChevronRight,
-  Bookmark,
-  Copy,
-  Share2,
-  FileDown,
-  Volume2,
-  Network,
-  MoreHorizontal,
-  User,
-  Bot,
-  Send,
-  Upload,
-  Minimize,
-  Maximize2,
-  Eye,
-  EyeOff
+  Image as ImageIcon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { SessionSidebar } from "@/components/chat/SessionSidebar";
+import { ChatMessages } from "@/components/chat/ChatMessages";
+import { ChatInput } from "@/components/chat/ChatInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Message, ChatMode } from "@/types";
-import ChatHeader from "@/components/chat/ChatHeader";
-import ChatMessages from "@/components/chat/ChatMessages";
-import ChatInput from "@/components/chat/ChatInput";
-import SourcesPanel from "@/components/chat/SourcesPanel";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { apiService } from "@/services";
+import { apiService, streamingService } from "@/services";
+import { compressFiles } from "@/utils/compress";
+import { cn } from "@/lib/utils";
+import type { AssistantRequest, MediaItem, Message, QuizContent, Session } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
-const ChatPage = () => {
-  const navigate = useNavigate();
+const PDFViewer = lazy(() => import("@/components/PDFViewer"));
+
+// A session that only lives on the client until the user asks a question.
+const DRAFT_ID = "";
+
+function makeDraft(): Session {
+  const now = new Date().toISOString();
+  return {
+    id: DRAFT_ID,
+    user_id: "",
+    title: "New chat",
+    // Routing is automatic on the backend (media vs. web search); mode is
+    // kept only for the DB column's default.
+    mode: "media",
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+export default function ChatPage() {
+  const { user, token, logout } = useAuth();
   const isMobile = useIsMobile();
-  const { isAuthenticated, user } = useAuth();
   const { toast } = useToast();
-  
-  // State management
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<'pdf' | 'web'>('pdf');
-  const [showMobileSources, setShowMobileSources] = useState(false);
-  
-  // Separate chat histories for each mode
-  const [pdfMessages, setPdfMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'bot',
-      content: 'Hello! I\'m your AI study assistant. Upload your PDFs and ask me questions about your documents. How can I help you study today?',
-      timestamp: new Date(),
-    }
-  ]);
-  
-  const [webMessages, setWebMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'bot',
-      content: 'Hello! I\'m your AI study assistant. I can search the web for academic information and research. What would you like to learn about today?',
-      timestamp: new Date(),
-    }
-  ]);
-  
-  // File management state
-  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
-  const [uploadedFileNames, setUploadedFileNames] = useState<string[]>([]);
-  const [currentPDF, setCurrentPDF] = useState<File | null>(null);
-  const [showPDFViewer, setShowPDFViewer] = useState(false);
-  const [uploadingFiles, setUploadingFiles] = useState<{ file: File; progress: number }[]>([]);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
-  // Chat modes configuration
-  const chatModes: ChatMode[] = [
-    {
-      id: 'pdf',
-      label: 'From PDF',
-      icon: FileText,
-      description: 'Ask questions about your uploaded documents',
-      searchMode: 'study_material'
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [selectedMedia, setSelectedMedia] = useState<Set<string>>(new Set());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Tracks which session's messages/media are already loaded, so creating a
+  // session inline (on first question) doesn't wipe the optimistic UI.
+  const loadedSessionRef = useRef<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [pendingClarification, setPendingClarification] = useState<{
+    runId: string;
+    data: NonNullable<Message["metadata"]>["clarification"];
+    sessionId: string;
+  } | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewPdf, setPreviewPdf] = useState<{
+    url: string;
+    name: string;
+  } | null>(null);
+
+  useEffect(() => {
+    apiService.setTokenGetter(() => token);
+    streamingService.setTokenGetter(() => token);
+  }, [token]);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      const res = await apiService.listSessions();
+      setSessions(res.data);
+      if (res.data.length > 0 && !activeSession) {
+        setActiveSession(res.data[0]);
+      }
+    } catch {
+      toast({ title: "Failed to load sessions", variant: "destructive" });
+    }
+  }, [activeSession, toast]);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  useEffect(() => {
+    // Draft or no session: nothing to fetch.
+    if (!activeSession || !activeSession.id) {
+      if (loadedSessionRef.current !== (activeSession?.id ?? null)) {
+        setMessages([]);
+        setMediaItems([]);
+        setSelectedMedia(new Set());
+      }
+      loadedSessionRef.current = activeSession?.id ?? null;
+      return;
+    }
+
+    // Already loaded (or just created inline) — keep the current UI.
+    if (loadedSessionRef.current === activeSession.id) return;
+    loadedSessionRef.current = activeSession.id;
+
+    (async () => {
+      try {
+        const [msgRes, mediaRes] = await Promise.all([
+          apiService.getMessages(activeSession.id),
+          apiService.listMedia(activeSession.id),
+        ]);
+        setMessages(msgRes.data);
+        setMediaItems(mediaRes.data);
+        setSelectedMedia(new Set(mediaRes.data.map((m) => m.id)));
+      } catch {
+        toast({ title: "Failed to load chat", variant: "destructive" });
+      }
+    })();
+  }, [activeSession, toast]);
+
+  const toggleMedia = (id: string) => {
+    setSelectedMedia((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleNewSession = () => {
+    // Don't persist anything yet — the session is only saved once the user
+    // actually asks a question (see handleSend).
+    loadedSessionRef.current = DRAFT_ID;
+    setMessages([]);
+    setMediaItems([]);
+    setSelectedMedia(new Set());
+    setActiveSession(makeDraft());
+    setSidebarOpen(false);
+  };
+
+  const handleDeleteSession = async (id: string) => {
+    try {
+      await apiService.deleteSession(id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      if (activeSession?.id === id) {
+        const remaining = sessions.filter((s) => s.id !== id);
+        setActiveSession(remaining[0] || null);
+      }
+    } catch {
+      toast({ title: "Failed to delete session", variant: "destructive" });
+    }
+  };
+
+  const sendAssistant = async (
+    session: Session,
+    text: string,
+    opts?: {
+      runId?: string;
+      clarification?: AssistantRequest["clarification"];
     },
-    {
-      id: 'web',
-      label: 'Web Results',
-      icon: Search,
-      description: 'Search the web for academic information',
-      searchMode: 'web_search'
-    }
-  ];
-
-  // Fetch uploaded files on component mount
-  useEffect(() => {
-    const fetchUploadedFiles = async () => {
-      if (selectedMode === 'pdf') {
-        try {
-          const response = await apiService.getUploadedFiles();
-          setUploadedFileNames(response.file_names);
-        } catch (error) {
-          console.error('Failed to fetch uploaded files:', error);
-        }
-      }
+  ) => {
+    const mediaIds = Array.from(selectedMedia);
+    const req: AssistantRequest = {
+      message: text,
+      session_id: session.id,
+      media_ids: mediaIds.length ? mediaIds : undefined,
+      run_id: opts?.runId,
+      clarification: opts?.clarification,
     };
 
-    fetchUploadedFiles();
-  }, [selectedMode]);
+    setIsStreaming(true);
+    setStreamingContent("");
+    setPendingClarification(null);
 
-  // Auto-select files when they're uploaded
-  useEffect(() => {
-    const newFiles = attachedFiles.filter(file => !selectedFiles.has(file.name));
-    if (newFiles.length > 0) {
-      setSelectedFiles(prev => {
-        const newSet = new Set(prev);
-        newFiles.forEach(file => newSet.add(file.name));
-        return newSet;
-      });
+    await streamingService.startStream(
+      req,
+      {
+        onChunk: (chunk) => setStreamingContent((prev) => prev + chunk),
+        onClarification: (data) => {
+          const clar = data as {
+            run_id: string;
+            clarification: NonNullable<Message["metadata"]>["clarification"];
+          };
+          setPendingClarification({
+            runId: clar.run_id,
+            data: clar.clarification,
+            sessionId: session.id,
+          });
+        },
+        onComplete: (full, meta) => {
+          const toolUsed = meta?.tool_used as Message["metadata"] extends infer M
+            ? M extends { tool_used?: infer T }
+              ? T
+              : never
+            : never;
+          const content = meta?.content as Record<string, unknown> | undefined;
+          const sources = (content?.sources as Message["metadata"] extends infer M
+            ? M extends { sources?: infer S }
+              ? S
+              : never
+            : never) || [];
+
+          let quiz: QuizContent | undefined;
+          if (toolUsed === "quiz_generator" && content) {
+            quiz = {
+              quiz_id: content.quiz_id as string,
+              title: content.title as string,
+              topic: content.topic as string | undefined,
+              questions: content.questions as QuizContent["questions"],
+            };
+          }
+
+          if (full || quiz) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                type: "bot",
+                content: full || `Quiz: ${quiz?.title}`,
+                timestamp: new Date(),
+                metadata: {
+                  tool_used: toolUsed,
+                  sources,
+                  quiz,
+                },
+              },
+            ]);
+          }
+          setStreamingContent("");
+          setIsStreaming(false);
+          loadSessions();
+        },
+        onError: (err) => {
+          toast({ title: err, variant: "destructive" });
+          setIsStreaming(false);
+          setStreamingContent("");
+        },
+      },
+      true,
+    );
+  };
+
+  const handleSend = async (text: string) => {
+    if (!activeSession || isStreaming) return;
+
+    let session = activeSession;
+    if (!session.id) {
+      try {
+        const res = await apiService.createSession(
+          text.slice(0, 60),
+          session.mode,
+          mediaItems.map((m) => m.id),
+        );
+        session = res.data;
+        loadedSessionRef.current = session.id;
+        setSessions((prev) => [session, ...prev]);
+        setActiveSession(session);
+      } catch {
+        toast({ title: "Failed to start chat", variant: "destructive" });
+        return;
+      }
     }
-  }, [attachedFiles]);
 
-  // Auto-collapse/expand sources panel based on mode
-  useEffect(() => {
-    if (selectedMode === 'web') {
-      setIsCollapsed(true);
-    } else if (selectedMode === 'pdf') {
-      setIsCollapsed(false);
-    }
-  }, [selectedMode]);
-
-
-
-  const handleSendMessage = async (content: string) => {
-    if (!content.trim()) return;
-
-    const newMessage: Message = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: 'user',
-      content,
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      type: "user",
+      content: text,
       timestamp: new Date(),
     };
+    setMessages((prev) => [...prev, userMsg]);
 
-    // Add user message to the appropriate chat based on selected mode
-    if (selectedMode === 'pdf') {
-      setPdfMessages(prev => [...prev, newMessage]);
-    } else {
-      setWebMessages(prev => [...prev, newMessage]);
-    }
+    await sendAssistant(session, text);
   };
 
-  // Handle bot response from MessagePair component
-  const handleBotResponse = useCallback((botMessage: Message, mode: 'pdf' | 'web') => {
-    if (mode === 'pdf') {
-      setPdfMessages(prev => [...prev, botMessage]);
-    } else {
-      setWebMessages(prev => [...prev, botMessage]);
-    }
-  }, []);
+  const handleClarificationSubmit = async (payload: {
+    action: "answer" | "custom" | "skip";
+    answers?: Record<string, string>;
+    custom_text?: string;
+  }) => {
+    if (!pendingClarification || !activeSession?.id || isStreaming) return;
 
-  // Handle error from MessagePair component
-  const handleError = useCallback((error: string) => {
-    console.error('Chat error:', error);
-    // You can add toast notification here if needed
-  }, []);
+    const label =
+      payload.action === "skip"
+        ? "Skipped clarification"
+        : payload.action === "custom"
+          ? payload.custom_text || "Custom response"
+          : "Submitted clarification";
 
-  const handleFileUpload = async (files: File[]) => {
-    // Immediately add files to the uploading list with progress
-    const newUploadingFiles = files.map(file => ({ file, progress: 0 }));
-    setUploadingFiles(prev => [...prev, ...newUploadingFiles]);
-    
-    // Also add to attached files immediately for display
-    setAttachedFiles(prev => [...prev, ...files]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type: "user",
+        content: label,
+        timestamp: new Date(),
+      },
+    ]);
 
-    try {
-      // Start the actual upload first
-      const uploadPromise = apiService.uploadFiles(files);
-      
-      // Simulate progress over 4-5 seconds while upload is happening
-      const progressPromises = files.map(async (file) => {
-        const totalSteps = 20; // More granular steps for smoother progress
-        const stepDelay = 250; // 250ms per step = 5 seconds total
-        
-        for (let step = 0; step <= totalSteps; step++) {
-          const progress = Math.round((step / totalSteps) * 100);
-          
-          // Don't go to 100% until upload is actually complete
-          if (step === totalSteps) {
-            // Wait for the actual upload to complete
-            await uploadPromise;
-            // Now we can set to 100%
-            setUploadingFiles(prev => 
-              prev.map((uf) => 
-                uf.file === file ? { ...uf, progress: 100 } : uf
-              )
-            );
-          } else {
-            setUploadingFiles(prev => 
-              prev.map((uf) => 
-                uf.file === file ? { ...uf, progress } : uf
-              )
-            );
-            await new Promise(resolve => setTimeout(resolve, stepDelay));
-          }
-        }
-        
-        return file;
-      });
-
-      // Wait for all progress animations and upload to complete
-      await Promise.all(progressPromises);
-      
-      // Remove from uploading list
-      setUploadingFiles(prev => prev.filter(uf => !files.includes(uf.file)));
-      
-      const uploadMessage: Message = {
-        id: Date.now().toString(),
-        type: 'bot',
-        content: `Successfully uploaded ${files.length} PDF file(s). You can now ask questions about your documents.`,
-        timestamp: new Date()
-      };
-      
-      // Add upload message to PDF chat since it's related to PDF functionality
-      setPdfMessages(prev => [...prev, uploadMessage]);
-      
-      toast({
-        title: "Files Uploaded",
-        description: `Successfully uploaded ${files.length} file(s)`,
-      });
-    } catch (error) {
-      console.error('File upload failed:', error);
-      
-      // Remove from uploading list and attached files on error
-      setUploadingFiles(prev => prev.filter(uf => !files.includes(uf.file)));
-      setAttachedFiles(prev => prev.filter(file => !files.includes(file)));
-      
-      toast({
-        title: "Upload Failed",
-        description: "Failed to upload files. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleFileDelete = async (fileName: string) => {
-    try {
-      await apiService.deleteFile(fileName);
-      setUploadedFileNames(prev => prev.filter(name => name !== fileName));
-      setAttachedFiles(prev => prev.filter(file => file.name !== fileName));
-      
-      // Remove from selected files
-      setSelectedFiles(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(fileName);
-        return newSet;
-      });
-      
-      // If the deleted file is currently being viewed, close the viewer
-      if (currentPDF?.name === fileName) {
-        setCurrentPDF(null);
-        setShowPDFViewer(false);
-      }
-      
-      toast({
-        title: "File Deleted",
-        description: "File has been removed successfully",
-      });
-    } catch (error) {
-      console.error('Failed to delete file:', error);
-      toast({
-        title: "Delete Failed",
-        description: "Failed to delete file. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handlePDFSelect = (file: File | null) => {
-    setCurrentPDF(file);
-    if (file) {
-      setShowPDFViewer(true);
-    } else {
-      setShowPDFViewer(false);
-    }
-  };
-
-  const togglePDFViewer = () => {
-    setShowPDFViewer(!showPDFViewer);
-  };
-
-  const handleFileSelection = (fileName: string, isSelected: boolean) => {
-    setSelectedFiles(prev => {
-      const newSet = new Set(prev);
-      if (isSelected) {
-        newSet.add(fileName);
-      } else {
-        newSet.delete(fileName);
-      }
-      return newSet;
+    await sendAssistant(activeSession, label, {
+      runId: pendingClarification.runId,
+      clarification: payload,
     });
   };
 
-  const handleSelectAll = (isSelected: boolean) => {
-    const allFileNames = [
-      ...attachedFiles.map(file => file.name),
-      ...uploadedFileNames
-    ];
-    
-    setSelectedFiles(prev => {
-      const newSet = new Set(prev);
-      if (isSelected) {
-        allFileNames.forEach(name => newSet.add(name));
-      } else {
-        allFileNames.forEach(name => newSet.delete(name));
-      }
-      return newSet;
-    });
+  const handleUpload = async (files: FileList) => {
+    if (!activeSession) return;
+    setIsUploading(true);
+    try {
+      const compressed = await compressFiles(files);
+      // Draft sessions have no id yet; media is linked when the session is
+      // created on the first question.
+      const res = await apiService.uploadMedia(
+        compressed,
+        activeSession.id || undefined,
+      );
+      setMediaItems((prev) => [...res.data, ...prev]);
+      setSelectedMedia((prev) => {
+        const next = new Set(prev);
+        res.data.forEach((m) => next.add(m.id));
+        return next;
+      });
+      toast({ title: `${res.data.length} file(s) uploaded` });
+    } catch (err) {
+      toast({
+        title: err instanceof Error ? err.message : "Upload failed",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
-  const allFileNames = [
-    ...attachedFiles.map(file => file.name),
-    ...uploadedFileNames
-  ];
-  const isAllSelected = allFileNames.length > 0 && allFileNames.every(name => selectedFiles.has(name));
-  const isSomeSelected = allFileNames.some(name => selectedFiles.has(name));
+  const sidebar = (
+    <SessionSidebar
+      sessions={sessions}
+      activeId={activeSession?.id || null}
+      onSelect={(id) => {
+        const s = sessions.find((x) => x.id === id);
+        if (s) setActiveSession(s);
+        setSidebarOpen(false);
+      }}
+      onNew={handleNewSession}
+      onDelete={handleDeleteSession}
+      onSwipeClose={() => setSidebarOpen(false)}
+    />
+  );
 
   return (
-    <div className="h-screen bg-background flex flex-col">
-      {/* Top Navigation Bar */}
-      <div className="flex items-center justify-between p-1 md:p-4 border-b bg-card/50 backdrop-blur-sm">
-        <div className="flex items-center gap-1 md:gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate('/')}
-            className="h-6 w-6 md:h-8 md:w-8"
-          >
-            <ArrowLeft className="h-3 w-3 md:h-4 md:w-4" />
-          </Button>
-          <div className="flex items-center gap-1 md:gap-2">
-            <div className="w-5 h-5 md:w-8 md:h-8 rounded-md md:rounded-lg bg-gradient-to-r from-academic-teal to-academic-burgundy flex items-center justify-center">
-              <MessageSquare className="h-2.5 w-2.5 md:h-4 md:w-4 text-white" />
-            </div>
-            <span className="font-semibold text-sm md:text-lg">Chat</span>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-0.5 md:gap-2">
-          <ThemeToggle />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className={cn(
-              "h-6 w-6 md:h-8 md:w-8 transition-all duration-200",
-              selectedMode === 'web' && isCollapsed && "text-academic-teal bg-academic-teal/10"
-            )}
-            title={selectedMode === 'web' && isCollapsed ? "Sources panel collapsed for web search mode" : "Toggle sources panel"}
-          >
-            {isCollapsed ? <Maximize2 className="h-2.5 w-2.5 md:h-4 md:w-4" /> : <Minimize className="h-2.5 w-2.5 md:h-4 md:w-4" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 md:h-8 md:w-8"
-          >
-            <Settings className="h-2.5 w-2.5 md:h-4 md:w-4" />
-          </Button>
-        </div>
-      </div>
+    <div className="flex h-dvh flex-col bg-background">
+      {/* Header */}
+      <header className="flex items-center gap-2 border-b border-border/50 px-3 py-2 safe-top">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-xl lg:hidden"
+          onClick={() => setSidebarOpen(true)}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sources Panel - Hidden on Mobile */}
-        <div className={cn(
-          "w-80 border-r bg-card/30 backdrop-blur-sm transition-all duration-300 overflow-hidden",
-          isCollapsed && "w-0 border-r-0 opacity-0",
-          isMobile && "hidden"
-        )}>
-          <SourcesPanel
-            selectedMode={selectedMode}
-            onModeChange={setSelectedMode}
-            attachedFiles={attachedFiles}
-            uploadedFileNames={uploadedFileNames}
-            uploadingFiles={uploadingFiles}
-            currentPDF={currentPDF}
-            selectedFiles={selectedFiles}
-            onFileUpload={handleFileUpload}
-            onFileDelete={handleFileDelete}
-            onPDFSelect={handlePDFSelect}
-            onPDFViewerToggle={setShowPDFViewer}
-            onFileSelection={handleFileSelection}
-            onSelectAll={handleSelectAll}
-            showPDFViewer={showPDFViewer}
-            chatModes={chatModes}
-            isAllSelected={isAllSelected}
-            isSomeSelected={isSomeSelected}
-            isMobile={false}
-          />
+        <div className="flex flex-1 items-center gap-2">
+          <Sparkles className="h-4 w-4 text-violet-500" />
+          <h1 className="truncate text-sm font-semibold">
+            {activeSession?.title || "Aeva"}
+          </h1>
         </div>
 
-        {/* Chat and PDF Viewer Panels */}
-        <div className="flex-1 flex">
-          {showPDFViewer && currentPDF ? (
-            <PanelGroup direction="horizontal" className="h-full">
-              {/* Chat Panel */}
-              <Panel defaultSize={60} minSize={30} maxSize={80}>
-                <div className="flex flex-col h-full">
-                  <ChatHeader
-                    selectedMode={selectedMode}
-                    chatModes={chatModes}
-                    onModeChange={setSelectedMode}
-                    isAuthenticated={isAuthenticated}
-                    user={user}
-                  />
-                  
-                  {/* Chat Messages - PDF Mode */}
-                  <div className={cn(
-                    "flex-1 flex flex-col min-h-0",
-                    selectedMode !== 'pdf' && "hidden"
-                  )}>
-                    <ChatMessages
-                      key="chat-messages-pdf"
-                      messages={pdfMessages}
-                      selectedMode="pdf"
-                      chatModes={chatModes}
-                      selectedFiles={selectedFiles}
-                      onScrollToBottom={() => {}}
-                      onBotResponse={(botMessage, mode) => handleBotResponse(botMessage, mode)}
-                      onError={handleError}
-                    />
-                  </div>
+        <ThemeToggle />
+        <Avatar className="h-8 w-8">
+          <AvatarImage src={user?.avatar_url || undefined} />
+          <AvatarFallback>
+            {user?.full_name?.[0] || user?.email?.[0] || "?"}
+          </AvatarFallback>
+        </Avatar>
+        <Button variant="ghost" size="icon" className="rounded-xl" onClick={logout}>
+          <LogOut className="h-4 w-4" />
+        </Button>
+      </header>
 
-                  {/* Chat Messages - Web Mode */}
-                  <div className={cn(
-                    "flex-1 flex flex-col min-h-0",
-                    selectedMode !== 'web' && "hidden"
-                  )}>
-                                    <ChatMessages
-                  key="chat-messages-web"
-                  messages={webMessages}
-                  selectedMode="web"
-                  chatModes={chatModes}
-                  selectedFiles={selectedFiles}
-                  onScrollToBottom={() => {}}
-                  onBotResponse={(botMessage, mode) => handleBotResponse(botMessage, mode)}
-                  onError={handleError}
-                />
-                  </div>
-                  
-                  <ChatInput
-                    onSendMessage={handleSendMessage}
-                    onFileUpload={handleFileUpload}
-                    isLoading={false}
-                    selectedMode={selectedMode}
-                    selectedFiles={selectedFiles}
-                    placeholder={
-                      selectedMode === 'pdf'
-                        ? "Ask a question about your uploaded documents..."
-                        : "Search for academic information on the web..."
-                    }
-                    onOpenMobileSources={() => setShowMobileSources(true)}
-                    onOpenSources={() => setIsCollapsed(false)}
-                    attachedFilesCount={attachedFiles.length}
-                    uploadedFilesCount={uploadedFileNames.length}
-                  />
-                </div>
-              </Panel>
-              
-              <PanelResizeHandle className="w-1 bg-border hover:bg-academic-teal/50 transition-colors" />
-              
-              {/* PDF Viewer Panel */}
-              <Panel defaultSize={40} minSize={20} maxSize={70}>
-                <div className="h-full flex flex-col">
-                  {/* PDF Viewer Header */}
-                  <div className="flex items-center justify-between p-3 border-b bg-card/30">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-academic-teal" />
-                      <span className="font-medium text-sm truncate">{currentPDF.name}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={togglePDFViewer}
-                      className="h-6 w-6"
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  
-                  {/* PDF Viewer Content */}
-                  <div className="flex-1 overflow-hidden">
-                    <PDFViewer
-                      file={currentPDF}
-                      isVisible={showPDFViewer}
-                      onToggleVisibility={togglePDFViewer}
-                      className="h-full"
-                    />
-                  </div>
-                </div>
-              </Panel>
-            </PanelGroup>
-          ) : (
-            /* Chat Panel Only */
-            <div className="flex-1 flex flex-col h-full">
-              <ChatHeader
-                selectedMode={selectedMode}
-                chatModes={chatModes}
-                onModeChange={setSelectedMode}
-                isAuthenticated={isAuthenticated}
-                user={user}
-              />
-              
-              {/* Chat Messages - PDF Mode */}
-              <div className={cn(
-                "flex-1 flex flex-col min-h-0",
-                selectedMode !== 'pdf' && "hidden"
-              )}>
-                                                  <ChatMessages
-                  key="chat-messages-pdf"
-                  messages={pdfMessages}
-                  selectedMode="pdf"
-                  chatModes={chatModes}
-                  selectedFiles={selectedFiles}
-                  onScrollToBottom={() => {}}
-                  onBotResponse={(botMessage, mode) => handleBotResponse(botMessage, mode)}
-                  onError={handleError}
-                />
-              </div>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Desktop sidebar */}
+        <div className="hidden lg:block">{sidebar}</div>
 
-              {/* Chat Messages - Web Mode */}
-              <div className={cn(
-                "flex-1 flex flex-col min-h-0",
-                selectedMode !== 'web' && "hidden"
-              )}>
-                <ChatMessages
-                  key="chat-messages-web"
-                  messages={webMessages}
-                  selectedMode="web"
-                  chatModes={chatModes}
-                  selectedFiles={selectedFiles}
-                  onScrollToBottom={() => {}}
-                  onBotResponse={(botMessage, mode) => handleBotResponse(botMessage, mode)}
-                  onError={handleError}
-                />
-              </div>
-              
-              <ChatInput
-                onSendMessage={handleSendMessage}
-                onFileUpload={handleFileUpload}
-                isLoading={false}
-                selectedMode={selectedMode}
-                selectedFiles={selectedFiles}
-                placeholder={
-                  selectedMode === 'pdf'
-                    ? "Ask a question about your uploaded documents..."
-                    : "Search for academic information on the web..."
-                }
-                onOpenMobileSources={() => setShowMobileSources(true)}
-                onOpenSources={() => setIsCollapsed(false)}
-                attachedFilesCount={attachedFiles.length}
-                uploadedFilesCount={uploadedFileNames.length}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+        {/* Mobile sidebar */}
+        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <SheetContent side="left" className="w-72 p-0">
+            {sidebar}
+          </SheetContent>
+        </Sheet>
 
-      {/* Mobile Sources Bottom Sheet */}
-      <Drawer open={showMobileSources} onOpenChange={setShowMobileSources}>
-        <DrawerContent className="h-[85vh]">
-          <DrawerHeader className="pb-3">
-            <DrawerTitle className="flex items-center gap-2 text-lg">
-              <FileText className="w-5 h-5 text-academic-teal" />
-              Sources
-            </DrawerTitle>
-          </DrawerHeader>
-          <div className="flex-1 overflow-hidden">
-            <SourcesPanel
-              selectedMode={selectedMode}
-              onModeChange={setSelectedMode}
-              attachedFiles={attachedFiles}
-              uploadedFileNames={uploadedFileNames}
-              uploadingFiles={uploadingFiles}
-              currentPDF={currentPDF}
-              selectedFiles={selectedFiles}
-              onFileUpload={handleFileUpload}
-              onFileDelete={handleFileDelete}
-              onPDFSelect={handlePDFSelect}
-              onPDFViewerToggle={setShowPDFViewer}
-              onFileSelection={handleFileSelection}
-              onSelectAll={handleSelectAll}
-              showPDFViewer={showPDFViewer}
-              chatModes={chatModes}
-              isAllSelected={isAllSelected}
-              isSomeSelected={isSomeSelected}
-              isMobile={true}
-            />
-          </div>
-          <DrawerFooter>
-            <Button 
-              onClick={() => setShowMobileSources(false)}
-              className="w-full bg-gradient-to-r from-academic-teal to-academic-burgundy hover:from-academic-teal/90 hover:to-academic-burgundy/90 text-white font-medium py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+        {/* Main chat area */}
+        <main className="flex flex-1 flex-col overflow-hidden">
+          {!activeSession ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center"
             >
-              Done
+              <div className="text-5xl">📚</div>
+              <h2 className="text-xl font-bold">Ready to study?</h2>
+              <p className="text-muted-foreground">
+                Attach your notes to ask from them, or just ask anything and
+                I'll search the web for you.
+              </p>
+              <Button className="rounded-xl" onClick={handleNewSession}>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Start a new chat
+              </Button>
+            </motion.div>
+          ) : (
+            <>
+              {/* Media bar — tick the files you want to ask about */}
+              {mediaItems.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto border-b border-border/30 px-4 py-2">
+                  {mediaItems.map((item) => {
+                    const selected = selectedMedia.has(item.id);
+                    return (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "flex shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
+                          selected
+                            ? "border-primary/60 bg-primary/10"
+                            : "border-border/50 bg-muted",
+                        )}
+                      >
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={() => toggleMedia(item.id)}
+                          className="h-3.5 w-3.5"
+                          aria-label={`Use ${item.file_name} in answers`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!item.signed_url) return;
+                            if (item.mime_type.startsWith("image/")) {
+                              setPreviewImage(item.signed_url);
+                            } else if (item.mime_type === "application/pdf") {
+                              setPreviewPdf({
+                                url: item.signed_url,
+                                name: item.file_name,
+                              });
+                            }
+                          }}
+                          className="flex items-center gap-1.5"
+                        >
+                          {item.mime_type.startsWith("image/") ? (
+                            <ImageIcon className="h-3 w-3" />
+                          ) : (
+                            <FileText className="h-3 w-3" />
+                          )}
+                          <span className="max-w-[120px] truncate">
+                            {item.file_name}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <ChatMessages
+                messages={messages}
+                isStreaming={isStreaming}
+                streamingContent={streamingContent}
+                pendingClarification={
+                  pendingClarification
+                    ? {
+                        runId: pendingClarification.runId,
+                        data: pendingClarification.data,
+                      }
+                    : null
+                }
+                onClarificationSubmit={handleClarificationSubmit}
+                clarificationDisabled={isStreaming}
+              />
+
+              <ChatInput
+                onSend={handleSend}
+                onUpload={handleUpload}
+                disabled={isStreaming}
+                isUploading={isUploading}
+              />
+            </>
+          )}
+        </main>
+      </div>
+
+      {/* Image preview modal */}
+      <AnimatePresence>
+        {previewImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            onClick={() => setPreviewImage(null)}
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-4 top-4 text-white"
+              onClick={() => setPreviewImage(null)}
+            >
+              <X className="h-6 w-6" />
             </Button>
-          </DrawerFooter>
-        </DrawerContent>
-      </Drawer>
+            <img
+              src={previewImage}
+              alt="Preview"
+              className="max-h-[90vh] max-w-full rounded-xl object-contain"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* PDF preview modal (loaded from API-provided URL) */}
+      <AnimatePresence>
+        {previewPdf && (
+          <Suspense fallback={null}>
+            <PDFViewer
+              url={previewPdf.url}
+              fileName={previewPdf.name}
+              onClose={() => setPreviewPdf(null)}
+            />
+          </Suspense>
+        )}
+      </AnimatePresence>
     </div>
   );
-};
-
-export default ChatPage;
+}
