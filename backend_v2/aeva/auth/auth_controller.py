@@ -18,13 +18,10 @@ from flask.views import MethodView
 from flask_smorest import Blueprint
 
 from aeva.auth.auth_repository import AuthRepository
-from aeva.auth.schema.profile_schema import (
-    ProfileResponseSchema,
-    UpsertProfileSchema,
-)
+from aeva.auth.schema.profile_schema import UpsertProfileSchema
 from aeva.common.decorators import user_required
 from aeva.common.errors import ERROR_CODES, CustomError
-from aeva.common.schema import UserData
+from aeva.common.schema import ResponseEnvelopeSchema, UserData
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
@@ -55,6 +52,7 @@ class AuthMe(MethodView):
     """Current user profile routes."""
 
     @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def get(current_user: UserData) -> dict[str, Any]:
         """Get current user profile."""
@@ -62,6 +60,7 @@ class AuthMe(MethodView):
 
     @staticmethod
     @blueprint.arguments(UpsertProfileSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def put(current_user: UserData, data: dict) -> dict[str, Any]:
         """Upsert user profile."""
@@ -69,6 +68,7 @@ class AuthMe(MethodView):
 
 
 @blueprint.route("/login/google")
+@blueprint.doc(security=[])
 def login_google() -> Response:
     """Start Google OAuth via Supabase (PKCE)."""
     supabase = SupabaseService()
@@ -89,6 +89,7 @@ def login_google() -> Response:
 
 
 @blueprint.route("/callback")
+@blueprint.doc(security=[])
 def auth_callback() -> Response:
     """Handle OAuth callback: exchange code, redirect to frontend."""
     frontend = current_app.config["FRONTEND_URL"]
@@ -122,6 +123,7 @@ def auth_callback() -> Response:
 
 
 @blueprint.route("/refresh", methods=["POST"])
+@blueprint.doc(security=[])
 def refresh() -> Response:
     """Refresh an access token using a refresh token."""
     data = request.get_json(silent=True) or {}
@@ -149,4 +151,4 @@ def refresh() -> Response:
     })
 
 
-blueprint.add_url_rule("/me", view_func=AuthMe.as_view("auth_me"))
+blueprint.add_url_rule("/me", view_func=AuthMe, endpoint="auth_me")

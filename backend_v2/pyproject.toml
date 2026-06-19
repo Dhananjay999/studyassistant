@@ -38,8 +38,10 @@ run = "flask --app aeva.app run --debug --port 8000"
 [tool.ruff]
 line-length = 80
 target-version = "py312"
-quote-style = "double"
 indent-width = 4
+
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.ruff.lint]
 select = ["ALL"]

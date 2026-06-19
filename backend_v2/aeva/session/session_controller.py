@@ -6,11 +6,9 @@ from flask.views import MethodView
 from flask_smorest import Blueprint
 
 from aeva.common.decorators import user_required
-from aeva.common.schema import UserData
+from aeva.common.schema import ResponseEnvelopeSchema, UserData
 from aeva.session.schema.session_schema import (
     CreateSessionSchema,
-    MessageSchema,
-    SessionSchema,
     UpdateSessionSchema,
 )
 from aeva.session.session_repository import SessionRepository
@@ -27,6 +25,7 @@ class SessionList(MethodView):
     """Session list/create routes."""
 
     @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def get(current_user: UserData) -> dict[str, Any]:
         """List user sessions."""
@@ -34,6 +33,7 @@ class SessionList(MethodView):
 
     @staticmethod
     @blueprint.arguments(CreateSessionSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def post(
         current_user: UserData,
@@ -48,6 +48,7 @@ class SessionDetail(MethodView):
 
     @staticmethod
     @blueprint.arguments(UpdateSessionSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def patch(
         current_user: UserData,
@@ -74,6 +75,7 @@ class SessionMessages(MethodView):
     """Session messages route."""
 
     @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def get(
         current_user: UserData,
@@ -84,13 +86,15 @@ class SessionMessages(MethodView):
 
 
 blueprint.add_url_rule(
-    "/", view_func=SessionList.as_view("session_list")
+    "/", view_func=SessionList, endpoint="session_list"
 )
 blueprint.add_url_rule(
     "/<session_id>",
-    view_func=SessionDetail.as_view("session_detail"),
+    view_func=SessionDetail,
+    endpoint="session_detail",
 )
 blueprint.add_url_rule(
     "/<session_id>/messages",
-    view_func=SessionMessages.as_view("session_messages"),
+    view_func=SessionMessages,
+    endpoint="session_messages",
 )

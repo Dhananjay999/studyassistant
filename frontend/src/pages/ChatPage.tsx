@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu,
@@ -16,6 +17,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { SessionSidebar } from "@/components/chat/SessionSidebar";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { apiService, streamingService } from "@/services";
@@ -47,6 +49,7 @@ export default function ChatPage() {
   const { user, token, logout } = useAuth();
   const isMobile = useIsMobile();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
@@ -81,16 +84,33 @@ export default function ChatPage() {
       const res = await apiService.listSessions();
       setSessions(res.data);
       if (res.data.length > 0 && !activeSession) {
-        setActiveSession(res.data[0]);
+        // Restore the session named in the URL (?sessionId=) on load/refresh;
+        // fall back to the most recent one when it's missing or stale.
+        const urlId = searchParams.get("sessionId");
+        const match = urlId
+          ? res.data.find((s) => s.id === urlId)
+          : undefined;
+        setActiveSession(match || res.data[0]);
       }
     } catch {
       toast({ title: "Failed to load sessions", variant: "destructive" });
     }
-  }, [activeSession, toast]);
+  }, [activeSession, searchParams, toast]);
 
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
+
+  // Keep the URL's ?sessionId= in sync with the active session so a refresh
+  // restores it. Draft sessions (no id yet) clear the param. Guarded so the
+  // write doesn't re-trigger itself.
+  useEffect(() => {
+    const current = searchParams.get("sessionId") ?? null;
+    const next = activeSession?.id || null;
+    if (next === current) return;
+    if (next) setSearchParams({ sessionId: next }, { replace: true });
+    else setSearchParams({}, { replace: true });
+  }, [activeSession?.id, searchParams, setSearchParams]);
 
   useEffect(() => {
     // Draft or no session: nothing to fetch.
@@ -469,17 +489,20 @@ export default function ChatPage() {
                 messages={messages}
                 isStreaming={isStreaming}
                 streamingContent={streamingContent}
-                pendingClarification={
-                  pendingClarification
-                    ? {
-                        runId: pendingClarification.runId,
-                        data: pendingClarification.data,
-                      }
-                    : null
-                }
-                onClarificationSubmit={handleClarificationSubmit}
-                clarificationDisabled={isStreaming}
               />
+
+              {/* Pending clarification sits directly above the input
+                  (ChatGPT-style) so it stays visible while scrolling. */}
+              {pendingClarification?.data && (
+                <div className="border-t border-border/30 px-4 py-3">
+                  <ClarificationPanel
+                    data={pendingClarification.data}
+                    runId={pendingClarification.runId}
+                    onSubmit={handleClarificationSubmit}
+                    disabled={isStreaming}
+                  />
+                </div>
+              )}
 
               <ChatInput
                 onSend={handleSend}

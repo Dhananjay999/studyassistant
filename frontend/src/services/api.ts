@@ -116,37 +116,49 @@ class ApiService {
 
     return {
       msg: res.msg,
-      data: res.data.map((m) => ({
-        id: m.id,
-        type: m.role === "user" ? "user" : "bot",
-        content: m.content,
-        timestamp: new Date(m.created_at),
-        metadata: {
-          sources: (m.metadata?.sources as Message["metadata"] extends infer M
-            ? M extends { sources?: infer S }
-              ? S
-              : never
-            : never) || [],
-          mode: m.metadata?.mode as "media" | "web_search" | undefined,
-          tool_used: m.metadata?.tool_used as Message["metadata"] extends infer M
-            ? M extends { tool_used?: infer T }
-              ? T
-              : never
-            : never,
-          status: m.metadata?.status as Message["metadata"] extends infer M
-            ? M extends { status?: infer S }
-              ? S
-              : never
-            : never,
-          run_id: m.metadata?.run_id as string | undefined,
-          clarification: m.metadata?.clarification as Message["metadata"] extends infer M
-            ? M extends { clarification?: infer C }
-              ? C
-              : never
-            : never,
-          quiz: m.metadata?.content as QuizContent | undefined,
-        },
-      })),
+      data: res.data.map((m) => {
+        // The backend nests the tool result under metadata.content; sources
+        // and quiz data live there, not at the top level.
+        const md = m.metadata ?? {};
+        const inner = (md.content ?? {}) as Record<string, unknown>;
+        const toolUsed = md.tool_used as Message["metadata"] extends infer M
+          ? M extends { tool_used?: infer T }
+            ? T
+            : never
+          : never;
+        return {
+          id: m.id,
+          type: m.role === "user" ? "user" : "bot",
+          content: m.content,
+          timestamp: new Date(m.created_at),
+          metadata: {
+            sources: (inner.sources as Message["metadata"] extends infer M
+              ? M extends { sources?: infer S }
+                ? S
+                : never
+              : never) || [],
+            mode: md.mode as "media" | "web_search" | undefined,
+            tool_used: toolUsed,
+            status: md.status as Message["metadata"] extends infer M
+              ? M extends { status?: infer S }
+                ? S
+                : never
+              : never,
+            run_id: md.run_id as string | undefined,
+            clarification: md.clarification as Message["metadata"] extends infer M
+              ? M extends { clarification?: infer C }
+                ? C
+                : never
+              : never,
+            // Only quiz messages carry quiz content; otherwise leave undefined
+            // so the UI doesn't try to render a non-quiz answer as a quiz.
+            quiz:
+              toolUsed === "quiz_generator"
+                ? (inner as unknown as QuizContent)
+                : undefined,
+          },
+        };
+      }),
     };
   }
 

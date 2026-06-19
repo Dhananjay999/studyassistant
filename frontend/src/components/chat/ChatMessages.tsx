@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import { Bot, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
 import { QuizPanel } from "@/components/chat/QuizPanel";
 import type { Message } from "@/types";
 
@@ -12,16 +11,6 @@ interface ChatMessagesProps {
   messages: Message[];
   isStreaming?: boolean;
   streamingContent?: string;
-  pendingClarification?: {
-    runId: string;
-    data: NonNullable<Message["metadata"]>["clarification"];
-  } | null;
-  onClarificationSubmit?: (payload: {
-    action: "answer" | "custom" | "skip";
-    answers?: Record<string, string>;
-    custom_text?: string;
-  }) => void;
-  clarificationDisabled?: boolean;
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -34,9 +23,6 @@ export function ChatMessages({
   messages,
   isStreaming,
   streamingContent,
-  pendingClarification,
-  onClarificationSubmit,
-  clarificationDisabled,
 }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -50,7 +36,7 @@ export function ChatMessages({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingContent, pendingClarification, scrollToBottom]);
+  }, [messages, streamingContent, scrollToBottom]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -128,9 +114,9 @@ export function ChatMessages({
                     ))}
                   </div>
                 )}
-                {msg.metadata?.quiz && (
+                {msg.metadata?.quiz?.questions?.length ? (
                   <QuizPanel quiz={msg.metadata.quiz} />
-                )}
+                ) : null}
                 {msg.metadata?.quiz_result && (
                   <div className="mt-2 text-xs opacity-80">
                     Score: {msg.metadata.quiz_result.evaluation.score}%
@@ -140,22 +126,6 @@ export function ChatMessages({
             </motion.div>
           ))}
         </AnimatePresence>
-
-        {pendingClarification?.data && onClarificationSubmit && (
-          <div className="flex gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-sky-500 text-white">
-              <Bot className="h-4 w-4" />
-            </div>
-            <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-3 text-sm">
-              <ClarificationPanel
-                data={pendingClarification.data}
-                runId={pendingClarification.runId}
-                onSubmit={onClarificationSubmit}
-                disabled={clarificationDisabled}
-              />
-            </div>
-          </div>
-        )}
 
         {isStreaming && streamingContent && (
           <motion.div

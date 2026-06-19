@@ -7,9 +7,9 @@ from flask.views import MethodView
 from flask_smorest import Blueprint
 
 from aeva.chat.chat_repository import ChatRepository
-from aeva.chat.schema.chat_schema import ChatRequestSchema, ChatResponseSchema
+from aeva.chat.schema.chat_schema import ChatRequestSchema
 from aeva.common.decorators import user_required
-from aeva.common.schema import UserData
+from aeva.common.schema import ResponseEnvelopeSchema, UserData
 
 blueprint = Blueprint(
     "chat",
@@ -24,6 +24,7 @@ class ChatEndpoint(MethodView):
 
     @staticmethod
     @blueprint.arguments(ChatRequestSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def post(
         current_user: UserData,
@@ -63,7 +64,7 @@ class ChatStreamEndpoint(MethodView):
         )
 
 
-blueprint.add_url_rule("/", view_func=ChatEndpoint.as_view("chat"))
+blueprint.add_url_rule("/", view_func=ChatEndpoint, endpoint="chat")
 blueprint.add_url_rule(
-    "/stream", view_func=ChatStreamEndpoint.as_view("chat_stream")
+    "/stream", view_func=ChatStreamEndpoint, endpoint="chat_stream"
 )

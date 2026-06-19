@@ -1,6 +1,5 @@
 """Chat repository — delegates to assistant orchestrator."""
 
-import json
 import logging
 from collections.abc import Generator
 from typing import Any
@@ -9,7 +8,6 @@ from aeva.assistant.assistant_repository import AssistantRepository
 from aeva.assistant.schema.assistant_schema import AssistantRequestData
 from aeva.chat.schema.chat_schema import ChatRequestData
 from aeva.common.schema import UserData, success_response
-from aeva.llm.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -81,28 +79,7 @@ class ChatRepository:
         current_user: UserData,
         request_data: ChatRequestData,
     ) -> Generator[str, None, None]:
-        """Process streaming chat via assistant orchestrator."""
-        result = AssistantRepository.process(
+        """Process streaming chat via the assistant orchestrator."""
+        yield from AssistantRepository.process_stream(
             current_user, ChatRepository._to_assistant(request_data)
-        )
-        data = result.get("data", {})
-        text = ChatRepository._format_answer(result)
-
-        if data.get("status") == "clarification_required":
-            payload = {
-                "type": "clarification",
-                "data": data,
-                "done": True,
-            }
-            yield f"data: {json.dumps(payload)}\n\n"
-            return
-
-        yield LLMClient.format_sse_chunk(text)
-        yield LLMClient.format_sse_chunk(
-            "",
-            done=True,
-            extra={
-                "tool_used": data.get("tool_used"),
-                "content": data.get("content"),
-            },
         )

@@ -17,8 +17,20 @@ class RunStatus(StrEnum):
     """Orchestration result status."""
 
     CLARIFICATION_REQUIRED = "clarification_required"
+    QUIZ_SETUP = "quiz_setup"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+@dataclass
+class QuizOptions:
+    """User-chosen quiz settings from the setup popover."""
+
+    topic: str | None = None
+    question_count: int | None = None
+    difficulty: str | None = None
+    question_types: list[str] | None = None
+    use_media: bool | None = None
 
 
 @dataclass
@@ -57,6 +69,9 @@ class AssistantContext:
     media_ids: list[str] | None = None
     run_id: str | None = None
     clarification: UserClarificationResponse | None = None
+    # Set when the user submits the quiz-setup popover; triggers deterministic
+    # quiz generation instead of LLM planning.
+    quiz_options: QuizOptions | None = None
 
 
 @dataclass

@@ -51,9 +51,11 @@ class QuizSubmitEndpoint(MethodView):
 
 blueprint.add_url_rule(
     "/<quiz_id>",
-    view_func=QuizDetailEndpoint.as_view("quiz_detail"),
+    view_func=QuizDetailEndpoint,
+    endpoint="quiz_detail",
 )
 blueprint.add_url_rule(
     "/<quiz_id>/submit",
-    view_func=QuizSubmitEndpoint.as_view("quiz_submit"),
+    view_func=QuizSubmitEndpoint,
+    endpoint="quiz_submit",
 )

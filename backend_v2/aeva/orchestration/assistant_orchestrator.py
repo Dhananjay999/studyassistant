@@ -2,12 +2,12 @@
 
 import json
 import logging
+from collections.abc import Generator
 from typing import Any
 
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.llm.llm_client import LLMClient
 from aeva.llm import prompts
-from aeva.llm.schemas.plan_turn import PLAN_TURN_SCHEMA
 from aeva.mcp.base import ToolContext
 from aeva.mcp.registry import ToolRegistry
 from aeva.orchestration.models import (
@@ -57,7 +57,74 @@ class AssistantOrchestrator:
         return self._supabase or SupabaseService()
 
     def run(self, ctx: AssistantContext) -> AssistantResult:
-        """Execute one assistant turn."""
+        """Execute one assistant turn (non-streaming)."""
+        session, history, enriched_message, plan = self._setup_and_plan(ctx)
+
+        if plan.get("action") == "clarify":
+            return self._handle_clarification(ctx, plan, enriched_message)
+
+        tool_name, tool_params = self._resolve_tool(plan)
+        tool_ctx = self._build_tool_ctx(ctx, enriched_message, history)
+
+        result = self.registry.execute(tool_name, tool_ctx, tool_params)
+        display_text = self._format_display(tool_name, result)
+        msg = self._persist_answer(
+            ctx, session, tool_name, result, display_text
+        )
+
+        return AssistantResult(
+            status=RunStatus.COMPLETED,
+            tool_used=tool_name,
+            content=result,
+            message_id=msg["id"],
+            display_text=display_text,
+        )
+
+    def run_stream(
+        self, ctx: AssistantContext
+    ) -> Generator[str, None, None]:
+        """Execute one assistant turn, streaming the answer as SSE frames."""
+        session, history, enriched_message, plan = self._setup_and_plan(ctx)
+
+        if plan.get("action") == "clarify":
+            clar = self._handle_clarification(ctx, plan, enriched_message)
+            yield self._clarification_frame(clar)
+            return
+
+        tool_name, tool_params = self._resolve_tool(plan)
+        tool_ctx = self._build_tool_ctx(ctx, enriched_message, history)
+        tool = self.registry.get(tool_name)
+
+        full_text = ""
+        result: dict[str, Any] = {}
+        if tool.can_stream():
+            gen = tool.execute_stream(tool_ctx, tool_params)
+            try:
+                while True:
+                    chunk = next(gen)
+                    full_text += chunk
+                    yield LLMClient.format_sse_chunk(chunk)
+            except StopIteration as stop:
+                result = stop.value or {}
+            display_text = full_text or self._format_display(
+                tool_name, result
+            )
+        else:
+            result = self.registry.execute(tool_name, tool_ctx, tool_params)
+            display_text = self._format_display(tool_name, result)
+            yield LLMClient.format_sse_chunk(display_text)
+
+        self._persist_answer(ctx, session, tool_name, result, display_text)
+        yield LLMClient.format_sse_chunk(
+            "",
+            done=True,
+            extra={"tool_used": tool_name, "content": result},
+        )
+
+    def _setup_and_plan(
+        self, ctx: AssistantContext
+    ) -> tuple[dict[str, Any], list[dict[str, str]], str, dict[str, Any]]:
+        """Shared prep for both run paths: load, record, and plan the turn."""
         session = self.supabase.get_session(ctx.session_id, ctx.user_id)
         if not session:
             raise CustomError(ERROR_CODES["NOT_FOUND"])
@@ -83,7 +150,9 @@ class AssistantOrchestrator:
 
         if (
             plan.get("action") == "clarify"
-            and self._clarification_unnecessary(enriched_message, ctx)
+            and self._clarification_unnecessary(
+                enriched_message, ctx, history
+            )
         ):
             logger.info(
                 "Skipping unnecessary clarification for: %s",
@@ -91,14 +160,22 @@ class AssistantOrchestrator:
             )
             plan = self._fallback_tool_plan(ctx, enriched_message)
 
-        if plan.get("action") == "clarify":
-            return self._handle_clarification(ctx, plan, enriched_message)
+        return session, history, enriched_message, plan
 
+    @staticmethod
+    def _resolve_tool(plan: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        """Pull the tool name and params from a run_tool plan."""
         tool_info = plan.get("tool") or {}
-        tool_name = tool_info.get("name", "web_search")
-        tool_params = tool_info.get("params") or {}
+        return tool_info.get("name", "web_search"), tool_info.get("params") or {}
 
-        tool_ctx = ToolContext(
+    def _build_tool_ctx(
+        self,
+        ctx: AssistantContext,
+        enriched_message: str,
+        history: list[dict[str, str]],
+    ) -> ToolContext:
+        """Build the runtime context passed to a tool."""
+        return ToolContext(
             user_id=ctx.user_id,
             session_id=ctx.session_id,
             message=ctx.message,
@@ -106,8 +183,16 @@ class AssistantOrchestrator:
             media_ids=ctx.media_ids,
             history=history,
         )
-        result = self.registry.execute(tool_name, tool_ctx, tool_params)
-        display_text = self._format_display(tool_name, result)
+
+    def _persist_answer(
+        self,
+        ctx: AssistantContext,
+        session: dict[str, Any],
+        tool_name: str,
+        result: dict[str, Any],
+        display_text: str,
+    ) -> dict[str, Any]:
+        """Persist the assistant message and auto-title a fresh session."""
         msg = self.supabase.add_message(
             ctx.session_id,
             "assistant",
@@ -122,14 +207,30 @@ class AssistantOrchestrator:
             self.supabase.update_session(
                 ctx.session_id, ctx.user_id, title=ctx.message[:60]
             )
+        return msg
 
-        return AssistantResult(
-            status=RunStatus.COMPLETED,
-            tool_used=tool_name,
-            content=result,
-            message_id=msg["id"],
-            display_text=display_text,
-        )
+    @staticmethod
+    def _clarification_frame(clar: AssistantResult) -> str:
+        """Build the SSE clarification frame for the streaming path."""
+        request = clar.clarification
+        questions = request.questions if request else []
+        payload = {
+            "type": "clarification",
+            "data": {
+                "status": "clarification_required",
+                "run_id": clar.run_id,
+                "clarification": {
+                    "reason": request.reason if request else "",
+                    "questions": [
+                        {"id": q.id, "text": q.text, "options": q.options}
+                        for q in questions
+                    ],
+                },
+                "message_id": clar.message_id,
+            },
+            "done": True,
+        }
+        return f"data: {json.dumps(payload)}\n\n"
 
     def _get_history(
         self, session_id: str, limit: int = 10
@@ -181,7 +282,7 @@ class AssistantOrchestrator:
         )
         return self.llm.generate_structured(
             prompt,
-            PLAN_TURN_SCHEMA,
+            prompts.PLAN_TURN_SCHEMA,
             history=history,
             system_prompt=prompts.SYSTEM_PROMPT,
         )
@@ -190,6 +291,7 @@ class AssistantOrchestrator:
     def _clarification_unnecessary(
         message: str,
         ctx: AssistantContext,
+        history: list[dict[str, str]],
     ) -> bool:
         """Return True when clarification would be annoying, not helpful."""
         if ctx.clarification is not None:
@@ -197,6 +299,17 @@ class AssistantOrchestrator:
 
         text = message.strip().lower()
         words = text.split()
+        is_quiz = "quiz" in text or "test" in text
+
+        # Quiz + media is a real fork (quiz the document or the discussion?) —
+        # let the planner ask which.
+        if is_quiz and ctx.media_ids:
+            return False
+
+        # Quiz without media: only worth clarifying when there is no subject to
+        # infer — nothing specific in the message and no prior conversation.
+        if is_quiz:
+            return len(words) > 3 or bool(history)
 
         greetings = {
             "hi", "hello", "hey", "hiya", "howdy", "yo",
@@ -207,7 +320,7 @@ class AssistantOrchestrator:
             return True
 
         # Short casual messages (e.g. "hi there", "how are you")
-        if len(words) <= 4 and "quiz" not in text and "test" not in text:
+        if len(words) <= 4:
             return True
 
         question_starts = (
@@ -218,11 +331,7 @@ class AssistantOrchestrator:
         if "?" in message or text.startswith(question_starts):
             return True
 
-        # Quiz with any topic words beyond bare "make a quiz"
-        if "quiz" in text and len(words) > 3:
-            return True
-
-        # Media attached — let media_llm handle ambiguity
+        # Media attached for a non-quiz request — media_llm handles it.
         if ctx.media_ids:
             return True
 
@@ -235,19 +344,27 @@ class AssistantOrchestrator:
     ) -> dict[str, Any]:
         """Rule-based tool pick when skipping over-clarification."""
         text = message.lower()
+
+        # Quiz wins over media: a quiz request is its own intent, and the quiz
+        # tool grounds itself in the conversation history.
+        if any(w in text for w in ("quiz", "practice test", "test me")):
+            params: dict[str, Any] = {"topic": message}
+            if ctx.media_ids:
+                params["use_media"] = True
+            return {
+                "action": "run_tool",
+                "tool": {"name": "quiz_generator", "params": params},
+            }
+
         if ctx.media_ids:
-            tool = "media_llm"
-        elif any(w in text for w in ("quiz", "practice test", "test me on")):
-            tool = "quiz_generator"
-        else:
-            tool = "web_search"
+            return {
+                "action": "run_tool",
+                "tool": {"name": "media_llm", "params": {"query": message}},
+            }
 
         return {
             "action": "run_tool",
-            "tool": {
-                "name": tool,
-                "params": {"query": message, "topic": message},
-            },
+            "tool": {"name": "web_search", "params": {"query": message}},
         }
 
     def _handle_clarification(

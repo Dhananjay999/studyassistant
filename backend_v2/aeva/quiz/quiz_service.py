@@ -7,7 +7,6 @@ from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import success_response
 from aeva.llm.llm_client import LLMClient
 from aeva.llm import prompts
-from aeva.llm.schemas.feedback import QUIZ_FEEDBACK_SCHEMA
 from aeva.quiz.quiz_engine import QuizEngine
 from aeva.quiz.quiz_repository import QuizRepository
 
@@ -76,6 +75,6 @@ class QuizService:
         )
         return self.llm.generate_structured(
             prompt,
-            QUIZ_FEEDBACK_SCHEMA,
+            prompts.QUIZ_FEEDBACK_SCHEMA,
             system_prompt=prompts.SYSTEM_PROMPT,
         )

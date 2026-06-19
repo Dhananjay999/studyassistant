@@ -6,9 +6,10 @@ from flask import current_app
 
 from aeva.llm.llm_client import LLMClient
 from aeva.llm import prompts
-from aeva.llm.schemas.quiz import QUIZ_GENERATION_SCHEMA
+from aeva.media.attachments import download_attachments
 from aeva.mcp.base import BaseTool, ToolContext, ToolDefinition
 from aeva.quiz.quiz_repository import QuizRepository
+from aeva.supabase.supabase_service import SupabaseService
 
 
 class QuizGeneratorTool(BaseTool):
@@ -18,9 +19,11 @@ class QuizGeneratorTool(BaseTool):
         self,
         llm: LLMClient | None = None,
         quiz_repo: QuizRepository | None = None,
+        supabase: SupabaseService | None = None,
     ) -> None:
         self._llm = llm
         self._quiz_repo = quiz_repo
+        self._supabase = supabase
 
     @property
     def llm(self) -> LLMClient:
@@ -33,6 +36,11 @@ class QuizGeneratorTool(BaseTool):
         return self._quiz_repo or QuizRepository()
 
     @property
+    def supabase(self) -> SupabaseService:
+        """Lazy Supabase client (for media-based quizzes)."""
+        return self._supabase or SupabaseService()
+
+    @property
     def definition(self) -> ToolDefinition:
         """Tool metadata."""
         return ToolDefinition(
@@ -41,39 +49,36 @@ class QuizGeneratorTool(BaseTool):
                 "Generate a practice quiz with single-select, multi-select, "
                 "and true/false questions on a study topic."
             ),
-            parameters_schema={
-                "type": "object",
-                "properties": {
-                    "topic": {
-                        "type": "string",
-                        "description": "Quiz topic or subject",
-                    },
-                    "question_count": {
-                        "type": "integer",
-                        "description": "Number of questions (default 5)",
-                    },
-                    "difficulty": {
-                        "type": "string",
-                        "enum": ["easy", "medium", "hard"],
-                    },
-                    "question_types": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": [
-                                "single_select",
-                                "multi_select",
-                                "true_false",
-                            ],
-                        },
-                    },
-                },
-                "required": ["topic"],
-            },
+            parameters_schema=prompts.QUIZ_GENERATOR_PARAMS,
         )
 
+    @staticmethod
+    def _wants_media(params: dict[str, Any], ctx: ToolContext) -> bool:
+        """Decide whether to build the quiz from the uploaded material.
+
+        Honors an explicit planner choice (``use_media``); otherwise infers it
+        from the user's wording, which reliably covers a clarification answer
+        like "From your uploaded material" without depending on the planner
+        re-deriving the flag.
+        """
+        if not ctx.media_ids:
+            return False
+        if "use_media" in params:
+            return bool(params["use_media"])
+        text = ctx.enriched_message.lower()
+        media_words = (
+            "upload", "document", "the file", "pdf", "the book",
+            "my book", "attached", "the material", "my notes", "image",
+        )
+        return any(word in text for word in media_words)
+
     def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
-        """Generate and persist a quiz."""
+        """Generate and persist a quiz.
+
+        Grounds the quiz in the conversation (history) so a follow-up like
+        "make a quiz" uses the topic just discussed. When ``use_media`` is set
+        and the session has media, the quiz is built from the uploaded files.
+        """
         topic = params.get("topic") or ctx.enriched_message
         count = min(
             int(params.get("question_count", 5)),
@@ -86,6 +91,17 @@ class QuizGeneratorTool(BaseTool):
             "true_false",
         ]
 
+        attachments = None
+        history: list[dict[str, str]] | None = ctx.history
+        if self._wants_media(params, ctx):
+            attachments = download_attachments(
+                self.supabase, ctx.user_id, ctx.session_id, ctx.media_ids
+            )
+            if attachments:
+                # Quiz purely from the uploaded material; drop chat history so
+                # an earlier topic (e.g. "what is DBMS") doesn't bias it.
+                history = None
+
         prompt = prompts.QUIZ_GENERATION_PROMPT.format(
             topic=topic,
             count=count,
@@ -95,8 +111,10 @@ class QuizGeneratorTool(BaseTool):
         )
         quiz_data = self.llm.generate_structured(
             prompt,
-            QUIZ_GENERATION_SCHEMA,
+            prompts.QUIZ_GENERATION_SCHEMA,
             system_prompt=prompts.SYSTEM_PROMPT,
+            history=history,
+            attachments=attachments,
         )
         quiz = self.quiz_repo.create(
             user_id=ctx.user_id,

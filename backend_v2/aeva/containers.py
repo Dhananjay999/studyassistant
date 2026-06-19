@@ -20,7 +20,7 @@ def build_tool_registry(
     registry = ToolRegistry()
     registry.register(WebSearchTool(llm=web_search_llm))
     registry.register(MediaLLMTool(llm=media_llm, supabase=supabase))
-    registry.register(QuizGeneratorTool(llm=quiz_llm))
+    registry.register(QuizGeneratorTool(llm=quiz_llm, supabase=supabase))
     return registry
 
 

@@ -52,6 +52,22 @@ def load_env_vars(app: Flask) -> None:
     app.config["LLM_QUIZ_MODEL"] = os.environ.get(
         "LLM_QUIZ_MODEL", default_model
     )
+
+    # LLM provider per capability (fall back to LLM_PROVIDER when unset).
+    default_provider = os.environ.get("LLM_PROVIDER", "gemini")
+    app.config["LLM_PROVIDER"] = default_provider
+    app.config["LLM_ORCHESTRATOR_PROVIDER"] = os.environ.get(
+        "LLM_ORCHESTRATOR_PROVIDER", default_provider
+    )
+    app.config["LLM_WEB_SEARCH_PROVIDER"] = os.environ.get(
+        "LLM_WEB_SEARCH_PROVIDER", default_provider
+    )
+    app.config["LLM_MEDIA_PROVIDER"] = os.environ.get(
+        "LLM_MEDIA_PROVIDER", default_provider
+    )
+    app.config["LLM_QUIZ_PROVIDER"] = os.environ.get(
+        "LLM_QUIZ_PROVIDER", default_provider
+    )
     app.config["QUIZ_MAX_QUESTIONS"] = int(
         os.environ.get("QUIZ_MAX_QUESTIONS", "10")
     )
@@ -110,6 +126,16 @@ def create_app() -> Flask:
     app.extensions["container"] = container
 
     api = Api(app)
+
+    # Bearer JWT auth for Swagger UI: registers the scheme and makes it the
+    # global default so the "Authorize" button applies to every operation.
+    # Public routes opt out with @blueprint.doc(security=[]).
+    api.spec.components.security_scheme(
+        "bearerAuth",
+        {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
+    )
+    api.spec.options["security"] = [{"bearerAuth": []}]
+
     api.register_blueprint(auth_bp)
     api.register_blueprint(session_bp)
     api.register_blueprint(media_bp)

@@ -7,6 +7,7 @@ from marshmallow import Schema, fields, post_load, validate
 
 from aeva.orchestration.models import (
     ClarificationAction,
+    QuizOptions,
     UserClarificationResponse,
 )
 
@@ -20,6 +21,7 @@ class AssistantRequestData:
     media_ids: list[str] | None = None
     run_id: str | None = None
     clarification: UserClarificationResponse | None = None
+    quiz_options: QuizOptions | None = None
 
 
 class ClarificationResponseSchema(Schema):
@@ -37,6 +39,19 @@ class ClarificationResponseSchema(Schema):
     custom_text = fields.Str(load_default=None)
 
 
+class QuizOptionsSchema(Schema):
+    """Nested quiz settings from the setup popover."""
+
+    topic = fields.Str(load_default=None)
+    question_count = fields.Int(load_default=None)
+    difficulty = fields.Str(
+        load_default=None,
+        validate=validate.OneOf(["easy", "medium", "hard"]),
+    )
+    question_types = fields.List(fields.Str(), load_default=None)
+    use_media = fields.Bool(load_default=None)
+
+
 class AssistantRequestSchema(Schema):
     """Assistant request."""
 
@@ -47,6 +62,7 @@ class AssistantRequestSchema(Schema):
     clarification = fields.Nested(
         ClarificationResponseSchema, load_default=None
     )
+    quiz_options = fields.Nested(QuizOptionsSchema, load_default=None)
 
     @post_load
     def make_data(self, data: dict, **_kwargs: object) -> AssistantRequestData:
@@ -57,5 +73,14 @@ class AssistantRequestSchema(Schema):
                 action=ClarificationAction(clar["action"]),
                 answers=clar.get("answers") or {},
                 custom_text=clar.get("custom_text"),
+            )
+        opts = data.get("quiz_options")
+        if opts and isinstance(opts, dict):
+            data["quiz_options"] = QuizOptions(
+                topic=opts.get("topic"),
+                question_count=opts.get("question_count"),
+                difficulty=opts.get("difficulty"),
+                question_types=opts.get("question_types"),
+                use_media=opts.get("use_media"),
             )
         return AssistantRequestData(**data)

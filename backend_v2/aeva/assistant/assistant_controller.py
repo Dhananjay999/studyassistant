@@ -1,6 +1,6 @@
 """Assistant controller."""
 
-import json
+from collections.abc import Generator
 from typing import Any
 
 from flask import Response, current_app
@@ -10,8 +10,7 @@ from flask_smorest import Blueprint
 from aeva.assistant.assistant_repository import AssistantRepository
 from aeva.assistant.schema.assistant_schema import AssistantRequestSchema
 from aeva.common.decorators import user_required
-from aeva.common.schema import UserData
-from aeva.llm.llm_client import LLMClient
+from aeva.common.schema import ResponseEnvelopeSchema, UserData
 
 blueprint = Blueprint(
     "assistant",
@@ -26,6 +25,7 @@ class AssistantEndpoint(MethodView):
 
     @staticmethod
     @blueprint.arguments(AssistantRequestSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def post(
         current_user: UserData,
@@ -48,38 +48,10 @@ class AssistantStreamEndpoint(MethodView):
         """Stream assistant response via SSE."""
         app = current_app._get_current_object()  # noqa: SLF001
 
-        def generate():
+        def generate() -> Generator[str, None, None]:
             with app.app_context():
-                result = AssistantRepository.process(
+                yield from AssistantRepository.process_stream(
                     current_user, request_data
-                )
-                data = result.get("data", {})
-                status = data.get("status")
-
-                if status == "clarification_required":
-                    payload = json.dumps({
-                        "type": "clarification",
-                        "data": data,
-                        "done": True,
-                    })
-                    yield f"data: {payload}\n\n"
-                    return
-
-                content = data.get("content", {})
-                text = content.get("answer") or json.dumps(content)
-                if data.get("tool_used") == "quiz_generator":
-                    text = (
-                        f"Quiz created: {content.get('title')} "
-                        f"({len(content.get('questions', []))} questions)"
-                    )
-                yield LLMClient.format_sse_chunk(text)
-                yield LLMClient.format_sse_chunk(
-                    "",
-                    done=True,
-                    extra={
-                        "tool_used": data.get("tool_used"),
-                        "content": content,
-                    },
                 )
 
         return Response(
@@ -93,8 +65,9 @@ class AssistantStreamEndpoint(MethodView):
         )
 
 
-blueprint.add_url_rule("/", view_func=AssistantEndpoint.as_view("assistant"))
+blueprint.add_url_rule("/", view_func=AssistantEndpoint, endpoint="assistant")
 blueprint.add_url_rule(
     "/stream",
-    view_func=AssistantStreamEndpoint.as_view("assistant_stream"),
+    view_func=AssistantStreamEndpoint,
+    endpoint="assistant_stream",
 )

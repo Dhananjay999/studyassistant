@@ -1,5 +1,6 @@
 """Web search tool using Gemini Google Search grounding."""
 
+from collections.abc import Generator
 from typing import Any
 
 from aeva.llm.llm_client import LLMClient
@@ -27,16 +28,7 @@ class WebSearchTool(BaseTool):
                 "Search the web for current or general knowledge answers. "
                 "Use when no uploaded media is needed."
             ),
-            parameters_schema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The question to search and answer",
-                    },
-                },
-                "required": ["query"],
-            },
+            parameters_schema=prompts.WEB_SEARCH_PARAMS,
         )
 
     def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
@@ -48,3 +40,24 @@ class WebSearchTool(BaseTool):
             "answer": answer,
             "sources": self.llm.last_sources,
         }
+
+    def can_stream(self) -> bool:
+        """Web search answers stream token-by-token."""
+        return True
+
+    def execute_stream(
+        self,
+        ctx: ToolContext,
+        params: dict[str, Any],
+    ) -> Generator[str, None, dict[str, Any]]:
+        """Stream the grounded answer, returning answer + sources at the end."""
+        llm = self.llm
+        query = params.get("query") or ctx.enriched_message
+        prompt = prompts.WEB_SEARCH_PROMPT.format(query=query)
+        answer = ""
+        for chunk in llm.generate_stream(
+            prompt, use_search=True, history=ctx.history
+        ):
+            answer += chunk
+            yield chunk
+        return {"answer": answer, "sources": llm.last_sources}
