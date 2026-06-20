@@ -11,3 +11,6 @@ uploads/
 sources/
 *.md
 poetry.lock
+# Poetry-format pyproject confuses Vercel's uv builder ("No `project` table").
+# Excluding it makes Vercel install from requirements.txt instead.
+pyproject.toml
