@@ -93,11 +93,13 @@ class QuizGeneratorTool(BaseTool):
 
         attachments = None
         history: list[dict[str, str]] | None = ctx.history
+        from_media = False
         if self._wants_media(params, ctx):
             attachments = download_attachments(
                 self.supabase, ctx.user_id, ctx.session_id, ctx.media_ids
             )
             if attachments:
+                from_media = True
                 # Quiz purely from the uploaded material; drop chat history so
                 # an earlier topic (e.g. "what is DBMS") doesn't bias it.
                 history = None
@@ -126,4 +128,6 @@ class QuizGeneratorTool(BaseTool):
             "title": quiz["title"],
             "topic": quiz["topic"],
             "questions": quiz["questions"],
+            "difficulty": difficulty,
+            "source": "Uploaded material" if from_media else quiz["topic"],
         }

@@ -1,0 +1,33 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code tooling / local config
+.claude/
+CLAUDE.md
+
+# Vercel
+.vercel/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+
+# Environment files (use .env.sample / env.example instead)
+.env
+.env.*
+!.env.sample
+!.env.example
+*.local
+
+# Logs
+*.log
+logs/

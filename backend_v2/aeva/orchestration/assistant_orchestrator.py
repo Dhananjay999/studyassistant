@@ -16,6 +16,7 @@ from aeva.orchestration.models import (
     ClarificationAction,
     ClarificationQuestion,
     ClarificationRequest,
+    QuizOptions,
     RunStatus,
 )
 from aeva.supabase.supabase_service import SupabaseService
@@ -60,6 +61,13 @@ class AssistantOrchestrator:
         """Execute one assistant turn (non-streaming)."""
         session, history, enriched_message, plan = self._setup_and_plan(ctx)
 
+        # Quiz requested but not yet configured -> ask the client to open the
+        # setup popover instead of generating with defaults.
+        if ctx.quiz_options is None and self._is_quiz_intent(
+            plan, enriched_message
+        ):
+            return self._quiz_setup_result(plan, ctx)
+
         if plan.get("action") == "clarify":
             return self._handle_clarification(ctx, plan, enriched_message)
 
@@ -85,6 +93,13 @@ class AssistantOrchestrator:
     ) -> Generator[str, None, None]:
         """Execute one assistant turn, streaming the answer as SSE frames."""
         session, history, enriched_message, plan = self._setup_and_plan(ctx)
+
+        # Quiz requested but not yet configured -> open the setup popover.
+        if ctx.quiz_options is None and self._is_quiz_intent(
+            plan, enriched_message
+        ):
+            yield self._quiz_setup_frame(plan, ctx)
+            return
 
         if plan.get("action") == "clarify":
             clar = self._handle_clarification(ctx, plan, enriched_message)
@@ -132,6 +147,7 @@ class AssistantOrchestrator:
         history = self._get_history(ctx.session_id)
         enriched_message = ctx.message
 
+        media_choice_ids: list[str] | None = None
         if ctx.run_id and ctx.clarification:
             run = self._get_run(ctx.run_id, ctx.user_id)
             if not run:
@@ -140,9 +156,41 @@ class AssistantOrchestrator:
                 run["original_message"],
                 ctx.clarification,
             )
+            if (run.get("plan") or {}).get("kind") == "media_choice":
+                media_choice_ids = self._resolve_media_choice(
+                    run["plan"], ctx.clarification
+                )
             self._complete_run(ctx.run_id)
 
         self.supabase.add_message(ctx.session_id, "user", ctx.message)
+
+        # A resolved "which file?" answer runs media_llm on the chosen file(s).
+        if media_choice_ids is not None:
+            plan = {
+                "action": "run_tool",
+                "tool": {
+                    "name": "media_llm",
+                    "params": {"media_ids": media_choice_ids},
+                },
+            }
+            return session, history, enriched_message, plan
+
+        # Explicit quiz settings from the setup popover skip LLM planning.
+        if ctx.quiz_options is not None:
+            plan = {
+                "action": "run_tool",
+                "tool": {
+                    "name": "quiz_generator",
+                    "params": self._quiz_params_from_options(ctx.quiz_options),
+                },
+            }
+            return session, history, enriched_message, plan
+
+        # Several files selected + a vague request -> ask which file to use.
+        if not ctx.clarification and ctx.media_ids and len(ctx.media_ids) > 1:
+            decision = self._disambiguate_media(ctx, enriched_message)
+            if decision is not None:
+                return session, history, enriched_message, decision
 
         plan = self._plan_turn(
             ctx, history, enriched_message, ctx.clarification
@@ -167,6 +215,105 @@ class AssistantOrchestrator:
         """Pull the tool name and params from a run_tool plan."""
         tool_info = plan.get("tool") or {}
         return tool_info.get("name", "web_search"), tool_info.get("params") or {}
+
+    def _selected_media(
+        self, ctx: AssistantContext
+    ) -> list[dict[str, str]]:
+        """Resolve selected media ids to {id, name} (single DB call)."""
+        if not ctx.media_ids:
+            return []
+        by_id = {m["id"]: m for m in self.supabase.list_media(ctx.user_id)}
+        return [
+            {"id": mid, "name": by_id[mid]["file_name"]}
+            for mid in ctx.media_ids
+            if mid in by_id
+        ]
+
+    @staticmethod
+    def _names_in_message(
+        message: str, files: list[dict[str, str]]
+    ) -> list[dict[str, str]]:
+        """Files whose name (or stem) is mentioned in the message."""
+        text = message.lower()
+        found = []
+        for f in files:
+            name = f["name"].lower()
+            stem = name.rsplit(".", 1)[0]
+            if name in text or (len(stem) > 2 and stem in text):
+                found.append(f)
+        return found
+
+    def _disambiguate_media(
+        self, ctx: AssistantContext, message: str
+    ) -> dict[str, Any] | None:
+        """Resolve which selected file(s) a vague request refers to.
+
+        Returns a clarify plan (ask which file) when none is named, a narrowed
+        media_llm plan when a subset is named, or None to plan normally.
+        """
+        files = self._selected_media(ctx)
+        if len(files) <= 1:
+            return None
+        named = self._names_in_message(message, files)
+        if not named:
+            return {
+                "action": "clarify",
+                "kind": "media_choice",
+                "files": files,
+                "clarification": {
+                    "reason": (
+                        "You have several files selected. "
+                        "Which one should I use?"
+                    ),
+                    "questions": [
+                        {
+                            "id": "media_choice",
+                            "text": "Choose a file",
+                            "options": [f["name"] for f in files]
+                            + ["All files"],
+                        }
+                    ],
+                },
+            }
+        if len(named) < len(files):
+            return {
+                "action": "run_tool",
+                "tool": {
+                    "name": "media_llm",
+                    "params": {"media_ids": [f["id"] for f in named]},
+                },
+            }
+        return None
+
+    @staticmethod
+    def _resolve_media_choice(
+        plan: dict[str, Any], clarification: object
+    ) -> list[str]:
+        """Map a file-choice answer back to media ids (defaults to all)."""
+        files = plan.get("files", [])
+        all_ids = [f["id"] for f in files]
+
+        texts: list[str] = []
+        action = clarification.action  # type: ignore[attr-defined]
+        if action == ClarificationAction.ANSWER and clarification.answers:  # type: ignore[attr-defined]
+            texts = [str(v) for v in clarification.answers.values()]  # type: ignore[attr-defined]
+        elif action == ClarificationAction.CUSTOM:
+            texts = [clarification.custom_text or ""]  # type: ignore[attr-defined]
+        if not texts:
+            return all_ids
+
+        chosen: list[str] = []
+        for raw in texts:
+            t = raw.lower()
+            if "all" in t:
+                return all_ids
+            for f in files:
+                name = f["name"].lower()
+                stem = name.rsplit(".", 1)[0]
+                matches = name == t or name in t or (len(stem) > 2 and stem in t)
+                if matches and f["id"] not in chosen:
+                    chosen.append(f["id"])
+        return chosen or all_ids
 
     def _build_tool_ctx(
         self,
@@ -208,6 +355,61 @@ class AssistantOrchestrator:
                 ctx.session_id, ctx.user_id, title=ctx.message[:60]
             )
         return msg
+
+    @staticmethod
+    def _quiz_params_from_options(opts: QuizOptions) -> dict[str, Any]:
+        """Turn the popover's QuizOptions into quiz_generator params."""
+        params: dict[str, Any] = {}
+        if opts.topic:
+            params["topic"] = opts.topic
+        if opts.question_count is not None:
+            params["question_count"] = opts.question_count
+        if opts.difficulty:
+            params["difficulty"] = opts.difficulty
+        if opts.question_types:
+            params["question_types"] = opts.question_types
+        if opts.use_media is not None:
+            params["use_media"] = opts.use_media
+        return params
+
+    @staticmethod
+    def _is_quiz_intent(plan: dict[str, Any], message: str) -> bool:
+        """Whether this turn is a quiz request (so we collect options first)."""
+        if (plan.get("tool") or {}).get("name") == "quiz_generator":
+            return True
+        text = message.lower()
+        return any(w in text for w in ("quiz", "practice test", "test me"))
+
+    def _quiz_setup_data(
+        self, plan: dict[str, Any], ctx: AssistantContext
+    ) -> dict[str, Any]:
+        """Payload telling the client to open the quiz-setup popover."""
+        tool_params = (plan.get("tool") or {}).get("params") or {}
+        return {
+            "status": "quiz_setup",
+            "topic": tool_params.get("topic") or "",
+            "media_available": bool(ctx.media_ids),
+        }
+
+    def _quiz_setup_result(
+        self, plan: dict[str, Any], ctx: AssistantContext
+    ) -> AssistantResult:
+        """Non-streaming quiz-setup result."""
+        return AssistantResult(
+            status=RunStatus.QUIZ_SETUP,
+            content=self._quiz_setup_data(plan, ctx),
+        )
+
+    def _quiz_setup_frame(
+        self, plan: dict[str, Any], ctx: AssistantContext
+    ) -> str:
+        """SSE frame telling the client to open the quiz-setup popover."""
+        payload = {
+            "type": "quiz_setup",
+            "data": self._quiz_setup_data(plan, ctx),
+            "done": True,
+        }
+        return f"data: {json.dumps(payload)}\n\n"
 
     @staticmethod
     def _clarification_frame(clar: AssistantResult) -> str:

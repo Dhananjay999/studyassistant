@@ -1,559 +1,470 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Menu,
-  LogOut,
-  Sparkles,
-  FileText,
-  X,
-  Image as ImageIcon,
-} from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { LogOut, Menu, PanelRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Seo } from "@/components/common/Seo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { BrandLogo } from "@/components/common/BrandLogo";
+import { GlassCard } from "@/components/common/GlassCard";
 import { SessionSidebar } from "@/components/chat/SessionSidebar";
 import { ChatMessages } from "@/components/chat/ChatMessages";
-import { ChatInput } from "@/components/chat/ChatInput";
+import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
+import { QuizSetupForm } from "@/components/chat/QuizSetupForm";
+import { QuizDrawer } from "@/components/chat/QuizDrawer";
+import { MediaSidebar } from "@/components/chat/MediaSidebar";
+import { EmptyState } from "@/components/chat/EmptyState";
 import { useAuth } from "@/contexts/AuthContext";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { apiService, streamingService } from "@/services";
+import { useAssistantStream } from "@/hooks/useAssistantStream";
+import {
+  qk,
+  useCreateSession,
+  useDeleteSession,
+  useDeleteMedia,
+  useMedia,
+  useSessions,
+} from "@/hooks/api";
+import { getMessages, uploadFileWithProgress } from "@/lib/api";
+import { MAX_SELECTED_FILES, MAX_UPLOAD_FILES } from "@/lib/config";
 import { compressFiles } from "@/utils/compress";
-import { cn } from "@/lib/utils";
-import type { AssistantRequest, MediaItem, Message, QuizContent, Session } from "@/types";
-import { useToast } from "@/hooks/use-toast";
+import type {
+  ClarificationAnswer,
+  Message,
+  PendingClarification,
+  PendingQuizSetup,
+  QuizContent,
+  QuizOptions,
+  UploadProgress,
+} from "@/types";
 
-const PDFViewer = lazy(() => import("@/components/PDFViewer"));
-
-// A session that only lives on the client until the user asks a question.
-const DRAFT_ID = "";
-
-function makeDraft(): Session {
-  const now = new Date().toISOString();
-  return {
-    id: DRAFT_ID,
-    user_id: "",
-    title: "New chat",
-    // Routing is automatic on the backend (media vs. web search); mode is
-    // kept only for the DB column's default.
-    mode: "media",
-    created_at: now,
-    updated_at: now,
-  };
-}
+const uid = () => crypto.randomUUID();
 
 export default function ChatPage() {
-  const { user, token, logout } = useAuth();
-  const isMobile = useIsMobile();
-  const { toast } = useToast();
+  const { user, logout } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const qc = useQueryClient();
 
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const sessionsQuery = useSessions();
+  const sessions = sessionsQuery.data ?? [];
+  const createSession = useCreateSession();
+  const deleteSession = useDeleteSession();
+
+  const urlId = searchParams.get("sessionId");
+  const activeId = urlId && sessions.some((s) => s.id === urlId) ? urlId : null;
+  const activeSession = sessions.find((s) => s.id === activeId) ?? null;
+
   const [messages, setMessages] = useState<Message[]>([]);
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
-  const [selectedMedia, setSelectedMedia] = useState<Set<string>>(new Set());
+  const [pendingClar, setPendingClar] = useState<PendingClarification | null>(
+    null,
+  );
+  const [pendingQuiz, setPendingQuiz] = useState<PendingQuizSetup | null>(null);
+  const [thinkingHint, setThinkingHint] = useState<"quiz" | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // Tracks which session's messages/media are already loaded, so creating a
-  // session inline (on first question) doesn't wipe the optimistic UI.
-  const loadedSessionRef = useRef<string | null>(null);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
-  const [pendingClarification, setPendingClarification] = useState<{
-    runId: string;
-    data: NonNullable<Message["metadata"]>["clarification"];
-    sessionId: string;
-  } | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [previewPdf, setPreviewPdf] = useState<{
-    url: string;
-    name: string;
-  } | null>(null);
+  const [mediaOpen, setMediaOpen] = useState(false);
 
+  const [activeQuiz, setActiveQuiz] = useState<QuizContent | null>(null);
+  const [quizOpen, setQuizOpen] = useState(false);
+
+  const mediaQuery = useMedia();
+  const media = mediaQuery.data ?? [];
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [uploads, setUploads] = useState<UploadProgress[]>([]);
+  const deleteMedia = useDeleteMedia();
+
+  const { start, streaming } = useAssistantStream();
+  const streamIdRef = useRef<string | null>(null);
+  const bootstrapped = useRef(false);
+  const loadedSession = useRef<string | null>(null);
+
+  /* --- bootstrap: always land on a real session --- */
   useEffect(() => {
-    apiService.setTokenGetter(() => token);
-    streamingService.setTokenGetter(() => token);
-  }, [token]);
-
-  const loadSessions = useCallback(async () => {
-    try {
-      const res = await apiService.listSessions();
-      setSessions(res.data);
-      if (res.data.length > 0 && !activeSession) {
-        // Restore the session named in the URL (?sessionId=) on load/refresh;
-        // fall back to the most recent one when it's missing or stale.
-        const urlId = searchParams.get("sessionId");
-        const match = urlId
-          ? res.data.find((s) => s.id === urlId)
-          : undefined;
-        setActiveSession(match || res.data[0]);
-      }
-    } catch {
-      toast({ title: "Failed to load sessions", variant: "destructive" });
+    if (!sessionsQuery.isSuccess || activeId) return;
+    if (sessions.length) {
+      setSearchParams({ sessionId: sessions[0].id }, { replace: true });
+    } else if (!bootstrapped.current) {
+      bootstrapped.current = true;
+      createSession
+        .mutateAsync({})
+        .then((s) => setSearchParams({ sessionId: s.id }, { replace: true }));
     }
-  }, [activeSession, searchParams, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsQuery.isSuccess, activeId, sessions.length]);
 
+  /* --- load history when the active session changes --- */
   useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
-
-  // Keep the URL's ?sessionId= in sync with the active session so a refresh
-  // restores it. Draft sessions (no id yet) clear the param. Guarded so the
-  // write doesn't re-trigger itself.
-  useEffect(() => {
-    const current = searchParams.get("sessionId") ?? null;
-    const next = activeSession?.id || null;
-    if (next === current) return;
-    if (next) setSearchParams({ sessionId: next }, { replace: true });
-    else setSearchParams({}, { replace: true });
-  }, [activeSession?.id, searchParams, setSearchParams]);
-
-  useEffect(() => {
-    // Draft or no session: nothing to fetch.
-    if (!activeSession || !activeSession.id) {
-      if (loadedSessionRef.current !== (activeSession?.id ?? null)) {
-        setMessages([]);
-        setMediaItems([]);
-        setSelectedMedia(new Set());
-      }
-      loadedSessionRef.current = activeSession?.id ?? null;
+    if (!activeId) {
+      setMessages([]);
       return;
     }
+    if (loadedSession.current === activeId) return;
+    loadedSession.current = activeId;
+    setPendingClar(null);
+    setPendingQuiz(null);
+    getMessages(activeId)
+      .then(setMessages)
+      .catch(() => toast.error("Failed to load chat"));
+  }, [activeId]);
 
-    // Already loaded (or just created inline) — keep the current UI.
-    if (loadedSessionRef.current === activeSession.id) return;
-    loadedSessionRef.current = activeSession.id;
+  /* --- selection is ephemeral; cleared whenever the chat changes --- */
+  useEffect(() => {
+    setSelected(new Set());
+  }, [activeId]);
 
-    (async () => {
-      try {
-        const [msgRes, mediaRes] = await Promise.all([
-          apiService.getMessages(activeSession.id),
-          apiService.listMedia(activeSession.id),
-        ]);
-        setMessages(msgRes.data);
-        setMediaItems(mediaRes.data);
-        setSelectedMedia(new Set(mediaRes.data.map((m) => m.id)));
-      } catch {
-        toast({ title: "Failed to load chat", variant: "destructive" });
-      }
-    })();
-  }, [activeSession, toast]);
+  const upsertStreaming = (delta: string) =>
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === streamIdRef.current ? { ...m, content: m.content + delta } : m,
+      ),
+    );
+  const removeStreaming = () =>
+    setMessages((prev) => prev.filter((m) => m.id !== streamIdRef.current));
 
-  const toggleMedia = (id: string) => {
-    setSelectedMedia((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const send = useCallback(
+    (
+      text: string,
+      opts?: {
+        runId?: string;
+        clarification?: ClarificationAnswer;
+        quizOptions?: QuizOptions;
+      },
+    ) => {
+      if (!activeId || streaming) return;
+      const streamId = `stream-${uid()}`;
+      streamIdRef.current = streamId;
+      setThinkingHint(opts?.quizOptions ? "quiz" : undefined);
+
+      setMessages((prev) => [
+        ...prev,
+        { id: uid(), role: "user", content: text, createdAt: new Date() },
+        {
+          id: streamId,
+          role: "assistant",
+          content: "",
+          createdAt: new Date(),
+          streaming: true,
+        },
+      ]);
+
+      start(
+        {
+          message: text,
+          session_id: activeId,
+          media_ids: selected.size ? Array.from(selected) : undefined,
+          run_id: opts?.runId,
+          clarification: opts?.clarification,
+          quiz_options: opts?.quizOptions,
+        },
+        {
+          onChunk: upsertStreaming,
+          onComplete: (full, meta) => {
+            const content = (meta.content ?? {}) as Record<string, unknown>;
+            const toolUsed = meta.tool_used as Message["meta"]["tool_used"];
+            const quiz =
+              toolUsed === "quiz_generator"
+                ? (content as unknown as QuizContent)
+                : undefined;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamId
+                  ? {
+                      ...m,
+                      content: full || m.content,
+                      streaming: false,
+                      meta: {
+                        tool_used: toolUsed,
+                        sources:
+                          (content.sources as Message["meta"]["sources"]) || [],
+                        quiz,
+                      },
+                    }
+                  : m,
+              ),
+            );
+            sessionsQuery.refetch();
+          },
+          onClarification: (data) => {
+            removeStreaming();
+            setPendingClar({
+              runId: data.run_id as string,
+              data: data.clarification as PendingClarification["data"],
+            });
+          },
+          onQuizSetup: (data) => {
+            removeStreaming();
+            setPendingQuiz({
+              topic: (data.topic as string) || "",
+              mediaAvailable: Boolean(data.media_available),
+            });
+          },
+          onError: (msg) => {
+            removeStreaming();
+            toast.error(msg);
+          },
+        },
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeId, selected, streaming, start],
+  );
+
+  const handleClarify = (answer: ClarificationAnswer) => {
+    const label =
+      answer.action === "skip"
+        ? "Skip"
+        : answer.action === "custom"
+          ? answer.custom_text || "Custom answer"
+          : Object.values(answer.answers ?? {}).join(", ") || "Submitted answer";
+    setPendingClar(null);
+    send(label, { runId: pendingClar?.runId, clarification: answer });
+  };
+
+  const handleGenerateQuiz = (topic: string, options: QuizOptions) => {
+    setPendingQuiz(null);
+    const resolved = { ...options, topic: options.topic || topic || undefined };
+    send(`Generate a quiz${resolved.topic ? ` on ${resolved.topic}` : ""}`, {
+      quizOptions: resolved,
     });
   };
 
-  const handleNewSession = () => {
-    // Don't persist anything yet — the session is only saved once the user
-    // actually asks a question (see handleSend).
-    loadedSessionRef.current = DRAFT_ID;
-    setMessages([]);
-    setMediaItems([]);
-    setSelectedMedia(new Set());
-    setActiveSession(makeDraft());
+  const openQuiz = (quiz: QuizContent) => {
+    setActiveQuiz(quiz);
+    setQuizOpen(true);
+  };
+
+  const handleUpload = async (files: FileList) => {
+    let list = await compressFiles(files);
+    if (list.length > MAX_UPLOAD_FILES) {
+      toast.error(`Up to ${MAX_UPLOAD_FILES} files at a time`);
+      list = list.slice(0, MAX_UPLOAD_FILES);
+    }
+    await Promise.all(
+      list.map(async (file) => {
+        const id = uid();
+        setUploads((prev) => [
+          { id, name: file.name, progress: 0, status: "uploading" },
+          ...prev,
+        ]);
+        try {
+          const item = await uploadFileWithProgress(
+            file,
+            activeId ?? undefined,
+            (p) =>
+              setUploads((prev) =>
+                prev.map((u) => (u.id === id ? { ...u, progress: p } : u)),
+              ),
+          );
+          setUploads((prev) => prev.filter((u) => u.id !== id));
+          qc.invalidateQueries({ queryKey: qk.media });
+          // Auto-select the freshly uploaded file if under the limit.
+          setSelected((prev) =>
+            prev.size < MAX_SELECTED_FILES
+              ? new Set(prev).add(item.id)
+              : prev,
+          );
+        } catch (e) {
+          setUploads((prev) =>
+            prev.map((u) => (u.id === id ? { ...u, status: "error" } : u)),
+          );
+          toast.error(e instanceof Error ? e.message : "Upload failed");
+          window.setTimeout(
+            () => setUploads((prev) => prev.filter((u) => u.id !== id)),
+            4000,
+          );
+        }
+      }),
+    );
+  };
+
+  const handleNewChat = async () => {
+    const s = await createSession.mutateAsync({});
+    setSearchParams({ sessionId: s.id });
     setSidebarOpen(false);
   };
 
   const handleDeleteSession = async (id: string) => {
-    try {
-      await apiService.deleteSession(id);
-      setSessions((prev) => prev.filter((s) => s.id !== id));
-      if (activeSession?.id === id) {
-        const remaining = sessions.filter((s) => s.id !== id);
-        setActiveSession(remaining[0] || null);
-      }
-    } catch {
-      toast({ title: "Failed to delete session", variant: "destructive" });
+    await deleteSession.mutateAsync(id);
+    if (id === activeId) {
+      const rest = sessions.filter((s) => s.id !== id);
+      if (rest.length) setSearchParams({ sessionId: rest[0].id });
+      else setSearchParams({});
     }
   };
 
-  const sendAssistant = async (
-    session: Session,
-    text: string,
-    opts?: {
-      runId?: string;
-      clarification?: AssistantRequest["clarification"];
-    },
-  ) => {
-    const mediaIds = Array.from(selectedMedia);
-    const req: AssistantRequest = {
-      message: text,
-      session_id: session.id,
-      media_ids: mediaIds.length ? mediaIds : undefined,
-      run_id: opts?.runId,
-      clarification: opts?.clarification,
-    };
-
-    setIsStreaming(true);
-    setStreamingContent("");
-    setPendingClarification(null);
-
-    await streamingService.startStream(
-      req,
-      {
-        onChunk: (chunk) => setStreamingContent((prev) => prev + chunk),
-        onClarification: (data) => {
-          const clar = data as {
-            run_id: string;
-            clarification: NonNullable<Message["metadata"]>["clarification"];
-          };
-          setPendingClarification({
-            runId: clar.run_id,
-            data: clar.clarification,
-            sessionId: session.id,
-          });
-        },
-        onComplete: (full, meta) => {
-          const toolUsed = meta?.tool_used as Message["metadata"] extends infer M
-            ? M extends { tool_used?: infer T }
-              ? T
-              : never
-            : never;
-          const content = meta?.content as Record<string, unknown> | undefined;
-          const sources = (content?.sources as Message["metadata"] extends infer M
-            ? M extends { sources?: infer S }
-              ? S
-              : never
-            : never) || [];
-
-          let quiz: QuizContent | undefined;
-          if (toolUsed === "quiz_generator" && content) {
-            quiz = {
-              quiz_id: content.quiz_id as string,
-              title: content.title as string,
-              topic: content.topic as string | undefined,
-              questions: content.questions as QuizContent["questions"],
-            };
-          }
-
-          if (full || quiz) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: crypto.randomUUID(),
-                type: "bot",
-                content: full || `Quiz: ${quiz?.title}`,
-                timestamp: new Date(),
-                metadata: {
-                  tool_used: toolUsed,
-                  sources,
-                  quiz,
-                },
-              },
-            ]);
-          }
-          setStreamingContent("");
-          setIsStreaming(false);
-          loadSessions();
-        },
-        onError: (err) => {
-          toast({ title: err, variant: "destructive" });
-          setIsStreaming(false);
-          setStreamingContent("");
-        },
-      },
-      true,
-    );
-  };
-
-  const handleSend = async (text: string) => {
-    if (!activeSession || isStreaming) return;
-
-    let session = activeSession;
-    if (!session.id) {
-      try {
-        const res = await apiService.createSession(
-          text.slice(0, 60),
-          session.mode,
-          mediaItems.map((m) => m.id),
-        );
-        session = res.data;
-        loadedSessionRef.current = session.id;
-        setSessions((prev) => [session, ...prev]);
-        setActiveSession(session);
-      } catch {
-        toast({ title: "Failed to start chat", variant: "destructive" });
-        return;
-      }
-    }
-
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      type: "user",
-      content: text,
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-
-    await sendAssistant(session, text);
-  };
-
-  const handleClarificationSubmit = async (payload: {
-    action: "answer" | "custom" | "skip";
-    answers?: Record<string, string>;
-    custom_text?: string;
-  }) => {
-    if (!pendingClarification || !activeSession?.id || isStreaming) return;
-
-    const label =
-      payload.action === "skip"
-        ? "Skipped clarification"
-        : payload.action === "custom"
-          ? payload.custom_text || "Custom response"
-          : "Submitted clarification";
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        type: "user",
-        content: label,
-        timestamp: new Date(),
-      },
-    ]);
-
-    await sendAssistant(activeSession, label, {
-      runId: pendingClarification.runId,
-      clarification: payload,
-    });
-  };
-
-  const handleUpload = async (files: FileList) => {
-    if (!activeSession) return;
-    setIsUploading(true);
-    try {
-      const compressed = await compressFiles(files);
-      // Draft sessions have no id yet; media is linked when the session is
-      // created on the first question.
-      const res = await apiService.uploadMedia(
-        compressed,
-        activeSession.id || undefined,
-      );
-      setMediaItems((prev) => [...res.data, ...prev]);
-      setSelectedMedia((prev) => {
-        const next = new Set(prev);
-        res.data.forEach((m) => next.add(m.id));
+  const toggleMedia = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
         return next;
-      });
-      toast({ title: `${res.data.length} file(s) uploaded` });
-    } catch (err) {
-      toast({
-        title: err instanceof Error ? err.message : "Upload failed",
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
-    }
-  };
+      }
+      if (next.size >= MAX_SELECTED_FILES) {
+        toast.error(`You can select up to ${MAX_SELECTED_FILES} files`);
+        return prev;
+      }
+      next.add(id);
+      return next;
+    });
 
   const sidebar = (
     <SessionSidebar
       sessions={sessions}
-      activeId={activeSession?.id || null}
+      activeId={activeId}
       onSelect={(id) => {
-        const s = sessions.find((x) => x.id === id);
-        if (s) setActiveSession(s);
+        setSearchParams({ sessionId: id });
         setSidebarOpen(false);
       }}
-      onNew={handleNewSession}
+      onNew={handleNewChat}
       onDelete={handleDeleteSession}
-      onSwipeClose={() => setSidebarOpen(false)}
+    />
+  );
+
+  const mediaSidebar = (
+    <MediaSidebar
+      items={media}
+      uploads={uploads}
+      selected={selected}
+      activeSessionId={activeId}
+      onToggle={toggleMedia}
+      onDelete={(id) => deleteMedia.mutate(id)}
+      onUpload={handleUpload}
     />
   );
 
   return (
-    <div className="flex h-dvh flex-col bg-background">
-      {/* Header */}
-      <header className="flex items-center gap-2 border-b border-border/50 px-3 py-2 safe-top">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-xl lg:hidden"
-          onClick={() => setSidebarOpen(true)}
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+    <>
+      <Seo title="StudyAssistant — Chat with Aeva" noindex path="/chat" />
+      <div className="flex h-dvh flex-col bg-background">
+        {/* Top bar */}
+        <header className="z-10 flex items-center gap-2 border-b border-border/50 px-3 py-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          <div className="flex flex-1 items-center gap-2 truncate">
+            <BrandLogo withWordmark={false} />
+            <span className="truncate text-sm font-medium">
+              {activeSession?.title ?? "Aeva"}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 xl:hidden"
+            onClick={() => setMediaOpen(true)}
+          >
+            <PanelRight className="h-4 w-4" />
+            <span className="hidden sm:inline">Materials</span>
+            {media.length > 0 && (
+              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
+                {media.length}
+              </Badge>
+            )}
+          </Button>
+          <ThemeToggle />
+          <Avatar className="h-8 w-8">
+            <AvatarImage src={user?.avatar_url || undefined} />
+            <AvatarFallback>
+              {user?.full_name?.[0] || user?.email?.[0] || "?"}
+            </AvatarFallback>
+          </Avatar>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={logout}
+            aria-label="Log out"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </header>
 
-        <div className="flex flex-1 items-center gap-2">
-          <Sparkles className="h-4 w-4 text-violet-500" />
-          <h1 className="truncate text-sm font-semibold">
-            {activeSession?.title || "Aeva"}
-          </h1>
-        </div>
-
-        <ThemeToggle />
-        <Avatar className="h-8 w-8">
-          <AvatarImage src={user?.avatar_url || undefined} />
-          <AvatarFallback>
-            {user?.full_name?.[0] || user?.email?.[0] || "?"}
-          </AvatarFallback>
-        </Avatar>
-        <Button variant="ghost" size="icon" className="rounded-xl" onClick={logout}>
-          <LogOut className="h-4 w-4" />
-        </Button>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Desktop sidebar */}
-        <div className="hidden lg:block">{sidebar}</div>
-
-        {/* Mobile sidebar */}
-        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <SheetContent side="left" className="w-72 p-0">
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left session sidebar */}
+          <aside className="hidden w-64 shrink-0 border-r border-border/50 lg:block">
             {sidebar}
-          </SheetContent>
-        </Sheet>
+          </aside>
+          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+            <SheetContent side="left" className="w-72 p-0">
+              {sidebar}
+            </SheetContent>
+          </Sheet>
 
-        {/* Main chat area */}
-        <main className="flex flex-1 flex-col overflow-hidden">
-          {!activeSession ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center"
-            >
-              <div className="text-5xl">📚</div>
-              <h2 className="text-xl font-bold">Ready to study?</h2>
-              <p className="text-muted-foreground">
-                Attach your notes to ask from them, or just ask anything and
-                I'll search the web for you.
-              </p>
-              <Button className="rounded-xl" onClick={handleNewSession}>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Start a new chat
-              </Button>
-            </motion.div>
-          ) : (
-            <>
-              {/* Media bar — tick the files you want to ask about */}
-              {mediaItems.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto border-b border-border/30 px-4 py-2">
-                  {mediaItems.map((item) => {
-                    const selected = selectedMedia.has(item.id);
-                    return (
-                      <div
-                        key={item.id}
-                        className={cn(
-                          "flex shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
-                          selected
-                            ? "border-primary/60 bg-primary/10"
-                            : "border-border/50 bg-muted",
-                        )}
-                      >
-                        <Checkbox
-                          checked={selected}
-                          onCheckedChange={() => toggleMedia(item.id)}
-                          className="h-3.5 w-3.5"
-                          aria-label={`Use ${item.file_name} in answers`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!item.signed_url) return;
-                            if (item.mime_type.startsWith("image/")) {
-                              setPreviewImage(item.signed_url);
-                            } else if (item.mime_type === "application/pdf") {
-                              setPreviewPdf({
-                                url: item.signed_url,
-                                name: item.file_name,
-                              });
-                            }
-                          }}
-                          className="flex items-center gap-1.5"
-                        >
-                          {item.mime_type.startsWith("image/") ? (
-                            <ImageIcon className="h-3 w-3" />
-                          ) : (
-                            <FileText className="h-3 w-3" />
-                          )}
-                          <span className="max-w-[120px] truncate">
-                            {item.file_name}
-                          </span>
-                        </button>
-                      </div>
-                    );
-                  })}
+          {/* Chat column */}
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              {messages.length === 0 && !streaming ? (
+                <div className="h-full">
+                  <EmptyState onPick={(t) => send(t)} />
                 </div>
+              ) : (
+                <ChatMessages
+                  messages={messages}
+                  mediaAvailable={selected.size > 0}
+                  quizBusy={streaming}
+                  thinkingHint={thinkingHint}
+                  onGenerateQuiz={handleGenerateQuiz}
+                  onOpenQuiz={openQuiz}
+                />
               )}
+            </div>
 
-              <ChatMessages
-                messages={messages}
-                isStreaming={isStreaming}
-                streamingContent={streamingContent}
-              />
-
-              {/* Pending clarification sits directly above the input
-                  (ChatGPT-style) so it stays visible while scrolling. */}
-              {pendingClarification?.data && (
-                <div className="border-t border-border/30 px-4 py-3">
-                  <ClarificationPanel
-                    data={pendingClarification.data}
-                    runId={pendingClarification.runId}
-                    onSubmit={handleClarificationSubmit}
-                    disabled={isStreaming}
+            {pendingClar && (
+              <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+                <ClarificationPanel
+                  data={pendingClar.data}
+                  busy={streaming}
+                  onSubmit={handleClarify}
+                />
+              </div>
+            )}
+            {pendingQuiz && (
+              <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+                <GlassCard className="p-4">
+                  <p className="mb-3 flex items-center gap-1.5 font-display text-sm font-semibold">
+                    <Sparkles className="h-4 w-4 text-brand-1" /> Set up your quiz
+                  </p>
+                  <QuizSetupForm
+                    initialTopic={pendingQuiz.topic}
+                    mediaAvailable={pendingQuiz.mediaAvailable}
+                    busy={streaming}
+                    onGenerate={(opts) =>
+                      handleGenerateQuiz(pendingQuiz.topic, opts)
+                    }
                   />
-                </div>
-              )}
+                </GlassCard>
+              </div>
+            )}
 
-              <ChatInput
-                onSend={handleSend}
-                onUpload={handleUpload}
-                disabled={isStreaming}
-                isUploading={isUploading}
-              />
-            </>
-          )}
-        </main>
+            <ChatComposer
+              onSend={(t) => send(t)}
+              onUpload={handleUpload}
+              disabled={streaming}
+              uploading={uploads.some((u) => u.status === "uploading")}
+            />
+          </main>
+
+          {/* Right media sidebar (persistent on xl) */}
+          <aside className="hidden w-72 shrink-0 border-l border-border/50 p-3 xl:block">
+            {mediaSidebar}
+          </aside>
+          <Sheet open={mediaOpen} onOpenChange={setMediaOpen}>
+            <SheetContent side="right" className="w-80 p-4 sm:w-96">
+              <div className="mt-6 h-[calc(100%-1.5rem)]">{mediaSidebar}</div>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
 
-      {/* Image preview modal */}
-      <AnimatePresence>
-        {previewImage && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-            onClick={() => setPreviewImage(null)}
-          >
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-4 top-4 text-white"
-              onClick={() => setPreviewImage(null)}
-            >
-              <X className="h-6 w-6" />
-            </Button>
-            <img
-              src={previewImage}
-              alt="Preview"
-              className="max-h-[90vh] max-w-full rounded-xl object-contain"
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* PDF preview modal (loaded from API-provided URL) */}
-      <AnimatePresence>
-        {previewPdf && (
-          <Suspense fallback={null}>
-            <PDFViewer
-              url={previewPdf.url}
-              fileName={previewPdf.name}
-              onClose={() => setPreviewPdf(null)}
-            />
-          </Suspense>
-        )}
-      </AnimatePresence>
-    </div>
+      <QuizDrawer quiz={activeQuiz} open={quizOpen} onOpenChange={setQuizOpen} />
+    </>
   );
 }

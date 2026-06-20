@@ -1,152 +1,163 @@
-import { useRef, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useRef } from "react";
+import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
-import { Bot, User } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Bot, ExternalLink, ListChecks, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { QuizPanel } from "@/components/chat/QuizPanel";
-import type { Message } from "@/types";
+import { Button } from "@/components/ui/button";
+import { QuizCard } from "@/components/chat/QuizCard";
+import { QuizSetupPopover } from "@/components/chat/QuizSetupPopover";
+import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
+import { cn } from "@/lib/utils";
+import type { Message, QuizContent, QuizOptions, ToolUsed } from "@/types";
 
-interface ChatMessagesProps {
-  messages: Message[];
-  isStreaming?: boolean;
-  streamingContent?: string;
-}
-
-const TOOL_LABELS: Record<string, string> = {
-  web_search: "Web search",
-  media_llm: "Media + LLM",
+const TOOL_LABEL: Record<ToolUsed, string> = {
+  web_search: "Web",
+  media_llm: "Notes",
   quiz_generator: "Quiz",
 };
 
-export function ChatMessages({
-  messages,
-  isStreaming,
-  streamingContent,
-}: ChatMessagesProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const userScrolled = useRef(false);
-
-  const scrollToBottom = useCallback(() => {
-    if (!userScrolled.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, []);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, streamingContent, scrollToBottom]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const atBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      userScrolled.current = !atBottom;
-    };
-    el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
+function isQuizzable(msg: Message): boolean {
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <AnimatePresence initial={false}>
-          {messages.map((msg) => (
-            <motion.div
-              key={msg.id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-              className={cn(
-                "flex gap-3",
-                msg.type === "user" ? "flex-row-reverse" : "",
-              )}
-            >
-              <div
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                  msg.type === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-gradient-to-br from-violet-500 to-sky-500 text-white",
-                )}
-              >
-                {msg.type === "user" ? (
-                  <User className="h-4 w-4" />
-                ) : (
-                  <Bot className="h-4 w-4" />
-                )}
-              </div>
-              <div
-                className={cn(
-                  "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
-                  msg.type === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted prose prose-sm dark:prose-invert max-w-none",
-                )}
-              >
-                {msg.metadata?.tool_used && (
-                  <Badge variant="secondary" className="mb-2 text-[10px]">
-                    {TOOL_LABELS[msg.metadata.tool_used] ||
-                      msg.metadata.tool_used}
-                  </Badge>
-                )}
-                {msg.type === "bot" ? (
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                ) : (
-                  msg.content
-                )}
-                {msg.metadata?.sources && msg.metadata.sources.length > 0 && (
-                  <div className="mt-3 border-t border-border/30 pt-2">
-                    <p className="text-xs font-medium opacity-70">Sources</p>
-                    {msg.metadata.sources.map((s, i) => (
-                      <a
-                        key={i}
-                        href={s.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 block text-xs text-sky-600 hover:underline dark:text-sky-400"
-                      >
-                        {s.title}
-                      </a>
-                    ))}
-                  </div>
-                )}
-                {msg.metadata?.quiz?.questions?.length ? (
-                  <QuizPanel quiz={msg.metadata.quiz} />
-                ) : null}
-                {msg.metadata?.quiz_result && (
-                  <div className="mt-2 text-xs opacity-80">
-                    Score: {msg.metadata.quiz_result.evaluation.score}%
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-
-        {isStreaming && streamingContent && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex gap-3"
-          >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-sky-500 text-white">
-              <Bot className="h-4 w-4" />
-            </div>
-            <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-3 text-sm prose prose-sm dark:prose-invert">
-              <ReactMarkdown>{streamingContent}</ReactMarkdown>
-              <span className="inline-block h-4 w-1 animate-pulse bg-primary" />
-            </div>
-          </motion.div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-    </div>
+    msg.role === "assistant" &&
+    !msg.streaming &&
+    !msg.meta?.quiz &&
+    (msg.meta?.tool_used === "web_search" ||
+      msg.meta?.tool_used === "media_llm") &&
+    msg.content.length > 120
   );
 }
 
-export default ChatMessages;
+export function ChatMessages({
+  messages,
+  mediaAvailable,
+  quizBusy,
+  thinkingHint,
+  onGenerateQuiz,
+  onOpenQuiz,
+}: {
+  messages: Message[];
+  mediaAvailable: boolean;
+  quizBusy: boolean;
+  thinkingHint?: "quiz";
+  onGenerateQuiz: (topic: string, options: QuizOptions) => void;
+  onOpenQuiz: (quiz: QuizContent) => void;
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  return (
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
+      {messages.map((msg, i) => {
+        const prevUser = [...messages.slice(0, i)]
+          .reverse()
+          .find((m) => m.role === "user");
+        const topic = prevUser?.content ?? "";
+        return (
+          <motion.div
+            key={msg.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+            className={cn(
+              "flex gap-3",
+              msg.role === "user" && "flex-row-reverse",
+            )}
+          >
+            <span
+              className={cn(
+                "grid h-8 w-8 shrink-0 place-items-center rounded-full",
+                msg.role === "user"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-brand-gradient text-white",
+              )}
+            >
+              {msg.role === "user" ? (
+                <User className="h-4 w-4" />
+              ) : (
+                <Bot className="h-4 w-4" />
+              )}
+            </span>
+
+            <div
+              className={cn(
+                "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                msg.role === "user"
+                  ? "rounded-br-sm bg-primary text-primary-foreground"
+                  : "glass rounded-bl-sm",
+              )}
+            >
+              {msg.meta?.tool_used && (
+                <Badge
+                  variant="secondary"
+                  className="mb-2 gap-1 text-[10px] font-medium"
+                >
+                  {TOOL_LABEL[msg.meta.tool_used] ?? msg.meta.tool_used}
+                </Badge>
+              )}
+
+              {msg.role === "assistant" ? (
+                msg.streaming && !msg.content ? (
+                  <ThinkingIndicator hint={thinkingHint} />
+                ) : (
+                  <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-pre:my-2">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    {msg.streaming && (
+                      <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-primary align-middle" />
+                    )}
+                  </div>
+                )
+              ) : (
+                msg.content
+              )}
+
+              {msg.meta?.sources && msg.meta.sources.length > 0 && (
+                <div className="mt-3 border-t border-border/40 pt-2">
+                  <p className="text-xs font-medium opacity-70">Sources</p>
+                  {msg.meta.sources.map((s, idx) => (
+                    <a
+                      key={idx}
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 flex items-center gap-1 text-xs text-brand-3 hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{s.title}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {msg.meta?.quiz?.questions?.length ? (
+                <QuizCard
+                  quiz={msg.meta.quiz}
+                  onStart={() => onOpenQuiz(msg.meta!.quiz!)}
+                />
+              ) : null}
+
+              {isQuizzable(msg) && (
+                <div className="mt-3">
+                  <QuizSetupPopover
+                    initialTopic={topic}
+                    mediaAvailable={mediaAvailable}
+                    busy={quizBusy}
+                    onGenerate={(opts) => onGenerateQuiz(topic, opts)}
+                  >
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5">
+                      <ListChecks className="h-3.5 w-3.5" />
+                      Generate quiz
+                    </Button>
+                  </QuizSetupPopover>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        );
+      })}
+      <div ref={bottomRef} />
+    </div>
+  );
+}

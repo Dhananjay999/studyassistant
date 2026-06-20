@@ -1,0 +1,13 @@
+# Keep the deploy bundle small / clean.
+venv/
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+!.env.sample
+uploads/
+sources/
+*.md
+poetry.lock

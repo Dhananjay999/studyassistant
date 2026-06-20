@@ -24,6 +24,7 @@ class AssistantRepository:
             media_ids=request_data.media_ids,
             run_id=request_data.run_id,
             clarification=request_data.clarification,
+            quiz_options=request_data.quiz_options,
         )
 
     @staticmethod
@@ -62,6 +63,12 @@ class AssistantRepository:
                     ],
                 },
                 "message_id": result.message_id,
+            })
+
+        if result.status == RunStatus.QUIZ_SETUP:
+            return success_response("Quiz setup", {
+                "status": "quiz_setup",
+                **(result.content or {}),
             })
 
         return success_response("OK", {

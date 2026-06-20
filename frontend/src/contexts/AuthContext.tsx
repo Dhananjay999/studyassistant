@@ -1,21 +1,27 @@
-import React, {
+import {
   createContext,
+  useCallback,
   useContext,
-  useState,
   useEffect,
   useRef,
-  useCallback,
-  ReactNode,
+  useState,
+  type ReactNode,
 } from "react";
-import { API_CONFIG } from "@/constants/api";
-import { apiService, streamingService } from "@/services";
-import { User } from "@/types";
+import {
+  API_BASE_URL,
+  ENDPOINTS,
+  getMe,
+  refreshSession,
+  setTokenGetter,
+} from "@/lib/api";
+import type { User } from "@/types";
 
-interface AuthContextType {
+interface AuthContextValue {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
   loading: boolean;
+  signingIn: boolean;
   signInWithGoogle: () => void;
   setSession: (
     accessToken: string,
@@ -25,35 +31,33 @@ interface AuthContextType {
   logout: () => void;
 }
 
+const AUTH_MESSAGE = "studyassistant-auth";
+
 const STORAGE = {
   access: "aeva_access_token",
   refresh: "aeva_refresh_token",
   expires: "aeva_expires_at",
 };
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return context;
-};
+// eslint-disable-next-line react-refresh/only-export-components
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+}
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
   const tokenRef = useRef<string | null>(null);
   const refreshTimer = useRef<number>();
 
   const clearSession = useCallback(() => {
-    localStorage.removeItem(STORAGE.access);
-    localStorage.removeItem(STORAGE.refresh);
-    localStorage.removeItem(STORAGE.expires);
+    Object.values(STORAGE).forEach((k) => localStorage.removeItem(k));
     tokenRef.current = null;
     setToken(null);
     setUser(null);
@@ -64,18 +68,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     const rt = localStorage.getItem(STORAGE.refresh);
     if (!rt) return false;
     try {
-      const res = await fetch(`${API_CONFIG.BASE_URL}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: rt }),
-      });
-      if (!res.ok) return false;
-      const json = await res.json();
-      persist(
-        json.data.access_token,
-        json.data.refresh_token,
-        json.data.expires_in,
-      );
+      const data = await refreshSession(rt);
+      persist(data.access_token, data.refresh_token, data.expires_in);
       return true;
     } catch {
       return false;
@@ -106,18 +100,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   );
 
   const loadUser = useCallback(async () => {
-    const res = await apiService.getMe();
-    setUser(res.data);
+    setUser(await getMe());
   }, []);
 
   useEffect(() => {
-    apiService.setTokenGetter(() => tokenRef.current);
-    streamingService.setTokenGetter(() => tokenRef.current);
+    setTokenGetter(() => tokenRef.current);
 
-    const init = async () => {
+    (async () => {
       const at = localStorage.getItem(STORAGE.access);
       const expiresAt = Number(localStorage.getItem(STORAGE.expires) || 0);
-
       if (at && expiresAt > Date.now()) {
         tokenRef.current = at;
         setToken(at);
@@ -128,8 +119,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           clearSession();
         }
       } else if (localStorage.getItem(STORAGE.refresh)) {
-        const ok = await doRefresh();
-        if (ok) {
+        if (await doRefresh()) {
           try {
             await loadUser();
           } catch {
@@ -140,9 +130,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         }
       }
       setLoading(false);
-    };
+    })();
 
-    init();
     return () => {
       if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
     };
@@ -150,11 +139,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   }, []);
 
   const setSession = useCallback(
-    async (
-      accessToken: string,
-      refreshToken: string,
-      expiresIn: number,
-    ) => {
+    async (accessToken: string, refreshToken: string, expiresIn: number) => {
       setLoading(true);
       persist(accessToken, refreshToken, expiresIn);
       try {
@@ -167,12 +152,56 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   );
 
   const signInWithGoogle = useCallback(() => {
-    window.location.href = `${API_CONFIG.BASE_URL}/auth/login/google`;
-  }, []);
+    const url = `${API_BASE_URL}${ENDPOINTS.AUTH_LOGIN_GOOGLE}`;
+    const w = 480;
+    const h = 660;
+    const left = window.screenX + (window.outerWidth - w) / 2;
+    const top = window.screenY + (window.outerHeight - h) / 2;
+    const popup = window.open(
+      url,
+      "studyassistant-auth",
+      `width=${w},height=${h},left=${left},top=${top}`,
+    );
 
-  const logout = useCallback(() => {
-    clearSession();
-  }, [clearSession]);
+    // Popup blocked (or mobile) — fall back to a full-page redirect.
+    if (!popup) {
+      window.location.href = url;
+      return;
+    }
+
+    setSigningIn(true);
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data;
+      if (!d || d.type !== AUTH_MESSAGE) return;
+      cleanup();
+      try {
+        popup.close();
+      } catch {
+        /* ignore */
+      }
+      setSession(d.access_token, d.refresh_token, d.expires_in).finally(() =>
+        setSigningIn(false),
+      );
+    };
+
+    const poll = window.setInterval(() => {
+      if (popup.closed) {
+        cleanup();
+        setSigningIn(false);
+      }
+    }, 600);
+
+    function cleanup() {
+      window.clearInterval(poll);
+      window.removeEventListener("message", onMessage);
+    }
+
+    window.addEventListener("message", onMessage);
+  }, [setSession]);
+
+  const logout = useCallback(() => clearSession(), [clearSession]);
 
   return (
     <AuthContext.Provider
@@ -181,6 +210,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         token,
         isAuthenticated: !!user && !!token,
         loading,
+        signingIn,
         signInWithGoogle,
         setSession,
         logout,
@@ -189,4 +219,4 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       {children}
     </AuthContext.Provider>
   );
-};
+}

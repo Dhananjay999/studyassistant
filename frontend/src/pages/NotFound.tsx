@@ -1,27 +1,28 @@
-import { useLocation } from "react-router-dom";
-import { useEffect } from "react";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { AuroraBackground } from "@/components/common/AuroraBackground";
+import { BrandLogo } from "@/components/common/BrandLogo";
+import { Seo } from "@/components/common/Seo";
 
-const NotFound = () => {
-  const location = useLocation();
-
-  useEffect(() => {
-    console.error(
-      "404 Error: User attempted to access non-existent route:",
-      location.pathname
-    );
-  }, [location.pathname]);
-
+export default function NotFound() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">404</h1>
-        <p className="text-xl text-gray-600 mb-4">Oops! Page not found</p>
-        <a href="/" className="text-blue-500 hover:text-blue-700 underline">
-          Return to Home
-        </a>
+    <>
+      <Seo title="Page not found — Aeva" noindex path="/404" />
+      <div className="relative grid h-dvh place-items-center overflow-hidden bg-background">
+        <AuroraBackground />
+        <div className="text-center">
+          <BrandLogo className="mb-6 justify-center" />
+          <h1 className="font-display text-7xl font-extrabold">
+            <span className="text-gradient">404</span>
+          </h1>
+          <p className="mt-3 text-muted-foreground">
+            This page wandered off to study somewhere else.
+          </p>
+          <Button asChild className="mt-6 rounded-full">
+            <Link to="/">Back home</Link>
+          </Button>
+        </div>
       </div>
-    </div>
+    </>
   );
-};
-
-export default NotFound;
+}
