@@ -1,26 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { LogOut, Menu, PanelRight, Sparkles } from "lucide-react";
+import { Bookmark, LogOut, Menu, PanelRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Seo } from "@/components/common/Seo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { GlassCard } from "@/components/common/GlassCard";
-import { SessionSidebar } from "@/components/chat/SessionSidebar";
+import { AppSidebar } from "@/components/chat/AppSidebar";
 import { ChatMessages } from "@/components/chat/ChatMessages";
-import { ChatComposer } from "@/components/chat/ChatComposer";
+import { ChatComposer, type ChatComposerHandle } from "@/components/chat/ChatComposer";
 import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
 import { QuizSetupForm } from "@/components/chat/QuizSetupForm";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
+import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import { formatShortcut } from "@/lib/platform";
 import {
   qk,
   useCreateSession,
@@ -33,6 +41,7 @@ import { getMessages, uploadFileWithProgress } from "@/lib/api";
 import { MAX_SELECTED_FILES, MAX_UPLOAD_FILES } from "@/lib/config";
 import { compressFiles } from "@/utils/compress";
 import type {
+  ChatSeed,
   ClarificationAnswer,
   Message,
   PendingClarification,
@@ -46,6 +55,8 @@ const uid = () => crypto.randomUUID();
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
 
@@ -76,10 +87,25 @@ export default function ChatPage() {
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
   const deleteMedia = useDeleteMedia();
 
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [seedBanner, setSeedBanner] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("aeva_sidebar_collapsed") === "1",
+  );
+  const toggleCollapse = () =>
+    setCollapsed((c) => {
+      localStorage.setItem("aeva_sidebar_collapsed", c ? "0" : "1");
+      return !c;
+    });
+
   const { start, streaming } = useAssistantStream();
   const streamIdRef = useRef<string | null>(null);
+  const composerRef = useRef<ChatComposerHandle>(null);
   const bootstrapped = useRef(false);
   const loadedSession = useRef<string | null>(null);
+  // Saved-content context to fold into the next message (resume-from-bookmark).
+  const seedContextRef = useRef<string | null>(null);
+  const seedAppliedRef = useRef<string | null>(null);
 
   /* --- bootstrap: always land on a real session --- */
   useEffect(() => {
@@ -131,6 +157,7 @@ export default function ChatPage() {
         runId?: string;
         clarification?: ClarificationAnswer;
         quizOptions?: QuizOptions;
+        displayText?: string;
       },
     ) => {
       if (!activeId || streaming) return;
@@ -138,9 +165,21 @@ export default function ChatPage() {
       streamIdRef.current = streamId;
       setThinkingHint(opts?.quizOptions ? "quiz" : undefined);
 
+      // Fold saved-content context into a plain message (resume-from-bookmark).
+      let outgoing = text;
+      let display = opts?.displayText ?? text;
+      if (seedContextRef.current && !opts?.runId && !opts?.quizOptions) {
+        outgoing =
+          "Using ONLY this saved content as context:\n\n\"\"\"\n" +
+          `${seedContextRef.current}\n"""\n\n${text}`;
+        display = text;
+        seedContextRef.current = null;
+        setSeedBanner(null);
+      }
+
       setMessages((prev) => [
         ...prev,
-        { id: uid(), role: "user", content: text, createdAt: new Date() },
+        { id: uid(), role: "user", content: display, createdAt: new Date() },
         {
           id: streamId,
           role: "assistant",
@@ -152,7 +191,7 @@ export default function ChatPage() {
 
       start(
         {
-          message: text,
+          message: outgoing,
           session_id: activeId,
           media_ids: selected.size ? Array.from(selected) : undefined,
           run_id: opts?.runId,
@@ -211,6 +250,32 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeId, selected, streaming, start],
   );
+
+  /* --- resume-from-bookmark: seed a fresh session with saved content --- */
+  useEffect(() => {
+    const seed = (location.state as { seed?: ChatSeed } | null)?.seed;
+    if (!seed || !activeId) return;
+    if (seedAppliedRef.current === activeId) return;
+    if (loadedSession.current !== activeId) return;
+    seedAppliedRef.current = activeId;
+    // Drop router state so a refresh/navigation won't replay the seed.
+    navigate(`/chat?sessionId=${activeId}`, { replace: true });
+
+    if (seed.mode === "continue") {
+      send(
+        "Continue teaching me using ONLY this saved content as the starting " +
+          `point:\n\n"""\n${seed.content}\n"""\n\nExpand and go deeper.`,
+        { displayText: `Continue learning: ${seed.title ?? "saved content"}` },
+      );
+    } else if (seed.mode === "quiz") {
+      setPendingQuiz({ topic: seed.title ?? "", mediaAvailable: false });
+    } else {
+      // followup: attach the saved content to the user's first question.
+      seedContextRef.current = seed.content;
+      setSeedBanner(seed.title ?? "saved content");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, activeId, messages]);
 
   const handleClarify = (answer: ClarificationAnswer) => {
     const label =
@@ -295,6 +360,15 @@ export default function ChatPage() {
     }
   };
 
+  const openQuizSetup = () =>
+    setPendingQuiz({ topic: "", mediaAvailable: selected.size > 0 });
+
+  useGlobalShortcuts({
+    onCommandPalette: () => setPaletteOpen((o) => !o),
+    onNewChat: handleNewChat,
+    onSlashMenu: () => composerRef.current?.openCommands(),
+  });
+
   const toggleMedia = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -310,16 +384,19 @@ export default function ChatPage() {
       return next;
     });
 
-  const sidebar = (
-    <SessionSidebar
+  const renderSidebar = (mobile: boolean) => (
+    <AppSidebar
+      collapsed={mobile ? false : collapsed}
+      onToggleCollapse={toggleCollapse}
+      onNewChat={handleNewChat}
+      onSearch={() => setPaletteOpen(true)}
       sessions={sessions}
       activeId={activeId}
-      onSelect={(id) => {
+      onSelectSession={(id) => {
         setSearchParams({ sessionId: id });
         setSidebarOpen(false);
       }}
-      onNew={handleNewChat}
-      onDelete={handleDeleteSession}
+      onDeleteSession={handleDeleteSession}
     />
   );
 
@@ -370,6 +447,34 @@ export default function ChatPage() {
               </Badge>
             )}
           </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate("/bookmarks")}
+                aria-label="Bookmarks"
+              >
+                <Bookmark className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Bookmarks</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setPaletteOpen(true)}
+                aria-label="Search"
+              >
+                <Sparkles className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Search ({formatShortcut(["mod", "F"])})
+            </TooltipContent>
+          </Tooltip>
           <ThemeToggle />
           <Avatar className="h-8 w-8">
             <AvatarImage src={user?.avatar_url || undefined} />
@@ -389,12 +494,12 @@ export default function ChatPage() {
 
         <div className="flex flex-1 overflow-hidden">
           {/* Left session sidebar */}
-          <aside className="hidden w-64 shrink-0 border-r border-border/50 lg:block">
-            {sidebar}
+          <aside className="hidden shrink-0 border-r border-border/50 lg:block">
+            {renderSidebar(false)}
           </aside>
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
             <SheetContent side="left" className="w-72 p-0">
-              {sidebar}
+              {renderSidebar(true)}
             </SheetContent>
           </Sheet>
 
@@ -411,6 +516,9 @@ export default function ChatPage() {
                   mediaAvailable={selected.size > 0}
                   quizBusy={streaming}
                   thinkingHint={thinkingHint}
+                  onAction={(prompt, display) =>
+                    send(prompt, { displayText: display })
+                  }
                   onGenerateQuiz={handleGenerateQuiz}
                   onOpenQuiz={openQuiz}
                 />
@@ -444,9 +552,34 @@ export default function ChatPage() {
               </div>
             )}
 
+            {seedBanner && (
+              <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+                <div className="flex items-center gap-2 rounded-xl border border-brand-1/30 bg-brand-1/5 px-3 py-2 text-xs">
+                  <Bookmark className="h-3.5 w-3.5 text-brand-1" />
+                  <span className="flex-1 truncate">
+                    Continuing from{" "}
+                    <span className="font-medium">{seedBanner}</span> — your next
+                    message will use it as context.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      seedContextRef.current = null;
+                      setSeedBanner(null);
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
             <ChatComposer
+              ref={composerRef}
               onSend={(t) => send(t)}
               onUpload={handleUpload}
+              onQuizCommand={openQuizSetup}
               disabled={streaming}
               uploading={uploads.some((u) => u.status === "uploading")}
             />
@@ -465,6 +598,13 @@ export default function ChatPage() {
       </div>
 
       <QuizDrawer quiz={activeQuiz} open={quizOpen} onOpenChange={setQuizOpen} />
+
+      <GlobalCommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onNewChat={handleNewChat}
+        onSelectSession={(id) => setSearchParams({ sessionId: id })}
+      />
     </>
   );
 }

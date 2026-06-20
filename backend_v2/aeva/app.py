@@ -11,11 +11,13 @@ from flask_smorest import Api
 
 from aeva.assistant.assistant_controller import blueprint as assistant_bp
 from aeva.auth.auth_controller import blueprint as auth_bp
+from aeva.bookmark.bookmark_controller import blueprint as bookmark_bp
 from aeva.chat.chat_controller import blueprint as chat_bp
 from aeva.common.errors import CustomError
 from aeva.containers import Container
 from aeva.media.media_controller import blueprint as media_bp
 from aeva.quiz.quiz_controller import blueprint as quiz_bp
+from aeva.search.search_controller import blueprint as search_bp
 from aeva.session.session_controller import blueprint as session_bp
 
 logger = logging.getLogger(__name__)
@@ -142,6 +144,8 @@ def create_app() -> Flask:
     api.register_blueprint(chat_bp)
     api.register_blueprint(assistant_bp)
     api.register_blueprint(quiz_bp)
+    api.register_blueprint(bookmark_bp)
+    api.register_blueprint(search_bp)
 
     @app.errorhandler(CustomError)
     def handle_custom_error(error: CustomError) -> tuple[Any, int]:

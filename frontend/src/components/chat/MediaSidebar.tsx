@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { BookmarkButton } from "@/components/BookmarkButton";
 import { cn } from "@/lib/utils";
 import { MAX_SELECTED_FILES } from "@/lib/config";
 import type { MediaItem, UploadProgress } from "@/types";
@@ -164,6 +165,18 @@ export function MediaSidebar({
                     )}
                   </div>
                 </div>
+                <BookmarkButton
+                  item={{
+                    item_type: "media",
+                    item_ref: m.id,
+                    title: m.file_name,
+                    content: m.file_name,
+                    metadata: {
+                      mime_type: m.mime_type,
+                      storage_path: m.storage_path,
+                    },
+                  }}
+                />
                 <button
                   type="button"
                   onClick={() => onDelete(m.id)}

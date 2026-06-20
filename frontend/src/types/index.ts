@@ -161,3 +161,88 @@ export interface PendingQuizSetup {
   topic: string;
   mediaAvailable: boolean;
 }
+
+/* -------------------------------- bookmarks ------------------------------- */
+
+export type BookmarkType = "response" | "quiz" | "media" | "note";
+
+export interface BookmarkCollection {
+  id: string;
+  user_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Bookmark {
+  id: string;
+  user_id: string;
+  collection_id: string | null;
+  item_type: BookmarkType;
+  // Source id when known (quiz_id, media id, or message id) — used to render
+  // the bookmarked state on the originating item.
+  item_ref: string | null;
+  title: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateBookmarkInput {
+  item_type: BookmarkType;
+  title?: string;
+  content?: string;
+  item_ref?: string | null;
+  collection_id?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+/* --------------------------------- quizzes -------------------------------- */
+
+export interface QuizListItem {
+  id: string;
+  quiz_id: string;
+  title: string;
+  topic: string;
+  session_id: string;
+  created_at: string;
+  question_count: number;
+}
+
+/* --------------------------------- search --------------------------------- */
+
+export interface SearchMessageHit {
+  id: string;
+  session_id: string;
+  role: MessageRole;
+  content: string;
+  created_at: string;
+  session_title: string;
+}
+
+export interface SearchResults {
+  sessions: Array<{ id: string; title: string; updated_at: string }>;
+  messages: SearchMessageHit[];
+  quizzes: Array<{
+    id: string;
+    title: string;
+    topic: string;
+    session_id: string;
+    created_at: string;
+  }>;
+  media: Array<{
+    id: string;
+    file_name: string;
+    mime_type: string;
+    created_at: string;
+  }>;
+}
+
+// Context seeded into a new chat when resuming from a bookmark.
+export interface ChatSeed {
+  mode: "continue" | "followup" | "quiz";
+  content: string;
+  title?: string;
+}

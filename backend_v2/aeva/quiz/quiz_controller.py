@@ -6,7 +6,7 @@ from flask.views import MethodView
 from flask_smorest import Blueprint
 
 from aeva.common.decorators import user_required
-from aeva.common.schema import UserData
+from aeva.common.schema import ResponseEnvelopeSchema, UserData
 from aeva.quiz.quiz_service import QuizService
 from aeva.quiz.schema.quiz_schema import QuizSubmitSchema
 
@@ -16,6 +16,17 @@ blueprint = Blueprint(
     url_prefix="/quiz",
     description="Quiz",
 )
+
+
+class QuizListEndpoint(MethodView):
+    """List the user's quizzes."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def get(current_user: UserData) -> dict[str, Any]:
+        """List quizzes (newest first) with question counts."""
+        return QuizService().list_quizzes(current_user.id)
 
 
 class QuizDetailEndpoint(MethodView):
@@ -49,6 +60,11 @@ class QuizSubmitEndpoint(MethodView):
         )
 
 
+blueprint.add_url_rule(
+    "/",
+    view_func=QuizListEndpoint,
+    endpoint="quiz_list",
+)
 blueprint.add_url_rule(
     "/<quiz_id>",
     view_func=QuizDetailEndpoint,

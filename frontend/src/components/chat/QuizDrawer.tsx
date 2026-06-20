@@ -41,6 +41,18 @@ export function QuizDrawer({
     setResult(null);
   }, [quiz?.quiz_id]);
 
+  // Arrow-key navigation between questions while taking the quiz.
+  useEffect(() => {
+    if (!open || result) return undefined;
+    const last = (quiz?.questions?.length ?? 0) - 1;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") setIdx((i) => Math.min(last, i + 1));
+      else if (e.key === "ArrowLeft") setIdx((i) => Math.max(0, i - 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, result, quiz?.questions?.length]);
+
   if (!quiz) return null;
   const questions = quiz.questions ?? [];
   const total = questions.length;

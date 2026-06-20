@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
-import { Bot, ExternalLink, ListChecks, User } from "lucide-react";
+import { Bot, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { QuizCard } from "@/components/chat/QuizCard";
-import { QuizSetupPopover } from "@/components/chat/QuizSetupPopover";
+import { SourceCards } from "@/components/chat/SourceCards";
+import { SuggestedActions } from "@/components/chat/SuggestedActions";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { cn } from "@/lib/utils";
 import type { Message, QuizContent, QuizOptions, ToolUsed } from "@/types";
@@ -16,22 +16,12 @@ const TOOL_LABEL: Record<ToolUsed, string> = {
   quiz_generator: "Quiz",
 };
 
-function isQuizzable(msg: Message): boolean {
-  return (
-    msg.role === "assistant" &&
-    !msg.streaming &&
-    !msg.meta?.quiz &&
-    (msg.meta?.tool_used === "web_search" ||
-      msg.meta?.tool_used === "media_llm") &&
-    msg.content.length > 120
-  );
-}
-
 export function ChatMessages({
   messages,
   mediaAvailable,
   quizBusy,
   thinkingHint,
+  onAction,
   onGenerateQuiz,
   onOpenQuiz,
 }: {
@@ -39,6 +29,7 @@ export function ChatMessages({
   mediaAvailable: boolean;
   quizBusy: boolean;
   thinkingHint?: "quiz";
+  onAction: (prompt: string, displayText?: string) => void;
   onGenerateQuiz: (topic: string, options: QuizOptions) => void;
   onOpenQuiz: (quiz: QuizContent) => void;
 }) {
@@ -114,21 +105,7 @@ export function ChatMessages({
               )}
 
               {msg.meta?.sources && msg.meta.sources.length > 0 && (
-                <div className="mt-3 border-t border-border/40 pt-2">
-                  <p className="text-xs font-medium opacity-70">Sources</p>
-                  {msg.meta.sources.map((s, idx) => (
-                    <a
-                      key={idx}
-                      href={s.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 flex items-center gap-1 text-xs text-brand-3 hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{s.title}</span>
-                    </a>
-                  ))}
-                </div>
+                <SourceCards sources={msg.meta.sources} />
               )}
 
               {msg.meta?.quiz?.questions?.length ? (
@@ -138,21 +115,29 @@ export function ChatMessages({
                 />
               ) : null}
 
-              {isQuizzable(msg) && (
-                <div className="mt-3">
-                  <QuizSetupPopover
-                    initialTopic={topic}
-                    mediaAvailable={mediaAvailable}
+              {msg.role === "assistant" &&
+                !msg.streaming &&
+                msg.content && (
+                  <SuggestedActions
+                    content={msg.content}
                     busy={quizBusy}
-                    onGenerate={(opts) => onGenerateQuiz(topic, opts)}
-                  >
-                    <Button size="sm" variant="outline" className="h-8 gap-1.5">
-                      <ListChecks className="h-3.5 w-3.5" />
-                      Generate quiz
-                    </Button>
-                  </QuizSetupPopover>
-                </div>
-              )}
+                    topic={topic}
+                    mediaAvailable={mediaAvailable}
+                    quizBusy={quizBusy}
+                    onAction={onAction}
+                    onGenerateQuiz={(opts) => onGenerateQuiz(topic, opts)}
+                    bookmarkItem={{
+                      item_type: "response",
+                      item_ref: msg.id,
+                      title: topic || msg.content.slice(0, 60),
+                      content: msg.content,
+                      metadata: {
+                        tool_used: msg.meta?.tool_used,
+                        sources: msg.meta?.sources ?? [],
+                      },
+                    }}
+                  />
+                )}
             </div>
           </motion.div>
         );

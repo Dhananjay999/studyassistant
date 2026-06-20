@@ -66,6 +66,42 @@ class QuizRepository:
             "questions": questions_out,
         }
 
+    def list_quizzes(self, user_id: str) -> list[dict[str, Any]]:
+        """List the user's quizzes with question counts, newest first."""
+        quizzes = (
+            self.supabase.client.table("quizzes")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .execute()
+        ).data or []
+        if not quizzes:
+            return []
+
+        ids = [q["id"] for q in quizzes]
+        counts: dict[str, int] = {}
+        rows = (
+            self.supabase.client.table("quiz_questions")
+            .select("quiz_id")
+            .in_("quiz_id", ids)
+            .execute()
+        ).data or []
+        for r in rows:
+            counts[r["quiz_id"]] = counts.get(r["quiz_id"], 0) + 1
+
+        return [
+            {
+                "id": q["id"],
+                "quiz_id": q["id"],
+                "title": q["title"],
+                "topic": q["topic"],
+                "session_id": q["session_id"],
+                "created_at": q["created_at"],
+                "question_count": counts.get(q["id"], 0),
+            }
+            for q in quizzes
+        ]
+
     def get_quiz(
         self, quiz_id: str, user_id: str, *, include_answers: bool = False
     ) -> dict[str, Any] | None:

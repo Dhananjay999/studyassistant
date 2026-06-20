@@ -4,10 +4,15 @@
 import type {
   APIEnvelope,
   AssistantRequest,
+  Bookmark,
+  BookmarkCollection,
+  CreateBookmarkInput,
   MediaItem,
   Message,
   QuizContent,
+  QuizListItem,
   QuizSubmitResult,
+  SearchResults,
   Session,
   User,
 } from "@/types";
@@ -26,8 +31,14 @@ export const ENDPOINTS = {
   MEDIA: "/media/",
   MEDIA_ITEM: (id: string) => `/media/${id}`,
   ASSISTANT_STREAM: "/assistant/stream",
+  QUIZZES: "/quiz/",
   QUIZ: (id: string) => `/quiz/${id}`,
   QUIZ_SUBMIT: (id: string) => `/quiz/${id}/submit`,
+  BOOKMARKS: "/bookmarks/",
+  BOOKMARK: (id: string) => `/bookmarks/${id}`,
+  COLLECTIONS: "/bookmarks/collections",
+  COLLECTION: (id: string) => `/bookmarks/collections/${id}`,
+  SEARCH: "/search/",
 } as const;
 
 type TokenGetter = () => string | null;
@@ -225,6 +236,9 @@ export const deleteMedia = (id: string) =>
 
 /* ---------------------------------- quiz ---------------------------------- */
 
+export const listQuizzes = () =>
+  unwrap<QuizListItem[]>(ENDPOINTS.QUIZZES);
+
 export const getQuiz = (id: string) => unwrap<QuizContent>(ENDPOINTS.QUIZ(id));
 
 export const submitQuiz = (id: string, answers: Record<string, string[]>) =>
@@ -232,6 +246,55 @@ export const submitQuiz = (id: string, answers: Record<string, string[]>) =>
     method: "POST",
     body: JSON.stringify({ answers }),
   });
+
+/* -------------------------------- bookmarks ------------------------------- */
+
+export const listBookmarks = () =>
+  unwrap<Bookmark[]>(ENDPOINTS.BOOKMARKS);
+
+export const getBookmark = (id: string) =>
+  unwrap<Bookmark>(ENDPOINTS.BOOKMARK(id));
+
+export const createBookmark = (input: CreateBookmarkInput) =>
+  unwrap<Bookmark>(ENDPOINTS.BOOKMARKS, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+export const updateBookmark = (
+  id: string,
+  patch: { collection_id?: string | null; title?: string },
+) =>
+  unwrap<Bookmark>(ENDPOINTS.BOOKMARK(id), {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+export const deleteBookmark = (id: string) =>
+  unwrap<{ id: string }>(ENDPOINTS.BOOKMARK(id), { method: "DELETE" });
+
+export const listCollections = () =>
+  unwrap<BookmarkCollection[]>(ENDPOINTS.COLLECTIONS);
+
+export const createCollection = (name: string) =>
+  unwrap<BookmarkCollection>(ENDPOINTS.COLLECTIONS, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+
+export const renameCollection = (id: string, name: string) =>
+  unwrap<BookmarkCollection>(ENDPOINTS.COLLECTION(id), {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+
+export const deleteCollection = (id: string) =>
+  unwrap<{ id: string }>(ENDPOINTS.COLLECTION(id), { method: "DELETE" });
+
+/* --------------------------------- search --------------------------------- */
+
+export const searchAll = (q: string) =>
+  unwrap<SearchResults>(`${ENDPOINTS.SEARCH}?q=${encodeURIComponent(q)}`);
 
 /** Absolute URL for the SSE assistant stream (used by useAssistantStream). */
 export const assistantStreamUrl = `${API_BASE_URL}${ENDPOINTS.ASSISTANT_STREAM}`;

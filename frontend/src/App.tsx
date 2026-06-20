@@ -16,6 +16,11 @@ import NotFound from "@/pages/NotFound";
 
 // Heavy app (markdown/KaTeX/PDF) is split out of the landing's initial load.
 const ChatPage = lazy(() => import("@/pages/ChatPage"));
+const BookmarksPage = lazy(() => import("@/pages/BookmarksPage"));
+const BookmarkDetailPage = lazy(() => import("@/pages/BookmarkDetailPage"));
+const QuizzesPage = lazy(() => import("@/pages/QuizzesPage"));
+const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
+const FilesPage = lazy(() => import("@/pages/FilesPage"));
 
 function RouteFallback() {
   return (
@@ -51,6 +56,46 @@ export default function App() {
                       element={
                         <ProtectedRoute>
                           <ChatPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/bookmarks"
+                      element={
+                        <ProtectedRoute>
+                          <BookmarksPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/bookmarks/:id"
+                      element={
+                        <ProtectedRoute>
+                          <BookmarkDetailPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/quizzes"
+                      element={
+                        <ProtectedRoute>
+                          <QuizzesPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/analytics"
+                      element={
+                        <ProtectedRoute>
+                          <AnalyticsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/files"
+                      element={
+                        <ProtectedRoute>
+                          <FilesPage />
                         </ProtectedRoute>
                       }
                     />

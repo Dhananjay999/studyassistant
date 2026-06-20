@@ -39,6 +39,12 @@ class QuizService:
             raise CustomError(ERROR_CODES["QUIZ_NOT_FOUND"])
         return success_response("Quiz loaded", quiz)
 
+    def list_quizzes(self, user_id: str) -> dict[str, Any]:
+        """List the user's quizzes."""
+        return success_response(
+            "Quizzes retrieved", self.repo.list_quizzes(user_id)
+        )
+
     def submit(
         self,
         quiz_id: str,

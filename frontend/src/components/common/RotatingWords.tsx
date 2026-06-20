@@ -31,7 +31,7 @@ export function RotatingWords({
   }
 
   return (
-    <span className={`relative inline-grid ${className ?? ""}`}>
+    <span className={`relative inline-grid mt-8 ${className ?? ""}`}>
       {/* Invisible widest word reserves height/width to avoid layout shift. */}
       <span className="invisible col-start-1 row-start-1" aria-hidden>
         {words.reduce((a, b) => (a.length >= b.length ? a : b), "")}
