@@ -9,23 +9,27 @@ import { Reveal } from "@/components/common/Reveal";
 const FAQS = [
   {
     q: "Is Aeva free to use?",
-    a: "Yes — sign in with Google and start asking questions, uploading notes, and generating quizzes right away.",
+    a: "Yes — sign in with Google and start chatting, uploading notes, and generating quizzes and flashcards right away.",
   },
   {
-    q: "What files can I upload?",
-    a: "PDFs and images (PNG/JPG/WebP). Aeva reads them and answers questions directly from your material.",
+    q: "What can Aeva create from my material?",
+    a: "From any answer, PDF, or image, Aeva can generate practice quizzes and flashcard decks, write study plans, and analyze your quiz performance.",
   },
   {
-    q: "How are quizzes generated?",
-    a: "Pick the number of questions, difficulty, and question types. Aeva builds the quiz from the topic you discussed or from your uploaded document.",
+    q: "How do flashcards work?",
+    a: "Aeva builds a deck with a question on the front and the answer on the back. Flip, shuffle, and rate each card Easy / Medium / Hard / Needs Revision — your mastery is tracked over time.",
   },
   {
-    q: "Does it remember my conversations?",
-    a: "Every chat is saved as a session you can revisit. Refresh or come back later and your history is right there.",
+    q: "How are quizzes generated and graded?",
+    a: "Pick the topic, difficulty, and question types. Aeva builds the quiz from your conversation or uploaded document, scores it instantly, and gives AI feedback on what to revise.",
+  },
+  {
+    q: "Can I save and revisit content?",
+    a: "Bookmark responses, quizzes, and flashcards into folders, search everything from global search, and continue learning by branching a fresh session from any saved item.",
   },
   {
     q: "Is my data private?",
-    a: "Your sessions and uploads are tied to your account and only accessible to you.",
+    a: "Your sessions, uploads, quizzes, and flashcards are tied to your account and only accessible to you.",
   },
 ];
 

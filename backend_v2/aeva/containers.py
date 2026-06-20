@@ -4,6 +4,7 @@ from dependency_injector import containers, providers
 
 from aeva.llm.llm_client import LLMClient
 from aeva.mcp.registry import ToolRegistry
+from aeva.mcp.tools.flashcard_generator import FlashcardGeneratorTool
 from aeva.mcp.tools.media_llm import MediaLLMTool
 from aeva.mcp.tools.quiz_generator import QuizGeneratorTool
 from aeva.mcp.tools.web_search import WebSearchTool
@@ -14,6 +15,7 @@ def build_tool_registry(
     web_search_llm: LLMClient,
     media_llm: LLMClient,
     quiz_llm: LLMClient,
+    flashcard_llm: LLMClient,
     supabase: SupabaseService,
 ) -> ToolRegistry:
     """Create registry with per-tool LLM clients."""
@@ -21,6 +23,9 @@ def build_tool_registry(
     registry.register(WebSearchTool(llm=web_search_llm))
     registry.register(MediaLLMTool(llm=media_llm, supabase=supabase))
     registry.register(QuizGeneratorTool(llm=quiz_llm, supabase=supabase))
+    registry.register(
+        FlashcardGeneratorTool(llm=flashcard_llm, supabase=supabase)
+    )
     return registry
 
 
@@ -48,11 +53,16 @@ class Container(containers.DeclarativeContainer):
         LLMClient,
         config_key="LLM_QUIZ_MODEL",
     )
+    llm_flashcard = providers.Singleton(
+        LLMClient,
+        config_key="LLM_FLASHCARD_MODEL",
+    )
 
     tool_registry = providers.Singleton(
         build_tool_registry,
         web_search_llm=llm_web_search,
         media_llm=llm_media,
         quiz_llm=llm_quiz,
+        flashcard_llm=llm_flashcard,
         supabase=supabase_service,
     )

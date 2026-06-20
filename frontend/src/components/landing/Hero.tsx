@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ArrowRight, Bot, FileText, Sparkles } from "lucide-react";
+import { ArrowRight, Bot, FileText, Layers, Sparkles } from "lucide-react";
 import { AuroraBackground } from "@/components/common/AuroraBackground";
 import { RotatingWords } from "@/components/common/RotatingWords";
 import { Marquee } from "@/components/common/Marquee";
@@ -50,8 +50,9 @@ export function Hero() {
             transition={{ duration: 0.6, delay: 0.12 }}
             className="mx-auto mt-5 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg"
           >
-            Ask anything, upload your notes and PDFs for instant answers, and
-            turn any topic into a practice quiz — all in one place.
+            Chat with Aeva, turn notes and PDFs into answers, then auto-generate
+            flashcards, quizzes, and performance analysis. A complete AI
+            learning system — not just a chatbot.
           </motion.p>
 
           <motion.div
@@ -108,8 +109,11 @@ function HeroPreview() {
             A B-tree index keeps data sorted in a balanced tree so lookups stay
             fast even on huge tables…
             <span className="mt-3 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-1/15 px-2.5 py-1 text-xs font-medium text-brand-1">
-                <Sparkles className="h-3 w-3" /> Generate quiz
+              <span className="inline-flex items-center gap-1 rounded-full border border-brand-1/40 px-2.5 py-1 text-xs font-medium text-brand-1">
+                <Sparkles className="h-3 w-3" /> Create Quiz
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-brand-1/40 px-2.5 py-1 text-xs font-medium text-brand-1">
+                <Layers className="h-3 w-3" /> Create Flashcards
               </span>
               <span className="inline-flex items-center gap-1 rounded-full bg-card px-2.5 py-1 text-xs text-muted-foreground">
                 <FileText className="h-3 w-3" /> 2 sources

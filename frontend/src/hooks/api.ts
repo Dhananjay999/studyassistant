@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import * as api from "@/lib/api";
-import type { CreateBookmarkInput, Session } from "@/types";
+import type { CreateBookmarkInput, Session, StudyRating } from "@/types";
 
 export const qk = {
   sessions: ["sessions"] as const,
@@ -12,6 +12,8 @@ export const qk = {
   bookmarks: ["bookmarks"] as const,
   collections: ["collections"] as const,
   quizzes: ["quizzes"] as const,
+  flashcards: ["flashcards"] as const,
+  flashcardSet: (id: string) => ["flashcards", id] as const,
   search: (q: string) => ["search", q] as const,
 };
 
@@ -76,6 +78,33 @@ export function useSubmitQuiz() {
 
 export function useQuizzes() {
   return useQuery({ queryKey: qk.quizzes, queryFn: api.listQuizzes });
+}
+
+/* ------------------------------- flashcards ------------------------------- */
+
+export function useFlashcardSets() {
+  return useQuery({
+    queryKey: qk.flashcards,
+    queryFn: api.listFlashcardSets,
+  });
+}
+
+export function useFlashcardSet(id: string | null) {
+  return useQuery({
+    queryKey: qk.flashcardSet(id ?? ""),
+    queryFn: () => api.getFlashcardSet(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+export function useRecordStudy() {
+  return useMutation({
+    mutationFn: (v: {
+      setId: string;
+      flashcardId: string;
+      rating: StudyRating;
+    }) => api.recordFlashcardStudy(v.setId, v.flashcardId, v.rating),
+  });
 }
 
 /* --------------------------------- search --------------------------------- */

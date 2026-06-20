@@ -19,6 +19,7 @@ const ChatPage = lazy(() => import("@/pages/ChatPage"));
 const BookmarksPage = lazy(() => import("@/pages/BookmarksPage"));
 const BookmarkDetailPage = lazy(() => import("@/pages/BookmarkDetailPage"));
 const QuizzesPage = lazy(() => import("@/pages/QuizzesPage"));
+const FlashcardsPage = lazy(() => import("@/pages/FlashcardsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
 
@@ -80,6 +81,14 @@ export default function App() {
                       element={
                         <ProtectedRoute>
                           <QuizzesPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/flashcards"
+                      element={
+                        <ProtectedRoute>
+                          <FlashcardsPage />
                         </ProtectedRoute>
                       }
                     />

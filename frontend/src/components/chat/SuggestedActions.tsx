@@ -8,6 +8,29 @@ import { BookmarkButton } from "@/components/BookmarkButton";
 import { PRIMARY_ACTIONS, type PrimaryAction } from "@/lib/suggestedActions";
 import { cn } from "@/lib/utils";
 import type { CreateBookmarkInput, QuizOptions } from "@/types";
+import type { LucideIcon } from "lucide-react";
+
+// Border-only "premium AI action" chip (Linear / Raycast / Gemini feel).
+const HIGHLIGHT_CHIP = cn(
+  "group inline-flex items-center gap-1.5 rounded-full border",
+  "border-brand-1/40 bg-background px-3.5 py-1.5 text-xs font-semibold",
+  "text-foreground transition-all hover:border-brand-1/70",
+  "hover:shadow-[0_0_12px_-2px_hsl(var(--brand-1)/0.5)] disabled:opacity-60",
+);
+
+// Continuously animated icon that intensifies on hover.
+function AnimatedIcon({ Icon }: { Icon: LucideIcon }) {
+  return (
+    <motion.span
+      aria-hidden
+      className="text-brand-1 transition-transform group-hover:scale-110"
+      animate={{ rotate: [0, 14, -10, 0] }}
+      transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </motion.span>
+  );
+}
 
 const container = {
   hidden: { opacity: 0 },
@@ -101,33 +124,40 @@ export function SuggestedActions({
                   whileHover={{ scale: 1.05, y: -1 }}
                   whileTap={{ scale: 0.97 }}
                   disabled={busy}
-                  className={cn(
-                    "group relative inline-flex items-center gap-1.5",
-                    "overflow-hidden rounded-full bg-brand-gradient px-3.5",
-                    "py-1.5 text-xs font-semibold text-white shadow-glow",
-                    "disabled:opacity-60",
-                  )}
+                  className={HIGHLIGHT_CHIP}
                 >
-                  <motion.span
-                    aria-hidden
-                    animate={{ rotate: [0, 12, -8, 0], scale: [1, 1.15, 1] }}
-                    transition={{
-                      duration: 2.4,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                  </motion.span>
+                  <AnimatedIcon Icon={Icon} />
                   {action.label}
-                  {/* shine sweep on hover */}
-                  <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
                 </motion.button>
               </QuizSetupPopover>
             );
           }
 
           // kind === "prompt"
+          if (action.highlight) {
+            return (
+              <motion.button
+                key={action.id}
+                type="button"
+                variants={chip}
+                whileHover={{ scale: 1.05, y: -1 }}
+                whileTap={{ scale: 0.97 }}
+                disabled={busy}
+                className={HIGHLIGHT_CHIP}
+                onClick={() =>
+                  fire(action, action.buildPrompt?.(content) ?? "")
+                }
+              >
+                {loading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-1" />
+                ) : (
+                  <AnimatedIcon Icon={Icon} />
+                )}
+                {action.label}
+              </motion.button>
+            );
+          }
+
           return (
             <motion.div key={action.id} variants={chip}>
               <motion.div

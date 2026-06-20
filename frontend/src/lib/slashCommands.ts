@@ -5,6 +5,7 @@
 import {
   FileText,
   Languages,
+  Layers,
   ListChecks,
   Microscope,
   NotebookPen,
@@ -33,6 +34,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     icon: ListChecks,
     template: "",
     action: "quiz",
+  },
+  {
+    id: "flashcards",
+    label: "/flashcards",
+    description: "Generate study flashcards",
+    icon: Layers,
+    template: "Create flashcards on ",
   },
   {
     id: "summarize",

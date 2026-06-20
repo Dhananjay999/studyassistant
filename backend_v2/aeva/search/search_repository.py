@@ -10,6 +10,7 @@ EMPTY: dict[str, list[Any]] = {
     "messages": [],
     "quizzes": [],
     "media": [],
+    "flashcards": [],
 }
 
 
@@ -68,6 +69,8 @@ class SearchRepository:
             .execute()
         ).data or []
 
+        flashcards = SearchRepository._search_flashcards(supabase, uid, like)
+
         return success_response(
             "Search results",
             {
@@ -75,8 +78,30 @@ class SearchRepository:
                 "messages": messages,
                 "quizzes": quizzes,
                 "media": media,
+                "flashcards": flashcards,
             },
         )
+
+    @staticmethod
+    def _search_flashcards(
+        supabase: SupabaseService,
+        uid: str,
+        like: str,
+    ) -> list[dict[str, Any]]:
+        """Match flashcard sets on title or topic, de-duplicated by id."""
+        by_id: dict[str, dict[str, Any]] = {}
+        for column in ("title", "topic"):
+            rows = (
+                supabase.client.table("flashcard_sets")
+                .select("id, title, topic, created_at")
+                .eq("user_id", uid)
+                .ilike(column, like)
+                .limit(8)
+                .execute()
+            ).data or []
+            for r in rows:
+                by_id[r["id"]] = r
+        return list(by_id.values())
 
     @staticmethod
     def _search_quizzes(

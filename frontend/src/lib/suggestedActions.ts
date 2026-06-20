@@ -5,6 +5,7 @@
 
 import {
   FileText,
+  Layers,
   Maximize2,
   Microscope,
   Minimize2,
@@ -44,6 +45,17 @@ export const PRIMARY_ACTIONS: PrimaryAction[] = [
     icon: Sparkles,
     kind: "quiz",
     highlight: true,
+  },
+  {
+    id: "create_flashcards",
+    label: "Create Flashcards",
+    icon: Layers,
+    kind: "prompt",
+    highlight: true,
+    buildPrompt: withContent(
+      "Create study flashcards (each with a front question/term and a back " +
+        "answer/explanation) from the following content.",
+    ),
   },
   {
     id: "explain_simpler",

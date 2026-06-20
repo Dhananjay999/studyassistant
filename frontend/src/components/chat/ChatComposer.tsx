@@ -125,7 +125,7 @@ export const ChatComposer = forwardRef<
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-4">
+    <div className="mx-auto w-full max-w-4xl px-4 pb-4">
       <div className="relative">
         {menuOpen && (
           <SlashCommandMenu

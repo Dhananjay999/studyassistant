@@ -12,8 +12,8 @@ export default function LandingPage() {
   return (
     <>
       <Seo
-        title="StudyAssistant — AI study buddy that turns notes into answers & quizzes"
-        description="StudyAssistant is an AI study buddy (meet Aeva) for students. Ask any question, upload your PDFs and notes for instant answers, and auto-generate practice quizzes. Free to start."
+        title="StudyAssistant — a complete AI learning system, not just a chatbot"
+        description="StudyAssistant (meet Aeva) is a complete AI learning system for students: chat with web search and your PDFs, auto-generate flashcards and quizzes, get AI performance analysis, and save everything with bookmarks and global search. Free to start."
         path="/"
       />
       <IntroLoader onDone={() => undefined} />

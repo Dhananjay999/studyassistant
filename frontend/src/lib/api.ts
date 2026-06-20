@@ -8,12 +8,16 @@ import type {
   BookmarkCollection,
   CreateBookmarkInput,
   MediaItem,
+  FlashcardAnalytics,
+  FlashcardListItem,
+  FlashcardSetDetail,
   Message,
   QuizContent,
   QuizListItem,
   QuizSubmitResult,
   SearchResults,
   Session,
+  StudyRating,
   User,
 } from "@/types";
 
@@ -39,6 +43,9 @@ export const ENDPOINTS = {
   COLLECTIONS: "/bookmarks/collections",
   COLLECTION: (id: string) => `/bookmarks/collections/${id}`,
   SEARCH: "/search/",
+  FLASHCARDS: "/flashcards/",
+  FLASHCARD: (id: string) => `/flashcards/${id}`,
+  FLASHCARD_STUDY: (id: string) => `/flashcards/${id}/study`,
 } as const;
 
 type TokenGetter = () => string | null;
@@ -290,6 +297,24 @@ export const renameCollection = (id: string, name: string) =>
 
 export const deleteCollection = (id: string) =>
   unwrap<{ id: string }>(ENDPOINTS.COLLECTION(id), { method: "DELETE" });
+
+/* ------------------------------- flashcards ------------------------------- */
+
+export const listFlashcardSets = () =>
+  unwrap<FlashcardListItem[]>(ENDPOINTS.FLASHCARDS);
+
+export const getFlashcardSet = (id: string) =>
+  unwrap<FlashcardSetDetail>(ENDPOINTS.FLASHCARD(id));
+
+export const recordFlashcardStudy = (
+  setId: string,
+  flashcardId: string,
+  rating: StudyRating,
+) =>
+  unwrap<FlashcardAnalytics>(ENDPOINTS.FLASHCARD_STUDY(setId), {
+    method: "POST",
+    body: JSON.stringify({ flashcard_id: flashcardId, rating }),
+  });
 
 /* --------------------------------- search --------------------------------- */
 

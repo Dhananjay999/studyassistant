@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bookmark,
   FolderOpen,
+  Layers,
   ListChecks,
   MessageSquare,
   PanelLeft,
@@ -24,6 +25,7 @@ import type { Session } from "@/types";
 const NAV = [
   { label: "Chats", icon: MessageSquare, to: "/chat" },
   { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
+  { label: "Flashcards", icon: Layers, to: "/flashcards" },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
   { label: "Analytics", icon: BarChart3, to: "/analytics" },
   { label: "Files", icon: FolderOpen, to: "/files" },

@@ -5,6 +5,7 @@ import {
   Bookmark,
   FileText,
   FolderTree,
+  Layers,
   ListChecks,
   MessageSquare,
   MessageSquarePlus,
@@ -85,7 +86,8 @@ export function GlobalCommandPalette({
     (results.sessions.length > 0 ||
       results.messages.length > 0 ||
       results.quizzes.length > 0 ||
-      results.media.length > 0) ;
+      results.media.length > 0 ||
+      results.flashcards.length > 0);
   const anything =
     hasResults || matchedBookmarks.length > 0 || matchedFolders.length > 0;
 
@@ -177,6 +179,22 @@ export function GlobalCommandPalette({
               >
                 <ListChecks className="h-4 w-4 shrink-0" />
                 <span className="truncate">{qz.title}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        ) : null}
+
+        {searching && results?.flashcards.length ? (
+          <CommandGroup heading="Flashcards">
+            {results.flashcards.map((fc) => (
+              <CommandItem
+                key={`fc-${fc.id}`}
+                value={`flashcards ${fc.id} ${fc.title} ${fc.topic}`}
+                onSelect={() => run(() => navigate("/flashcards"))}
+                className="gap-2"
+              >
+                <Layers className="h-4 w-4 shrink-0" />
+                <span className="truncate">{fc.title}</span>
               </CommandItem>
             ))}
           </CommandGroup>

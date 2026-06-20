@@ -15,6 +15,7 @@ from aeva.bookmark.bookmark_controller import blueprint as bookmark_bp
 from aeva.chat.chat_controller import blueprint as chat_bp
 from aeva.common.errors import CustomError
 from aeva.containers import Container
+from aeva.flashcard.flashcard_controller import blueprint as flashcard_bp
 from aeva.media.media_controller import blueprint as media_bp
 from aeva.quiz.quiz_controller import blueprint as quiz_bp
 from aeva.search.search_controller import blueprint as search_bp
@@ -53,6 +54,9 @@ def load_env_vars(app: Flask) -> None:
     )
     app.config["LLM_QUIZ_MODEL"] = os.environ.get(
         "LLM_QUIZ_MODEL", default_model
+    )
+    app.config["LLM_FLASHCARD_MODEL"] = os.environ.get(
+        "LLM_FLASHCARD_MODEL", default_model
     )
 
     # LLM provider per capability (fall back to LLM_PROVIDER when unset).
@@ -146,6 +150,7 @@ def create_app() -> Flask:
     api.register_blueprint(quiz_bp)
     api.register_blueprint(bookmark_bp)
     api.register_blueprint(search_bp)
+    api.register_blueprint(flashcard_bp)
 
     @app.errorhandler(CustomError)
     def handle_custom_error(error: CustomError) -> tuple[Any, int]:

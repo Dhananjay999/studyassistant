@@ -503,6 +503,10 @@ class AssistantOrchestrator:
         words = text.split()
         is_quiz = "quiz" in text or "test" in text
 
+        # Flashcard requests are a clear intent — never clarify them.
+        if "flashcard" in text or "flash card" in text:
+            return True
+
         # Quiz + media is a real fork (quiz the document or the discussion?) —
         # let the planner ask which.
         if is_quiz and ctx.media_ids:
@@ -546,6 +550,16 @@ class AssistantOrchestrator:
     ) -> dict[str, Any]:
         """Rule-based tool pick when skipping over-clarification."""
         text = message.lower()
+
+        # Flashcards: a clear, self-contained intent.
+        if "flashcard" in text or "flash card" in text:
+            fc_params: dict[str, Any] = {"topic": message}
+            if ctx.media_ids:
+                fc_params["use_media"] = True
+            return {
+                "action": "run_tool",
+                "tool": {"name": "flashcard_generator", "params": fc_params},
+            }
 
         # Quiz wins over media: a quiz request is its own intent, and the quiz
         # tool grounds itself in the conversation history.
@@ -649,6 +663,13 @@ class AssistantOrchestrator:
             return (
                 f"I've created a **{title}** quiz with {count} questions. "
                 f"Quiz ID: `{result.get('quiz_id')}`"
+            )
+        if tool_name == "flashcard_generator":
+            title = result.get("title", "Flashcards")
+            count = len(result.get("cards", []))
+            return (
+                f"I've created the **{title}** flashcard set with {count} "
+                "cards. Open it to start studying."
             )
         return result.get("answer", json.dumps(result, indent=2))
 

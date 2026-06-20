@@ -2,7 +2,7 @@ import {
   BarChart3,
   Bookmark,
   FolderOpen,
-  FolderTree,
+  Layers,
   ListChecks,
   MessageSquare,
 } from "lucide-react";
@@ -11,7 +11,7 @@ import { GlassCard } from "@/components/common/GlassCard";
 import { Seo } from "@/components/common/Seo";
 import {
   useBookmarks,
-  useCollections,
+  useFlashcardSets,
   useMedia,
   useQuizzes,
   useSessions,
@@ -20,16 +20,19 @@ import {
 export default function AnalyticsPage() {
   const sessions = useSessions().data ?? [];
   const quizzes = useQuizzes().data ?? [];
+  const flashcards = useFlashcardSets().data ?? [];
   const bookmarks = useBookmarks().data ?? [];
   const media = useMedia().data ?? [];
-  const collections = useCollections().data ?? [];
+
+  const masteredCards = flashcards.reduce((n, s) => n + s.mastered, 0);
 
   const stats = [
     { label: "Chats", value: sessions.length, icon: MessageSquare },
     { label: "Quizzes", value: quizzes.length, icon: ListChecks },
+    { label: "Flashcard Sets", value: flashcards.length, icon: Layers },
+    { label: "Cards Mastered", value: masteredCards, icon: Layers },
     { label: "Bookmarks", value: bookmarks.length, icon: Bookmark },
     { label: "Files", value: media.length, icon: FolderOpen },
-    { label: "Folders", value: collections.length, icon: FolderTree },
   ];
 
   return (

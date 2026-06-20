@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown";
 import {
   ArrowLeft,
   FileText,
+  GraduationCap,
+  Layers,
   ListChecks,
   Loader2,
   MessageCircleQuestion,
@@ -18,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Seo } from "@/components/common/Seo";
 import { GlassCard } from "@/components/common/GlassCard";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
+import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { getBookmark, getQuiz } from "@/lib/api";
 import { useCreateSession } from "@/hooks/api";
 import type { BookmarkType, ChatSeed, QuizContent } from "@/types";
@@ -28,6 +31,7 @@ const TYPE_META: Record<
 > = {
   response: { label: "Response", icon: MessageSquare },
   quiz: { label: "Quiz", icon: ListChecks },
+  flashcard: { label: "Flashcards", icon: Layers },
   media: { label: "Media", icon: FileText },
   note: { label: "Note", icon: NotebookPen },
 };
@@ -38,6 +42,7 @@ export default function BookmarkDetailPage() {
   const createSession = useCreateSession();
   const [quiz, setQuiz] = useState<QuizContent | null>(null);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [cardsOpen, setCardsOpen] = useState(false);
 
   const { data: bookmark, isLoading } = useQuery({
     queryKey: ["bookmark", id],
@@ -133,6 +138,20 @@ export default function BookmarkDetailPage() {
                 </Button>
               )}
             </div>
+          ) : bookmark.item_type === "flashcard" ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {bookmark.content || "A saved flashcard set."}
+              </p>
+              {bookmark.item_ref && (
+                <Button
+                  onClick={() => setCardsOpen(true)}
+                  className="gap-2 bg-brand-gradient text-white"
+                >
+                  <GraduationCap className="h-4 w-4" /> Study Flashcards
+                </Button>
+              )}
+            </div>
           ) : (
             <div className="prose prose-sm max-w-none dark:prose-invert">
               <ReactMarkdown>
@@ -149,7 +168,7 @@ export default function BookmarkDetailPage() {
             <Button
               onClick={() => resume("continue")}
               disabled={busy}
-              className="gap-2 bg-brand-gradient text-white shadow-glow"
+              className="gap-2 bg-brand-gradient text-white"
             >
               <Sparkles className="h-4 w-4" /> Continue Learning
             </Button>
@@ -174,6 +193,11 @@ export default function BookmarkDetailPage() {
       </div>
 
       <QuizDrawer quiz={quiz} open={quizOpen} onOpenChange={setQuizOpen} />
+      <FlashcardViewer
+        setId={bookmark.item_type === "flashcard" ? bookmark.item_ref : null}
+        open={cardsOpen}
+        onOpenChange={setCardsOpen}
+      />
     </>
   );
 }

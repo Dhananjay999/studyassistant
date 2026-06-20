@@ -81,7 +81,7 @@ export default function QuizzesPage() {
                 <Button
                   onClick={() => start(q.quiz_id)}
                   disabled={loadingId === q.quiz_id}
-                  className="mt-4 w-full gap-2 bg-brand-gradient text-white shadow-glow"
+                  className="mt-4 w-full gap-2 bg-brand-gradient text-white"
                 >
                   {loadingId === q.quiz_id ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

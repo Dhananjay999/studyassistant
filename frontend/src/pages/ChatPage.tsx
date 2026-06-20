@@ -22,6 +22,7 @@ import { ChatComposer, type ChatComposerHandle } from "@/components/chat/ChatCom
 import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
 import { QuizSetupForm } from "@/components/chat/QuizSetupForm";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
+import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
@@ -43,6 +44,7 @@ import { compressFiles } from "@/utils/compress";
 import type {
   ChatSeed,
   ClarificationAnswer,
+  FlashcardContent,
   Message,
   PendingClarification,
   PendingQuizSetup,
@@ -80,6 +82,8 @@ export default function ChatPage() {
 
   const [activeQuiz, setActiveQuiz] = useState<QuizContent | null>(null);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [activeFlashcards, setActiveFlashcards] = useState<string | null>(null);
+  const [flashcardsOpen, setFlashcardsOpen] = useState(false);
 
   const mediaQuery = useMedia();
   const media = mediaQuery.data ?? [];
@@ -207,6 +211,10 @@ export default function ChatPage() {
               toolUsed === "quiz_generator"
                 ? (content as unknown as QuizContent)
                 : undefined;
+            const flashcards =
+              toolUsed === "flashcard_generator"
+                ? (content as unknown as FlashcardContent)
+                : undefined;
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamId
@@ -219,12 +227,18 @@ export default function ChatPage() {
                         sources:
                           (content.sources as Message["meta"]["sources"]) || [],
                         quiz,
+                        flashcards,
                       },
                     }
                   : m,
               ),
             );
             sessionsQuery.refetch();
+            // Auto-open the study panel right after a set is generated.
+            if (flashcards?.set_id) {
+              setActiveFlashcards(flashcards.set_id);
+              setFlashcardsOpen(true);
+            }
           },
           onClarification: (data) => {
             removeStreaming();
@@ -267,6 +281,12 @@ export default function ChatPage() {
           `point:\n\n"""\n${seed.content}\n"""\n\nExpand and go deeper.`,
         { displayText: `Continue learning: ${seed.title ?? "saved content"}` },
       );
+    } else if (seed.mode === "flashcards") {
+      send(
+        "Create study flashcards from this content:\n\n" +
+          `"""\n${seed.content}\n"""`,
+        { displayText: "Create flashcards" },
+      );
     } else if (seed.mode === "quiz") {
       setPendingQuiz({ topic: seed.title ?? "", mediaAvailable: false });
     } else {
@@ -299,6 +319,11 @@ export default function ChatPage() {
   const openQuiz = (quiz: QuizContent) => {
     setActiveQuiz(quiz);
     setQuizOpen(true);
+  };
+
+  const openFlashcards = (setId: string) => {
+    setActiveFlashcards(setId);
+    setFlashcardsOpen(true);
   };
 
   const handleUpload = async (files: FileList) => {
@@ -521,12 +546,13 @@ export default function ChatPage() {
                   }
                   onGenerateQuiz={handleGenerateQuiz}
                   onOpenQuiz={openQuiz}
+                  onOpenFlashcards={openFlashcards}
                 />
               )}
             </div>
 
             {pendingClar && (
-              <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+              <div className="mx-auto w-full max-w-4xl px-4 pb-2">
                 <ClarificationPanel
                   data={pendingClar.data}
                   busy={streaming}
@@ -535,7 +561,7 @@ export default function ChatPage() {
               </div>
             )}
             {pendingQuiz && (
-              <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+              <div className="mx-auto w-full max-w-4xl px-4 pb-2">
                 <GlassCard className="p-4">
                   <p className="mb-3 flex items-center gap-1.5 font-display text-sm font-semibold">
                     <Sparkles className="h-4 w-4 text-brand-1" /> Set up your quiz
@@ -553,7 +579,7 @@ export default function ChatPage() {
             )}
 
             {seedBanner && (
-              <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+              <div className="mx-auto w-full max-w-4xl px-4 pb-2">
                 <div className="flex items-center gap-2 rounded-xl border border-brand-1/30 bg-brand-1/5 px-3 py-2 text-xs">
                   <Bookmark className="h-3.5 w-3.5 text-brand-1" />
                   <span className="flex-1 truncate">
@@ -598,6 +624,12 @@ export default function ChatPage() {
       </div>
 
       <QuizDrawer quiz={activeQuiz} open={quizOpen} onOpenChange={setQuizOpen} />
+
+      <FlashcardViewer
+        setId={activeFlashcards}
+        open={flashcardsOpen}
+        onOpenChange={setFlashcardsOpen}
+      />
 
       <GlobalCommandPalette
         open={paletteOpen}

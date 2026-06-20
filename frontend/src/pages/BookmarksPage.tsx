@@ -7,6 +7,7 @@ import {
   Check,
   FileText,
   FolderPlus,
+  Layers,
   ListChecks,
   MessageSquare,
   MoreHorizontal,
@@ -55,6 +56,7 @@ const TYPE_META: Record<
 > = {
   response: { label: "Response", icon: MessageSquare },
   quiz: { label: "Quiz", icon: ListChecks },
+  flashcard: { label: "Flashcards", icon: Layers },
   media: { label: "Media", icon: FileText },
   note: { label: "Note", icon: NotebookPen },
 };
@@ -63,6 +65,7 @@ const TYPE_FILTERS: Array<BookmarkType | "all"> = [
   "all",
   "response",
   "quiz",
+  "flashcard",
   "media",
   "note",
 ];

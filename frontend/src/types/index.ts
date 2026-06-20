@@ -3,7 +3,11 @@
 
 export type MessageRole = "user" | "assistant";
 export type ChatMode = "media" | "web_search";
-export type ToolUsed = "web_search" | "media_llm" | "quiz_generator";
+export type ToolUsed =
+  | "web_search"
+  | "media_llm"
+  | "quiz_generator"
+  | "flashcard_generator";
 export type QuestionType = "single_select" | "multi_select" | "true_false";
 export type Difficulty = "easy" | "medium" | "hard";
 
@@ -99,6 +103,7 @@ export interface MessageMeta {
   clarification?: ClarificationData;
   quiz?: QuizContent;
   quiz_result?: { evaluation: QuizEvaluation; feedback: QuizFeedback };
+  flashcards?: FlashcardContent;
 }
 
 export interface Message {
@@ -162,9 +167,71 @@ export interface PendingQuizSetup {
   mediaAvailable: boolean;
 }
 
+/* ------------------------------- flashcards ------------------------------- */
+
+export type FlashcardSource =
+  | "response"
+  | "media"
+  | "quiz"
+  | "bookmark"
+  | "chat";
+
+export type StudyRating = "easy" | "medium" | "hard" | "needs_revision";
+
+export interface Flashcard {
+  id: string;
+  front: string;
+  back: string;
+  example?: string | null;
+}
+
+// Flashcard set as returned inline by the chat tool.
+export interface FlashcardContent {
+  set_id: string;
+  title: string;
+  topic?: string;
+  cards: Flashcard[];
+  source?: string;
+}
+
+export interface FlashcardAnalytics {
+  total: number;
+  studied: number;
+  mastered: number;
+  needs_revision: number;
+  completion: number;
+}
+
+export interface FlashcardSetDetail {
+  set_id: string;
+  title: string;
+  topic: string;
+  source_type: FlashcardSource;
+  created_at: string;
+  cards: Flashcard[];
+  analytics: FlashcardAnalytics;
+}
+
+export interface FlashcardListItem {
+  id: string;
+  set_id: string;
+  title: string;
+  topic: string;
+  source_type: FlashcardSource;
+  created_at: string;
+  card_count: number;
+  studied: number;
+  mastered: number;
+}
+
 /* -------------------------------- bookmarks ------------------------------- */
 
-export type BookmarkType = "response" | "quiz" | "media" | "note";
+export type BookmarkType =
+  | "response"
+  | "quiz"
+  | "media"
+  | "note"
+  | "flashcard";
 
 export interface BookmarkCollection {
   id: string;
@@ -238,11 +305,17 @@ export interface SearchResults {
     mime_type: string;
     created_at: string;
   }>;
+  flashcards: Array<{
+    id: string;
+    title: string;
+    topic: string;
+    created_at: string;
+  }>;
 }
 
-// Context seeded into a new chat when resuming from a bookmark.
+// Context seeded into a new chat when resuming from saved content.
 export interface ChatSeed {
-  mode: "continue" | "followup" | "quiz";
+  mode: "continue" | "followup" | "quiz" | "flashcards";
   content: string;
   title?: string;
 }

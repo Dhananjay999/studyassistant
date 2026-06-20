@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Layers,
   Trophy,
   XCircle,
 } from "lucide-react";
@@ -13,9 +15,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useSubmitQuiz } from "@/hooks/api";
+import { BookmarkButton } from "@/components/BookmarkButton";
+import { useCreateSession, useSubmitQuiz } from "@/hooks/api";
 import { cn } from "@/lib/utils";
-import type { QuizContent, QuizEvaluation, QuizFeedback } from "@/types";
+import type {
+  ChatSeed,
+  QuizContent,
+  QuizEvaluation,
+  QuizFeedback,
+} from "@/types";
 
 export function QuizDrawer({
   quiz,
@@ -201,7 +209,26 @@ function QuizResults({
   quiz: QuizContent;
   result: { evaluation: QuizEvaluation; feedback: QuizFeedback };
 }) {
+  const navigate = useNavigate();
+  const createSession = useCreateSession();
   const questions = quiz.questions ?? [];
+
+  const makeFlashcards = async () => {
+    const content =
+      `${quiz.title}\n\n` +
+      questions.map((q) => q.prompt).join("\n") +
+      (result.feedback.weak_topics.length
+        ? `\n\nFocus areas: ${result.feedback.weak_topics.join(", ")}`
+        : "");
+    const seed: ChatSeed = {
+      mode: "flashcards",
+      content,
+      title: quiz.title,
+    };
+    const session = await createSession.mutateAsync({});
+    navigate(`/chat?sessionId=${session.id}`, { state: { seed } });
+  };
+
   return (
     <div className="space-y-5">
       <div className="rounded-2xl bg-brand-gradient p-5 text-center text-white shadow-glow">
@@ -268,6 +295,34 @@ function QuizResults({
             ))}
           </ul>
         )}
+      </div>
+
+      {/* Learning flow: turn the result into more study */}
+      <div className="space-y-2">
+        <p className="text-sm font-semibold">Keep learning</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            onClick={makeFlashcards}
+            disabled={createSession.isPending}
+            className="flex-1 gap-1.5 bg-brand-gradient text-white"
+          >
+            <Layers className="h-4 w-4" /> Create Flashcards
+          </Button>
+          <BookmarkButton
+            label
+            item={{
+              item_type: "quiz",
+              item_ref: quiz.quiz_id,
+              title: quiz.title,
+              content: quiz.topic || quiz.title,
+              metadata: {
+                quiz_id: quiz.quiz_id,
+                score: result.evaluation.score,
+              },
+            }}
+          />
+        </div>
       </div>
     </div>
   );

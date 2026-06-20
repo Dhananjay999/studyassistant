@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import { Bot, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { QuizCard } from "@/components/chat/QuizCard";
+import { FlashcardCard } from "@/components/chat/FlashcardCard";
 import { SourceCards } from "@/components/chat/SourceCards";
 import { SuggestedActions } from "@/components/chat/SuggestedActions";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
@@ -24,6 +25,7 @@ export function ChatMessages({
   onAction,
   onGenerateQuiz,
   onOpenQuiz,
+  onOpenFlashcards,
 }: {
   messages: Message[];
   mediaAvailable: boolean;
@@ -32,6 +34,7 @@ export function ChatMessages({
   onAction: (prompt: string, displayText?: string) => void;
   onGenerateQuiz: (topic: string, options: QuizOptions) => void;
   onOpenQuiz: (quiz: QuizContent) => void;
+  onOpenFlashcards: (setId: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -40,7 +43,7 @@ export function ChatMessages({
   }, [messages]);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6">
       {messages.map((msg, i) => {
         const prevUser = [...messages.slice(0, i)]
           .reverse()
@@ -74,10 +77,10 @@ export function ChatMessages({
 
             <div
               className={cn(
-                "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                "rounded-2xl px-4 py-3 text-sm leading-relaxed",
                 msg.role === "user"
-                  ? "rounded-br-sm bg-primary text-primary-foreground"
-                  : "glass rounded-bl-sm",
+                  ? "max-w-[85%] rounded-br-sm bg-primary text-primary-foreground"
+                  : "min-w-0 max-w-full flex-1 glass rounded-bl-sm",
               )}
             >
               {msg.meta?.tool_used && (
@@ -115,9 +118,20 @@ export function ChatMessages({
                 />
               ) : null}
 
+              {msg.meta?.flashcards?.cards?.length ? (
+                <FlashcardCard
+                  flashcards={msg.meta.flashcards}
+                  onStudy={() =>
+                    onOpenFlashcards(msg.meta!.flashcards!.set_id)
+                  }
+                />
+              ) : null}
+
               {msg.role === "assistant" &&
                 !msg.streaming &&
-                msg.content && (
+                msg.content &&
+                !msg.meta?.quiz &&
+                !msg.meta?.flashcards && (
                   <SuggestedActions
                     content={msg.content}
                     busy={quizBusy}

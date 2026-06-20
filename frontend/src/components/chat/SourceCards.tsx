@@ -38,7 +38,7 @@ function SourceCard({ source }: { source: SourceInfo }) {
       target="_blank"
       rel="noopener noreferrer"
       whileHover={{ y: -2 }}
-      className="group flex min-w-[210px] max-w-[240px] shrink-0 snap-start flex-col gap-1.5 rounded-xl border border-border/60 bg-card/50 p-2.5 transition-colors hover:border-brand-1/40 hover:bg-card sm:min-w-0 sm:max-w-none"
+      className="group flex w-[220px] shrink-0 snap-start flex-col gap-1.5 rounded-xl border border-border/60 bg-card/50 p-2.5 transition-colors hover:border-brand-1/40 hover:bg-card"
     >
       <div className="flex items-center gap-1.5">
         {favicon && iconOk ? (
@@ -88,7 +88,7 @@ export function SourceCards({ sources }: { sources: SourceInfo[] }) {
           Web search
         </Badge>
       </div>
-      <div className="flex snap-x gap-2 overflow-x-auto pb-1 [scrollbar-width:none] sm:grid sm:grid-cols-2 sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+      <div className="flex snap-x scroll-smooth gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {sources.map((s, i) => (
           <SourceCard key={i} source={s} />
         ))}
