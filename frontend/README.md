@@ -1,91 +1,104 @@
-# Welcome to your Lovable project
+# StudyAssistant — Frontend
 
-## Project info
+The web app: an animated, SEO‑optimized landing page and the **Aeva** chat experience.
+Built as a Vite + React SPA with an "Aurora‑glass" design system.
 
-**URL**: https://lovable.dev/projects/e26d22f8-0888-4e00-85d8-11455694c298
+## Tech
 
-## How can I edit this code?
+Vite · React 18 · TypeScript · Tailwind CSS · shadcn/ui (Radix) · framer‑motion ·
+TanStack Query · React Router · react‑helmet‑async · react‑markdown · react‑pdf ·
+next‑themes · sonner · lucide‑react.
 
-There are several ways of editing your application.
+## Setup
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/e26d22f8-0888-4e00-85d8-11455694c298) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## Environment Setup
-
-Before running the project, you need to set up environment variables:
-
-1. Copy the example environment file:
-```sh
+```bash
+cd frontend
 cp env.example .env
+npm install
+npm run dev        # http://localhost:8080
 ```
 
-2. Update the `.env` file with your configuration:
-```env
-# API Configuration
-VITE_API_BASE_URL=https://studyassistant-production.up.railway.app
+### Environment variables (`.env`)
 
-# Optional: Override default settings
-VITE_API_DEFAULT_RESULTS=5
+| Variable | Default | Purpose |
+|---|---|---|
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Backend base URL |
+| `VITE_API_TIMEOUT` | `30000` | REST request timeout (ms) |
+| `VITE_MAX_UPLOAD_FILES` | `10` | Max files per upload action |
+| `VITE_MAX_SELECTED_FILES` | `5` | Max files selectable as context |
+
+### Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Dev server (port 8080) |
+| `npm run build` | Production build → `dist/` |
+| `npm run preview` | Preview the production build |
+| `npm run lint` | ESLint |
+
+## Architecture
+
+- **Data layer (no UI):** `lib/api.ts` (typed client + endpoints, `{msg,data}` unwrap),
+  `hooks/api.ts` (TanStack Query hooks), `hooks/useAssistantStream.ts` (SSE: content /
+  clarification / quiz_setup / done, rAF‑batched), `contexts/AuthContext.tsx` (Google
+  popup login + token refresh). **All backend contracts live here** — UI never calls
+  `fetch` directly.
+- **Design system:** `index.css` (HSL tokens, dark‑first, `.glass`, gradients) +
+  `tailwind.config.ts` (brand ramp, animations) + `components/common/*`.
+- **Code‑splitting:** the whole `/chat` route and heavy deps (react‑pdf, react‑markdown)
+  are lazy‑loaded, so the landing bundle stays small.
+- **SEO:** static meta + JSON‑LD in `index.html`, per‑route `<Seo>` (react‑helmet‑async);
+  `/chat` is `noindex`.
+
+## Routes
+
+| Path | Page |
+|---|---|
+| `/` | Landing (or redirect to `/chat` if signed in) |
+| `/chat?sessionId=…` | Chat app (protected) |
+| `/auth/callback` | OAuth token handler (popup → `postMessage`) |
+| `*` | 404 |
+
+## File structure
+
+```
+frontend/
+├── index.html                 # SEO meta + JSON-LD, favicon, root mount
+├── vercel.json                # SPA rewrite (deep links → index.html)
+├── env.example
+├── tailwind.config.ts         # aurora theme: brand colors, animations
+├── vite.config.ts             # alias @, manual vendor chunks
+└── src/
+    ├── main.tsx               # fonts + render
+    ├── App.tsx                # providers (Helmet, Query, Theme, Auth) + router
+    ├── index.css              # design tokens + utilities (glass, gradient, scrollbar-hide)
+    ├── pages/
+    │   ├── LandingPage.tsx
+    │   ├── ChatPage.tsx       # chat orchestration (sessions, streaming, media, quiz)
+    │   ├── AuthCallback.tsx
+    │   └── NotFound.tsx
+    ├── components/
+    │   ├── common/            # AuroraBackground, GlassCard, GradientText, Reveal,
+    │   │                      #   Marquee, RotatingWords, IntroLoader, BrandLogo, Seo
+    │   ├── landing/           # Navbar, Hero, Features, HowItWorks, Faq, CtaBand,
+    │   │                      #   Footer, GoogleButton
+    │   ├── chat/              # ChatMessages, ChatComposer, SessionSidebar, MediaSidebar,
+    │   │                      #   ClarificationPanel, QuizCard, QuizDrawer, QuizSetupForm,
+    │   │                      #   QuizSetupPopover, ThinkingIndicator, EmptyState
+    │   ├── auth/              # SigningInModal
+    │   ├── ui/                # shadcn/Radix primitives (vendored)
+    │   ├── ThemeProvider.tsx · ThemeToggle.tsx · ProtectedRoute.tsx · PDFViewer.tsx
+    ├── contexts/AuthContext.tsx
+    ├── hooks/                 # api.ts, useAssistantStream.ts, use-mobile, use-toast
+    ├── lib/                   # api.ts, config.ts, queryClient.ts, utils.ts
+    ├── types/index.ts         # shared domain types
+    └── utils/compress.ts      # client-side image compression
 ```
 
-## What technologies are used for this project?
+## Notes
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/e26d22f8-0888-4e00-85d8-11455694c298) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+- Google login opens a **popup**; a "Signing you in…" modal stays until tokens return
+  (falls back to a full redirect if the popup is blocked).
+- Quizzes render as a **card** in chat; clicking it opens the exam **drawer** on the right.
+- Deploy: see [../DEPLOYMENT.md](../DEPLOYMENT.md). On Vercel, set the env vars above and
+  point `VITE_API_BASE_URL` at the deployed backend.
