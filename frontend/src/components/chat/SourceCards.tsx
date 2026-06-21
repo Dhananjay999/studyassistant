@@ -84,11 +84,8 @@ export function SourceCards({ sources }: { sources: SourceInfo[] }) {
         <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
           {sources.length}
         </Badge>
-        <Badge className="h-5 gap-1 bg-brand-gradient px-1.5 text-[10px] text-white">
-          Web search
-        </Badge>
       </div>
-      <div className="flex snap-x scroll-smooth gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex snap-x scroll-smooth gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-4">
         {sources.map((s, i) => (
           <SourceCard key={i} source={s} />
         ))}

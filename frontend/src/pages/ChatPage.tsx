@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Bookmark, LogOut, Menu, PanelRight, Sparkles } from "lucide-react";
+import { Bookmark, LogOut, Menu, PanelRight, Sparkles, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -18,6 +18,8 @@ import { BrandLogo } from "@/components/common/BrandLogo";
 import { GlassCard } from "@/components/common/GlassCard";
 import { AppSidebar } from "@/components/chat/AppSidebar";
 import { ChatMessages } from "@/components/chat/ChatMessages";
+import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
+import { BookmarkPreview } from "@/components/chat/BookmarkPreview";
 import { ChatComposer, type ChatComposerHandle } from "@/components/chat/ChatComposer";
 import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
 import { QuizSetupForm } from "@/components/chat/QuizSetupForm";
@@ -30,6 +32,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { formatShortcut } from "@/lib/platform";
+import type { ThinkingHint } from "@/lib/loadingMessages";
 import {
   qk,
   useCreateSession,
@@ -42,6 +45,7 @@ import { getMessages, uploadFileWithProgress } from "@/lib/api";
 import { MAX_SELECTED_FILES, MAX_UPLOAD_FILES } from "@/lib/config";
 import { compressFiles } from "@/utils/compress";
 import type {
+  Bookmark as BookmarkData,
   ChatSeed,
   ClarificationAnswer,
   FlashcardContent,
@@ -76,7 +80,7 @@ export default function ChatPage() {
     null,
   );
   const [pendingQuiz, setPendingQuiz] = useState<PendingQuizSetup | null>(null);
-  const [thinkingHint, setThinkingHint] = useState<"quiz" | undefined>();
+  const [thinkingHint, setThinkingHint] = useState<ThinkingHint | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
 
@@ -93,6 +97,9 @@ export default function ChatPage() {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [seedBanner, setSeedBanner] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // Read-only bookmark preview (no session is created until the user acts).
+  const [preview, setPreview] = useState<BookmarkData | null>(null);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("aeva_sidebar_collapsed") === "1",
   );
@@ -102,42 +109,52 @@ export default function ChatPage() {
       return !c;
     });
 
-  const { start, streaming } = useAssistantStream();
+  const { start, stop, streaming } = useAssistantStream();
   const streamIdRef = useRef<string | null>(null);
   const composerRef = useRef<ChatComposerHandle>(null);
-  const bootstrapped = useRef(false);
+  // True while the user is on a fresh, empty "New chat" with no session yet.
+  const newChatRef = useRef(false);
   const loadedSession = useRef<string | null>(null);
   // Saved-content context to fold into the next message (resume-from-bookmark).
   const seedContextRef = useRef<string | null>(null);
   const seedAppliedRef = useRef<string | null>(null);
 
-  /* --- bootstrap: always land on a real session --- */
+  // Only show a loader when the URL names a session we're still fetching.
+  // No sessionId in the URL = a fresh new chat → empty screen, never a loader.
+  const loadingSession =
+    !!urlId &&
+    loadedSession.current !== urlId &&
+    (!sessionsQuery.isSuccess || sessions.some((s) => s.id === urlId));
+
+  /* --- open a read-only bookmark preview when navigated with one.
+     `/chat` with no sessionId is simply a fresh new chat — we never
+     auto-select the most recent session, so a refresh stays put. --- */
   useEffect(() => {
-    if (!sessionsQuery.isSuccess || activeId) return;
-    if (sessions.length) {
-      setSearchParams({ sessionId: sessions[0].id }, { replace: true });
-    } else if (!bootstrapped.current) {
-      bootstrapped.current = true;
-      createSession
-        .mutateAsync({})
-        .then((s) => setSearchParams({ sessionId: s.id }, { replace: true }));
+    const st = location.state as { previewBookmark?: BookmarkData } | null;
+    if (st?.previewBookmark) {
+      setPreview(st.previewBookmark);
+      setSearchParams({}, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionsQuery.isSuccess, activeId, sessions.length]);
+  }, [location.state]);
 
   /* --- load history when the active session changes --- */
   useEffect(() => {
     if (!activeId) {
       setMessages([]);
+      setHistoryLoading(false);
       return;
     }
     if (loadedSession.current === activeId) return;
     loadedSession.current = activeId;
     setPendingClar(null);
     setPendingQuiz(null);
+    setMessages([]);
+    setHistoryLoading(true);
     getMessages(activeId)
       .then(setMessages)
-      .catch(() => toast.error("Failed to load chat"));
+      .catch(() => toast.error("Failed to load chat"))
+      .finally(() => setHistoryLoading(false));
   }, [activeId]);
 
   /* --- selection is ephemeral; cleared whenever the chat changes --- */
@@ -154,25 +171,72 @@ export default function ChatPage() {
   const removeStreaming = () =>
     setMessages((prev) => prev.filter((m) => m.id !== streamIdRef.current));
 
+  // Stop generation: abort the stream, keep whatever was already produced.
+  const handleStop = () => {
+    stop();
+    setThinkingHint(undefined);
+    setMessages((prev) =>
+      prev.flatMap((m) => {
+        if (m.id !== streamIdRef.current) return [m];
+        return m.content ? [{ ...m, streaming: false }] : [];
+      }),
+    );
+  };
+
   const send = useCallback(
-    (
+    async (
       text: string,
       opts?: {
         runId?: string;
         clarification?: ClarificationAnswer;
         quizOptions?: QuizOptions;
+        flashcardOptions?: { count?: number };
+        sourceContent?: string;
         displayText?: string;
       },
     ) => {
-      if (!activeId || streaming) return;
+      if (streaming) return;
+
+      // Lazily create the session on the first message — empty "New chat"
+      // screens never persist a session until the user actually asks.
+      let sid = activeId;
+      if (!sid) {
+        try {
+          const s = await createSession.mutateAsync({});
+          sid = s.id;
+          newChatRef.current = false;
+          loadedSession.current = sid;
+          setSearchParams({ sessionId: sid });
+        } catch {
+          toast.error("Couldn't start a new chat");
+          return;
+        }
+      }
+
       const streamId = `stream-${uid()}`;
       streamIdRef.current = streamId;
-      setThinkingHint(opts?.quizOptions ? "quiz" : undefined);
+      setThinkingHint(
+        opts?.flashcardOptions
+          ? "flashcard"
+          : opts?.quizOptions
+            ? "quiz"
+            : selected.size
+              ? "media"
+              : opts?.sourceContent
+                ? "thinking"
+                : "web",
+      );
 
       // Fold saved-content context into a plain message (resume-from-bookmark).
       let outgoing = text;
       let display = opts?.displayText ?? text;
-      if (seedContextRef.current && !opts?.runId && !opts?.quizOptions) {
+      if (
+        seedContextRef.current &&
+        !opts?.runId &&
+        !opts?.quizOptions &&
+        !opts?.sourceContent &&
+        !opts?.flashcardOptions
+      ) {
         outgoing =
           "Using ONLY this saved content as context:\n\n\"\"\"\n" +
           `${seedContextRef.current}\n"""\n\n${text}`;
@@ -196,11 +260,13 @@ export default function ChatPage() {
       start(
         {
           message: outgoing,
-          session_id: activeId,
+          session_id: sid,
           media_ids: selected.size ? Array.from(selected) : undefined,
           run_id: opts?.runId,
           clarification: opts?.clarification,
           quiz_options: opts?.quizOptions,
+          flashcard_options: opts?.flashcardOptions,
+          source_content: opts?.sourceContent,
         },
         {
           onChunk: upsertStreaming,
@@ -262,7 +328,7 @@ export default function ChatPage() {
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeId, selected, streaming, start],
+    [activeId, selected, streaming, start, createSession, setSearchParams],
   );
 
   /* --- resume-from-bookmark: seed a fresh session with saved content --- */
@@ -276,19 +342,28 @@ export default function ChatPage() {
     navigate(`/chat?sessionId=${activeId}`, { replace: true });
 
     if (seed.mode === "continue") {
-      send(
-        "Continue teaching me using ONLY this saved content as the starting " +
-          `point:\n\n"""\n${seed.content}\n"""\n\nExpand and go deeper.`,
-        { displayText: `Continue learning: ${seed.title ?? "saved content"}` },
-      );
+      send("Continue teaching me from this", {
+        sourceContent: seed.content,
+        displayText: "Continue learning",
+      });
     } else if (seed.mode === "flashcards") {
-      send(
-        "Create study flashcards from this content:\n\n" +
-          `"""\n${seed.content}\n"""`,
-        { displayText: "Create flashcards" },
-      );
+      send("Create flashcards from this", {
+        flashcardOptions: {},
+        sourceContent: seed.content,
+        displayText: "Create flashcards",
+      });
     } else if (seed.mode === "quiz") {
-      setPendingQuiz({ topic: seed.title ?? "", mediaAvailable: false });
+      send("Generate a quiz from this", {
+        quizOptions: { question_count: 5 },
+        sourceContent: seed.content,
+        displayText: "Create a quiz",
+      });
+    } else if (seed.autoSend) {
+      // followup with a question typed in the preview.
+      send(seed.autoSend, {
+        sourceContent: seed.content,
+        displayText: seed.autoSend,
+      });
     } else {
       // followup: attach the saved content to the user's first question.
       seedContextRef.current = seed.content;
@@ -308,11 +383,24 @@ export default function ChatPage() {
     send(label, { runId: pendingClar?.runId, clarification: answer });
   };
 
-  const handleGenerateQuiz = (topic: string, options: QuizOptions) => {
+  const handleGenerateQuiz = (
+    topic: string,
+    options: QuizOptions,
+    sourceContent?: string,
+  ) => {
     setPendingQuiz(null);
     const resolved = { ...options, topic: options.topic || topic || undefined };
     send(`Generate a quiz${resolved.topic ? ` on ${resolved.topic}` : ""}`, {
       quizOptions: resolved,
+      sourceContent,
+    });
+  };
+
+  const handleCreateFlashcards = (sourceContent: string) => {
+    send("Create flashcards from this", {
+      flashcardOptions: {},
+      sourceContent,
+      displayText: "Create flashcards",
     });
   };
 
@@ -324,6 +412,20 @@ export default function ChatPage() {
   const openFlashcards = (setId: string) => {
     setActiveFlashcards(setId);
     setFlashcardsOpen(true);
+  };
+
+  // Preview actions create the session lazily, then seed the new chat.
+  const previewAct = async (mode: ChatSeed["mode"], autoSend?: string) => {
+    if (!preview) return;
+    const seed: ChatSeed = {
+      mode,
+      content: preview.content || preview.title,
+      title: preview.title,
+      autoSend,
+    };
+    setPreview(null);
+    const s = await createSession.mutateAsync({});
+    navigate(`/chat?sessionId=${s.id}`, { state: { seed } });
   };
 
   const handleUpload = async (files: FileList) => {
@@ -370,10 +472,18 @@ export default function ChatPage() {
     );
   };
 
-  const handleNewChat = async () => {
-    const s = await createSession.mutateAsync({});
-    setSearchParams({ sessionId: s.id });
+  const handleNewChat = () => {
+    // Land on a fresh, empty composer — the session is created only when the
+    // user actually sends their first message.
+    newChatRef.current = true;
+    loadedSession.current = null;
+    setPreview(null);
+    setMessages([]);
+    setPendingClar(null);
+    setPendingQuiz(null);
+    setSearchParams({});
     setSidebarOpen(false);
+    composerRef.current?.focus();
   };
 
   const handleDeleteSession = async (id: string) => {
@@ -432,7 +542,7 @@ export default function ChatPage() {
       selected={selected}
       activeSessionId={activeId}
       onToggle={toggleMedia}
-      onDelete={(id) => deleteMedia.mutate(id)}
+      onDelete={(id) => deleteMedia.mutateAsync(id)}
       onUpload={handleUpload}
     />
   );
@@ -531,7 +641,17 @@ export default function ChatPage() {
           {/* Chat column */}
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto">
-              {messages.length === 0 && !streaming ? (
+              {preview ? (
+                <BookmarkPreview
+                  bookmark={preview}
+                  onContinue={() => previewAct("continue")}
+                  onQuiz={() => previewAct("quiz")}
+                  onFlashcards={() => previewAct("flashcards")}
+                  onClose={() => setPreview(null)}
+                />
+              ) : historyLoading || loadingSession ? (
+                <ChatSkeleton />
+              ) : messages.length === 0 && !streaming ? (
                 <div className="h-full">
                   <EmptyState onPick={(t) => send(t)} />
                 </div>
@@ -541,10 +661,11 @@ export default function ChatPage() {
                   mediaAvailable={selected.size > 0}
                   quizBusy={streaming}
                   thinkingHint={thinkingHint}
-                  onAction={(prompt, display) =>
-                    send(prompt, { displayText: display })
+                  onAction={(message, sourceContent) =>
+                    send(message, { sourceContent, displayText: message })
                   }
                   onGenerateQuiz={handleGenerateQuiz}
+                  onCreateFlashcards={handleCreateFlashcards}
                   onOpenQuiz={openQuiz}
                   onOpenFlashcards={openFlashcards}
                 />
@@ -601,9 +722,22 @@ export default function ChatPage() {
               </div>
             )}
 
+            {streaming && (
+              <div className="mx-auto mb-1 flex w-full max-w-4xl justify-center px-4">
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted"
+                >
+                  <Square className="h-3 w-3 fill-current" />
+                  Stop generating
+                </button>
+              </div>
+            )}
+
             <ChatComposer
               ref={composerRef}
-              onSend={(t) => send(t)}
+              onSend={(t) => (preview ? previewAct("followup", t) : send(t))}
               onUpload={handleUpload}
               onQuizCommand={openQuizSetup}
               disabled={streaming}

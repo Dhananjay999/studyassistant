@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import { HelmetProvider } from "react-helmet-async";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { AppLoader } from "@/components/common/AppLoader";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -24,11 +24,7 @@ const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
 
 function RouteFallback() {
-  return (
-    <div className="grid h-dvh place-items-center bg-background">
-      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-    </div>
-  );
+  return <AppLoader />;
 }
 
 function HomeRoute() {

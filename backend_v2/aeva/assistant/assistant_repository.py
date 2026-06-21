@@ -25,6 +25,8 @@ class AssistantRepository:
             run_id=request_data.run_id,
             clarification=request_data.clarification,
             quiz_options=request_data.quiz_options,
+            flashcard_options=request_data.flashcard_options,
+            source_content=request_data.source_content,
         )
 
     @staticmethod

@@ -206,7 +206,11 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`b-${b.id}`}
                 value={`bookmark ${b.id} ${b.title}`}
-                onSelect={() => run(() => navigate(`/bookmarks/${b.id}`))}
+                onSelect={() =>
+                  run(() =>
+                    navigate("/chat", { state: { previewBookmark: b } }),
+                  )
+                }
                 className="gap-2"
               >
                 <Bookmark className="h-4 w-4 shrink-0" />

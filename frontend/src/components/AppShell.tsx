@@ -5,11 +5,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/chat/AppSidebar";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
-import {
-  useCreateSession,
-  useDeleteSession,
-  useSessions,
-} from "@/hooks/api";
+import { useDeleteSession, useSessions } from "@/hooks/api";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 
 const KEY = "aeva_sidebar_collapsed";
@@ -24,7 +20,6 @@ export function AppShell({
 }) {
   const navigate = useNavigate();
   const sessions = useSessions().data ?? [];
-  const createSession = useCreateSession();
   const deleteSession = useDeleteSession();
 
   const [collapsed, setCollapsed] = useState(
@@ -40,10 +35,8 @@ export function AppShell({
     });
   };
 
-  const newChat = async () => {
-    const s = await createSession.mutateAsync({});
-    navigate(`/chat?sessionId=${s.id}`);
-  };
+  // Land on a fresh, empty chat; the session is created lazily on first send.
+  const newChat = () => navigate("/chat", { state: { newChat: true } });
   const selectSession = (id: string) => navigate(`/chat?sessionId=${id}`);
 
   useGlobalShortcuts({

@@ -34,6 +34,13 @@ class QuizOptions:
 
 
 @dataclass
+class FlashcardOptions:
+    """Forces deterministic flashcard generation from a specific card."""
+
+    count: int | None = None
+
+
+@dataclass
 class ClarificationQuestion:
     """A single clarifying question."""
 
@@ -72,6 +79,12 @@ class AssistantContext:
     # Set when the user submits the quiz-setup popover; triggers deterministic
     # quiz generation instead of LLM planning.
     quiz_options: QuizOptions | None = None
+    # Forces deterministic flashcard generation (Create Flashcards action).
+    flashcard_options: FlashcardOptions | None = None
+    # Exact content the action targets (a specific response/quiz card). When
+    # present, the turn is grounded ONLY on this — conversation history is
+    # dropped so an action always operates on its own card.
+    source_content: str | None = None
 
 
 @dataclass

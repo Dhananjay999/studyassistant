@@ -148,6 +148,9 @@ export interface AssistantRequest {
   run_id?: string;
   clarification?: ClarificationAnswer;
   quiz_options?: QuizOptions;
+  flashcard_options?: { count?: number };
+  /** Exact card content an action targets; grounds the turn on it only. */
+  source_content?: string;
 }
 
 export interface APIEnvelope<T> {
@@ -318,4 +321,6 @@ export interface ChatSeed {
   mode: "continue" | "followup" | "quiz" | "flashcards";
   content: string;
   title?: string;
+  /** For followup: the question to auto-send, grounded on `content`. */
+  autoSend?: string;
 }

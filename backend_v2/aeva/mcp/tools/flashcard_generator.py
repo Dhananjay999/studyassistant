@@ -70,7 +70,7 @@ class FlashcardGeneratorTool(BaseTool):
         self, ctx: ToolContext, params: dict[str, Any]
     ) -> dict[str, Any]:
         """Generate and persist a flashcard set."""
-        topic = params.get("topic") or ctx.enriched_message
+        topic = params.get("topic") or "the provided study material"
         count = min(
             int(params.get("count", 8)),
             current_app.config.get("FLASHCARD_MAX_CARDS", 20),

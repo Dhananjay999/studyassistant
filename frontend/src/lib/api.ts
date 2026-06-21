@@ -159,10 +159,14 @@ export async function getMessages(id: string): Promise<Message[]> {
         status: md.status as Message["meta"]["status"],
         run_id: md.run_id as string | undefined,
         clarification: md.clarification as Message["meta"]["clarification"],
-        // Only quiz messages carry quiz content.
+        // Only quiz/flashcard messages carry their respective content.
         quiz:
           toolUsed === "quiz_generator"
             ? (inner as unknown as QuizContent)
+            : undefined,
+        flashcards:
+          toolUsed === "flashcard_generator"
+            ? (inner as unknown as Message["meta"]["flashcards"])
             : undefined,
       },
     } satisfies Message;

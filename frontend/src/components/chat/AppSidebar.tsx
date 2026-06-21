@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
@@ -5,6 +6,7 @@ import {
   FolderOpen,
   Layers,
   ListChecks,
+  Loader2,
   MessageSquare,
   PanelLeft,
   PanelLeftClose,
@@ -73,12 +75,22 @@ export function AppSidebar({
   sessions: Session[];
   activeId: string | null;
   onSelectSession: (id: string) => void;
-  onDeleteSession: (id: string) => void;
+  onDeleteSession: (id: string) => void | Promise<void>;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
   const grouped = groupSessions(sessions);
   const onChats = location.pathname === "/chat";
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await onDeleteSession(id);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div
@@ -208,11 +220,16 @@ export function AppSidebar({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onDeleteSession(s.id)}
-                    className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    onClick={() => handleDelete(s.id)}
+                    disabled={deletingId === s.id}
+                    className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-100"
                     aria-label="Delete chat"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    {deletingId === s.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
                   </button>
                 </div>
               ))}

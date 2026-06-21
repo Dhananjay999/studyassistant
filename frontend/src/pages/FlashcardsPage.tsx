@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { GraduationCap, Layers, Loader2 } from "lucide-react";
+import { GraduationCap, Layers } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { GlassCard } from "@/components/common/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +26,7 @@ export default function FlashcardsPage() {
       <Seo title="Flashcards — Aeva" noindex path="/flashcards" />
       <div className="p-4">
         {isLoading ? (
-          <div className="grid place-items-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
+          <CardGridSkeleton />
         ) : sets.length === 0 ? (
           <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-20 text-center">
             <Layers className="mb-3 h-8 w-8 text-muted-foreground" />

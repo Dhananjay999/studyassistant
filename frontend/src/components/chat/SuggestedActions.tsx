@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, Copy, Loader2 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { QuizSetupPopover } from "@/components/chat/QuizSetupPopover";
@@ -8,7 +9,6 @@ import { BookmarkButton } from "@/components/BookmarkButton";
 import { PRIMARY_ACTIONS, type PrimaryAction } from "@/lib/suggestedActions";
 import { cn } from "@/lib/utils";
 import type { CreateBookmarkInput, QuizOptions } from "@/types";
-import type { LucideIcon } from "lucide-react";
 
 // Border-only "premium AI action" chip (Linear / Raycast / Gemini feel).
 const HIGHLIGHT_CHIP = cn(
@@ -18,7 +18,6 @@ const HIGHLIGHT_CHIP = cn(
   "hover:shadow-[0_0_12px_-2px_hsl(var(--brand-1)/0.5)] disabled:opacity-60",
 );
 
-// Continuously animated icon that intensifies on hover.
 function AnimatedIcon({ Icon }: { Icon: LucideIcon }) {
   return (
     <motion.span
@@ -59,46 +58,51 @@ export function SuggestedActions({
   bookmarkItem,
   onAction,
   onGenerateQuiz,
+  onCreateFlashcards,
+  onCopy,
 }: {
-  content: string;
   busy: boolean;
   topic: string;
   mediaAvailable: boolean;
   quizBusy: boolean;
   bookmarkItem: CreateBookmarkInput;
-  onAction: (prompt: string, displayText?: string) => void;
+  onAction: (message: string) => void;
   onGenerateQuiz: (options: QuizOptions) => void;
+  onCreateFlashcards: () => void;
+  onCopy: () => Promise<boolean>;
 }) {
-  // Which chip triggered the in-flight request (drives its spinner).
   const [activeId, setActiveId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // The request finishes when streaming stops; clear the spinner.
   useEffect(() => {
     if (!busy) setActiveId(null);
   }, [busy]);
 
-  const fire = (action: PrimaryAction, prompt: string) => {
+  const firePrompt = (action: PrimaryAction) => {
+    if (busy || !action.instruction) return;
+    setActiveId(action.id);
+    onAction(action.instruction);
+  };
+
+  const fireFlashcards = (action: PrimaryAction) => {
     if (busy) return;
     setActiveId(action.id);
-    // Show a short label in the chat; send the content-bound prompt.
-    onAction(prompt, action.label);
+    onCreateFlashcards();
   };
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(content);
+    const ok = await onCopy();
+    if (ok) {
       setCopied(true);
-      toast.success("Response copied");
+      toast.success("Copied to clipboard");
       window.setTimeout(() => setCopied(false), 1500);
-    } catch {
+    } else {
       toast.error("Couldn't copy to clipboard");
     }
   };
 
   return (
     <div className="mt-3">
-      {/* Primary actions — animated, quiz-forward */}
       <motion.div
         variants={container}
         initial="hidden"
@@ -133,8 +137,7 @@ export function SuggestedActions({
             );
           }
 
-          // kind === "prompt"
-          if (action.highlight) {
+          if (action.kind === "flashcards") {
             return (
               <motion.button
                 key={action.id}
@@ -144,9 +147,7 @@ export function SuggestedActions({
                 whileTap={{ scale: 0.97 }}
                 disabled={busy}
                 className={HIGHLIGHT_CHIP}
-                onClick={() =>
-                  fire(action, action.buildPrompt?.(content) ?? "")
-                }
+                onClick={() => fireFlashcards(action)}
               >
                 {loading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-1" />
@@ -158,6 +159,7 @@ export function SuggestedActions({
             );
           }
 
+          // kind === "prompt"
           return (
             <motion.div key={action.id} variants={chip}>
               <motion.div
@@ -169,9 +171,7 @@ export function SuggestedActions({
                   variant="outline"
                   className="h-7 gap-1.5 rounded-full px-3 text-xs"
                   disabled={busy}
-                  onClick={() =>
-                    fire(action, action.buildPrompt?.(content) ?? "")
-                  }
+                  onClick={() => firePrompt(action)}
                 >
                   {loading ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -186,23 +186,24 @@ export function SuggestedActions({
         })}
       </motion.div>
 
-      {/* Secondary utility actions — small icon buttons */}
-      <div className="mt-2.5 flex items-center gap-0.5 border-t border-border/40 pt-2">
-        <BookmarkButton item={bookmarkItem} />
-        <Button
+      {/* Secondary utility actions — icons that expand to labels on hover */}
+      <div className="mt-2.5 flex items-center gap-1 border-t border-border/40 pt-2">
+        <BookmarkButton item={bookmarkItem} hoverExpand />
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-muted-foreground"
           onClick={copy}
           aria-label="Copy response"
+          className="group inline-flex h-7 items-center rounded-full px-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           {copied ? (
-            <Check className="h-3.5 w-3.5" />
+            <Check className="h-3.5 w-3.5 shrink-0" />
           ) : (
-            <Copy className="h-3.5 w-3.5" />
+            <Copy className="h-3.5 w-3.5 shrink-0" />
           )}
-        </Button>
+          <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs opacity-0 transition-all duration-200 ease-out group-hover:ml-1.5 group-hover:max-w-[80px] group-hover:opacity-100">
+            {copied ? "Copied" : "Copy"}
+          </span>
+        </button>
       </div>
     </div>
   );

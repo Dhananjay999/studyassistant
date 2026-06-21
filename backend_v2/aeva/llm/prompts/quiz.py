@@ -19,11 +19,15 @@ Source of truth (in priority order):
 - Otherwise use the topic above. If the topic is vague or generic (e.g. just
   "make a quiz"), infer the actual subject from the recent conversation.
 
+Question types — STRICT:
+- Use ONLY these question types: {types}. Do not use any other type.
+- If only one type is listed, EVERY question must be exactly that type.
+- If multiple types are listed, mix only among those types.
+
 Requirements:
-- Mix question types: single_select, multi_select, true_false.
 - For single_select, exactly one correct answer in correct_answers.
-- For multi_select, one or more correct answers in correct_answers.
-- For true_false, options must be ["True", "False"].
+- For multi_select, two or more correct answers in correct_answers.
+- For true_false, options must be ["True", "False"] with one correct answer.
 - Use option values that match correct_answers entries.
 - Write clear, student-friendly questions.
 - Include a brief explanation per question.

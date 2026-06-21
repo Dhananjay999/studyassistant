@@ -67,8 +67,13 @@ export function QuizDrawer({
   const q = questions[idx];
   const answered = Object.values(answers).filter((a) => a.length).length;
 
-  const setSingle = (qid: string, v: string) =>
+  const setSingle = (qid: string, v: string) => {
     setAnswers((p) => ({ ...p, [qid]: [v] }));
+    // Single-select & true/false auto-advance after a short beat.
+    if (idx < total - 1) {
+      window.setTimeout(() => setIdx((i) => Math.min(total - 1, i + 1)), 500);
+    }
+  };
   const toggleMulti = (qid: string, v: string) =>
     setAnswers((p) => {
       const cur = p[qid] || [];

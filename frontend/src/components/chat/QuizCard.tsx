@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/common/GlassCard";
+import { BookmarkButton } from "@/components/BookmarkButton";
 import type { QuizContent } from "@/types";
 
 const cap = (s?: string) => (s ? s[0].toUpperCase() + s.slice(1) : "");
@@ -37,9 +38,23 @@ export function QuizCard({
             <Sparkles className="h-4 w-4 text-brand-1" />
             {quiz.title}
           </h4>
-          <Badge variant="secondary" className="shrink-0">
-            Quiz
-          </Badge>
+          <div className="flex shrink-0 items-center gap-1">
+            <Badge variant="secondary">Quiz</Badge>
+            <BookmarkButton
+              item={{
+                item_type: "quiz",
+                item_ref: quiz.quiz_id,
+                title: quiz.title,
+                content: quiz.topic || quiz.title,
+                metadata: {
+                  quiz_id: quiz.quiz_id,
+                  topic: quiz.topic,
+                  difficulty: quiz.difficulty,
+                  question_count: count,
+                },
+              }}
+            />
+          </div>
         </div>
         {source && (
           <p className="mt-1 truncate text-xs text-muted-foreground">

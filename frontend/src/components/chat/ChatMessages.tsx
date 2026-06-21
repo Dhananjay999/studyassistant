@@ -9,6 +9,8 @@ import { SourceCards } from "@/components/chat/SourceCards";
 import { SuggestedActions } from "@/components/chat/SuggestedActions";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { cn } from "@/lib/utils";
+import { copyRich, markdownToPlainText } from "@/lib/clipboard";
+import type { ThinkingHint } from "@/lib/loadingMessages";
 import type { Message, QuizContent, QuizOptions, ToolUsed } from "@/types";
 
 const TOOL_LABEL: Record<ToolUsed, string> = {
@@ -24,23 +26,37 @@ export function ChatMessages({
   thinkingHint,
   onAction,
   onGenerateQuiz,
+  onCreateFlashcards,
   onOpenQuiz,
   onOpenFlashcards,
 }: {
   messages: Message[];
   mediaAvailable: boolean;
   quizBusy: boolean;
-  thinkingHint?: "quiz";
-  onAction: (prompt: string, displayText?: string) => void;
-  onGenerateQuiz: (topic: string, options: QuizOptions) => void;
+  thinkingHint?: ThinkingHint;
+  onAction: (message: string, sourceContent: string) => void;
+  onGenerateQuiz: (
+    topic: string,
+    options: QuizOptions,
+    sourceContent?: string,
+  ) => void;
+  onCreateFlashcards: (sourceContent: string) => void;
   onOpenQuiz: (quiz: QuizContent) => void;
   onOpenFlashcards: (setId: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Rendered markdown nodes, so Copy yields clean text + rich HTML.
+  const contentRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const copyMessage = (id: string, fallback: string) => {
+    const el = contentRefs.current.get(id);
+    const text = el?.innerText?.trim() || markdownToPlainText(fallback);
+    return copyRich({ html: el?.innerHTML, text });
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6">
@@ -96,7 +112,13 @@ export function ChatMessages({
                 msg.streaming && !msg.content ? (
                   <ThinkingIndicator hint={thinkingHint} />
                 ) : (
-                  <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-pre:my-2">
+                  <div
+                    ref={(el) => {
+                      if (el) contentRefs.current.set(msg.id, el);
+                      else contentRefs.current.delete(msg.id);
+                    }}
+                    className="prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-pre:my-2"
+                  >
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                     {msg.streaming && (
                       <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-primary align-middle" />
@@ -133,13 +155,16 @@ export function ChatMessages({
                 !msg.meta?.quiz &&
                 !msg.meta?.flashcards && (
                   <SuggestedActions
-                    content={msg.content}
                     busy={quizBusy}
                     topic={topic}
                     mediaAvailable={mediaAvailable}
                     quizBusy={quizBusy}
-                    onAction={onAction}
-                    onGenerateQuiz={(opts) => onGenerateQuiz(topic, opts)}
+                    onAction={(message) => onAction(message, msg.content)}
+                    onGenerateQuiz={(opts) =>
+                      onGenerateQuiz(topic, opts, msg.content)
+                    }
+                    onCreateFlashcards={() => onCreateFlashcards(msg.content)}
+                    onCopy={() => copyMessage(msg.id, msg.content)}
                     bookmarkItem={{
                       item_type: "response",
                       item_ref: msg.id,

@@ -16,6 +16,7 @@ from aeva.orchestration.models import (
     ClarificationAction,
     ClarificationQuestion,
     ClarificationRequest,
+    FlashcardOptions,
     QuizOptions,
     RunStatus,
 )
@@ -147,6 +148,17 @@ class AssistantOrchestrator:
         history = self._get_history(ctx.session_id)
         enriched_message = ctx.message
 
+        # An action targeting a specific card carries its own content. Ground
+        # the turn ONLY on that content and drop conversation history so the
+        # action never picks up a later, unrelated response.
+        if ctx.source_content:
+            history = []
+            enriched_message = (
+                f"{ctx.message}\n\nUse ONLY the following content as the "
+                'source. Ignore any other messages in this '
+                f'conversation:\n"""\n{ctx.source_content}\n"""'
+            )
+
         media_choice_ids: list[str] | None = None
         if ctx.run_id and ctx.clarification:
             run = self._get_run(ctx.run_id, ctx.user_id)
@@ -171,6 +183,17 @@ class AssistantOrchestrator:
                 "tool": {
                     "name": "media_llm",
                     "params": {"media_ids": media_choice_ids},
+                },
+            }
+            return session, history, enriched_message, plan
+
+        # Create Flashcards action forces flashcard generation (no planning).
+        if ctx.flashcard_options is not None:
+            plan = {
+                "action": "run_tool",
+                "tool": {
+                    "name": "flashcard_generator",
+                    "params": self._flashcard_params(ctx.flashcard_options),
                 },
             }
             return session, history, enriched_message, plan
@@ -355,6 +378,14 @@ class AssistantOrchestrator:
                 ctx.session_id, ctx.user_id, title=ctx.message[:60]
             )
         return msg
+
+    @staticmethod
+    def _flashcard_params(opts: FlashcardOptions) -> dict[str, Any]:
+        """Turn FlashcardOptions into flashcard_generator params."""
+        params: dict[str, Any] = {}
+        if opts.count is not None:
+            params["count"] = opts.count
+        return params
 
     @staticmethod
     def _quiz_params_from_options(opts: QuizOptions) -> dict[str, Any]:
@@ -662,7 +693,7 @@ class AssistantOrchestrator:
             count = len(result.get("questions", []))
             return (
                 f"I've created a **{title}** quiz with {count} questions. "
-                f"Quiz ID: `{result.get('quiz_id')}`"
+                "Open it below to start."
             )
         if tool_name == "flashcard_generator":
             title = result.get("title", "Flashcards")

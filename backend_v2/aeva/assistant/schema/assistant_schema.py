@@ -1,12 +1,12 @@
 """Assistant schemas."""
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from marshmallow import Schema, fields, post_load, validate
 
 from aeva.orchestration.models import (
     ClarificationAction,
+    FlashcardOptions,
     QuizOptions,
     UserClarificationResponse,
 )
@@ -22,6 +22,8 @@ class AssistantRequestData:
     run_id: str | None = None
     clarification: UserClarificationResponse | None = None
     quiz_options: QuizOptions | None = None
+    flashcard_options: FlashcardOptions | None = None
+    source_content: str | None = None
 
 
 class ClarificationResponseSchema(Schema):
@@ -52,6 +54,12 @@ class QuizOptionsSchema(Schema):
     use_media = fields.Bool(load_default=None)
 
 
+class FlashcardOptionsSchema(Schema):
+    """Nested flashcard settings (forces flashcard generation)."""
+
+    count = fields.Int(load_default=None)
+
+
 class AssistantRequestSchema(Schema):
     """Assistant request."""
 
@@ -63,6 +71,10 @@ class AssistantRequestSchema(Schema):
         ClarificationResponseSchema, load_default=None
     )
     quiz_options = fields.Nested(QuizOptionsSchema, load_default=None)
+    flashcard_options = fields.Nested(
+        FlashcardOptionsSchema, load_default=None
+    )
+    source_content = fields.Str(load_default=None)
 
     @post_load
     def make_data(self, data: dict, **_kwargs: object) -> AssistantRequestData:
@@ -82,5 +94,10 @@ class AssistantRequestSchema(Schema):
                 difficulty=opts.get("difficulty"),
                 question_types=opts.get("question_types"),
                 use_media=opts.get("use_media"),
+            )
+        fc = data.get("flashcard_options")
+        if fc and isinstance(fc, dict):
+            data["flashcard_options"] = FlashcardOptions(
+                count=fc.get("count"),
             )
         return AssistantRequestData(**data)

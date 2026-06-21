@@ -39,10 +39,20 @@ export function MediaSidebar({
   selected: Set<string>;
   activeSessionId: string | null;
   onToggle: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => void | Promise<void>;
   onUpload: (files: FileList) => void;
 }) {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await onDelete(id);
+    } finally {
+      setDeletingId(null);
+    }
+  };
   const [previewPdf, setPreviewPdf] = useState<{
     url: string;
     name: string;
@@ -53,9 +63,11 @@ export function MediaSidebar({
       <div className="flex items-center justify-between gap-2 px-1 pb-3">
         <div>
           <h3 className="font-display text-sm font-semibold">Your materials</h3>
-          <p className="text-[11px] text-muted-foreground">
-            {selected.size}/{MAX_SELECTED_FILES} selected for context
-          </p>
+          {items.length > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {selected.size}/{MAX_SELECTED_FILES} selected for context
+            </p>
+          )}
         </div>
         <label className="cursor-pointer">
           <input
@@ -179,11 +191,16 @@ export function MediaSidebar({
                 />
                 <button
                   type="button"
-                  onClick={() => onDelete(m.id)}
+                  onClick={() => handleDelete(m.id)}
+                  disabled={deletingId === m.id}
                   className="shrink-0 text-muted-foreground hover:text-destructive"
                   aria-label="Delete file"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  {deletingId === m.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
                 </button>
               </div>
             );

@@ -9,6 +9,7 @@ import {
   FolderPlus,
   Layers,
   ListChecks,
+  Loader2,
   MessageSquare,
   MoreHorizontal,
   NotebookPen,
@@ -89,6 +90,22 @@ export default function BookmarksPage() {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
+  const [deletingBookmarkId, setDeletingBookmarkId] = useState<string | null>(
+    null,
+  );
+
+  const removeBookmarkById = async (id: string) => {
+    setDeletingBookmarkId(id);
+    try {
+      await removeBookmark.mutateAsync(id);
+      toast.success("Removed from bookmarks");
+    } catch {
+      toast.error("Couldn't remove bookmark");
+    } finally {
+      setDeletingBookmarkId(null);
+    }
+  };
 
   const collectionName = (id: string | null) =>
     collections.find((c) => c.id === id)?.name ?? "Unfiled";
@@ -149,12 +166,15 @@ export default function BookmarksPage() {
   };
 
   const removeFolder = async (id: string) => {
+    setDeletingFolderId(id);
     try {
       await deleteCollection.mutateAsync(id);
       toast.success("Folder deleted");
       if (activeCollection === id) setActiveCollection("all");
     } catch {
       toast.error("Couldn't delete folder");
+    } finally {
+      setDeletingFolderId(null);
     }
   };
 
@@ -250,6 +270,7 @@ export default function BookmarksPage() {
                     label={c.name}
                     count={countFor(c.id)}
                     active={activeCollection === c.id}
+                    deleting={deletingFolderId === c.id}
                     onClick={() => setActiveCollection(c.id)}
                     onRename={() => {
                       setEditingId(c.id);
@@ -313,14 +334,14 @@ export default function BookmarksPage() {
                     bookmark={b}
                     folderName={collectionName(b.collection_id)}
                     collections={collections}
-                    onOpen={() => navigate(`/bookmarks/${b.id}`)}
+                    onOpen={() =>
+                      navigate("/chat", { state: { previewBookmark: b } })
+                    }
                     onMove={(collectionId) =>
                       updateBookmark.mutate({ id: b.id, collection_id: collectionId })
                     }
-                    onRemove={() => {
-                      removeBookmark.mutate(b.id);
-                      toast.success("Removed from bookmarks");
-                    }}
+                    removing={deletingBookmarkId === b.id}
+                    onRemove={() => removeBookmarkById(b.id)}
                   />
                 ))}
               </div>
@@ -336,6 +357,7 @@ function FolderRow({
   label,
   count,
   active,
+  deleting = false,
   onClick,
   onRename,
   onDelete,
@@ -343,6 +365,7 @@ function FolderRow({
   label: string;
   count: number;
   active: boolean;
+  deleting?: boolean;
   onClick: () => void;
   onRename?: () => void;
   onDelete?: () => void;
@@ -351,6 +374,7 @@ function FolderRow({
     <div
       className={cn(
         "group flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm",
+        deleting && "opacity-60",
         active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
       )}
     >
@@ -362,7 +386,9 @@ function FolderRow({
         <span className="truncate">{label}</span>
         <span className="ml-auto text-xs text-muted-foreground">{count}</span>
       </button>
-      {(onRename || onDelete) && (
+      {deleting ? (
+        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+      ) : (onRename || onDelete) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -399,6 +425,7 @@ function BookmarkCard({
   bookmark,
   folderName,
   collections,
+  removing = false,
   onOpen,
   onMove,
   onRemove,
@@ -406,6 +433,7 @@ function BookmarkCard({
   bookmark: BookmarkT;
   folderName: string;
   collections: Array<{ id: string; name: string }>;
+  removing?: boolean;
   onOpen: () => void;
   onMove: (collectionId: string) => void;
   onRemove: () => void;
@@ -462,9 +490,14 @@ function BookmarkCard({
             size="icon"
             className="h-7 w-7 text-muted-foreground hover:text-destructive"
             onClick={onRemove}
+            disabled={removing}
             aria-label="Remove bookmark"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            {removing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
           </Button>
         </div>
       </div>

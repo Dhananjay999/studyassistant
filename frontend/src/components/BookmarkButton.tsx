@@ -28,10 +28,13 @@ import type { CreateBookmarkInput } from "@/types";
 export function BookmarkButton({
   item,
   label = false,
+  hoverExpand = false,
   className,
 }: {
   item: CreateBookmarkInput;
   label?: boolean;
+  /** Icon that smoothly expands to a label on hover (footer-action style). */
+  hoverExpand?: boolean;
   className?: string;
 }) {
   const { data: bookmarks = [] } = useBookmarks();
@@ -102,21 +105,39 @@ export function BookmarkButton({
       }}
     >
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size={label ? "sm" : "icon"}
-          aria-pressed={saved}
-          aria-label={saved ? "Edit bookmark" : "Add bookmark"}
-          className={cn(
-            label ? "h-7 gap-1.5 rounded-full px-3 text-xs" : "h-7 w-7",
-            saved && "text-brand-1",
-            className,
-          )}
-        >
-          <Icon className="h-3.5 w-3.5" />
-          {label && <span>{saved ? "Saved" : "Save"}</span>}
-        </Button>
+        {hoverExpand ? (
+          <button
+            type="button"
+            aria-pressed={saved}
+            aria-label={saved ? "Edit bookmark" : "Add bookmark"}
+            className={cn(
+              "group inline-flex h-7 items-center rounded-full px-2 transition-colors hover:bg-accent hover:text-foreground",
+              saved ? "text-brand-1" : "text-muted-foreground",
+              className,
+            )}
+          >
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs opacity-0 transition-all duration-200 ease-out group-hover:ml-1.5 group-hover:max-w-[90px] group-hover:opacity-100">
+              {saved ? "Saved" : "Bookmark"}
+            </span>
+          </button>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size={label ? "sm" : "icon"}
+            aria-pressed={saved}
+            aria-label={saved ? "Edit bookmark" : "Add bookmark"}
+            className={cn(
+              label ? "h-7 gap-1.5 rounded-full px-3 text-xs" : "h-7 w-7",
+              saved && "text-brand-1",
+              className,
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label && <span>{saved ? "Saved" : "Save"}</span>}
+          </Button>
+        )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-2">
         {saved ? (

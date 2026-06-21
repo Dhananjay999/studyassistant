@@ -4,9 +4,12 @@ import { motion } from "framer-motion";
 import {
   ChevronLeft,
   ChevronRight,
+  ListChecks,
   Loader2,
+  RotateCcw,
   Shuffle,
   Sparkles,
+  Trophy,
 } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -57,6 +60,7 @@ export function FlashcardViewer({
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [shuffleSeed, setShuffleSeed] = useState(0);
+  const [completed, setCompleted] = useState(false);
   const [analytics, setAnalytics] = useState<FlashcardAnalytics | null>(null);
 
   const cards = useMemo(() => data?.cards ?? [], [data?.cards]);
@@ -78,13 +82,24 @@ export function FlashcardViewer({
     setIndex(0);
     setFlipped(false);
     setShuffleSeed(0);
+    setCompleted(false);
   }, [setId, open]);
   useEffect(() => {
     if (data?.analytics) setAnalytics(data.analytics);
   }, [data?.analytics]);
 
+  const restart = () => {
+    setIndex(0);
+    setFlipped(false);
+    setCompleted(false);
+  };
+
   const go = (delta: number) => {
     setFlipped(false);
+    if (delta > 0 && index >= total - 1) {
+      setCompleted(true);
+      return;
+    }
     setIndex((i) => Math.min(total - 1, Math.max(0, i + delta)));
   };
 
@@ -101,6 +116,7 @@ export function FlashcardViewer({
       /* ignore — rating is best-effort */
     }
     if (index < total - 1) go(1);
+    else setCompleted(true);
   };
 
   // Keyboard navigation.
@@ -188,11 +204,73 @@ export function FlashcardViewer({
               )}
             </div>
 
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 px-5 py-6">
-              {card ? (
-                <button
-                  type="button"
-                  onClick={() => setFlipped((f) => !f)}
+            {completed ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 py-8 text-center">
+                <div className="grid h-16 w-16 place-items-center rounded-2xl bg-brand-gradient text-white">
+                  <Trophy className="h-8 w-8" />
+                </div>
+                <div>
+                  <h3 className="font-display text-xl font-bold">
+                    Flashcards Completed
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Total cards reviewed: {total}
+                  </p>
+                  {analytics && (
+                    <div className="mt-2 flex justify-center gap-3 text-xs">
+                      <span className="text-emerald-600 dark:text-emerald-400">
+                        Mastered {analytics.mastered}
+                      </span>
+                      <span className="text-red-600 dark:text-red-400">
+                        Needs revision {analytics.needs_revision}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex w-full max-w-sm flex-col gap-2">
+                  <Button
+                    onClick={() => resume("quiz")}
+                    disabled={createSession.isPending}
+                    className="gap-2 bg-brand-gradient text-white"
+                  >
+                    <ListChecks className="h-4 w-4" /> Generate Quiz
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={restart}
+                    className="gap-2"
+                  >
+                    <RotateCcw className="h-4 w-4" /> Restart Flashcards
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => resume("continue")}
+                    disabled={createSession.isPending}
+                    className="gap-2"
+                  >
+                    <Sparkles className="h-4 w-4" /> Continue Learning
+                  </Button>
+                  <div className="flex justify-center pt-1">
+                    <BookmarkButton
+                      label
+                      item={{
+                        item_type: "flashcard",
+                        item_ref: data.set_id,
+                        title: data.title,
+                        content: data.topic || data.title,
+                        metadata: { set_id: data.set_id, topic: data.topic },
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 px-5 py-6">
+                  {card ? (
+                    <button
+                      type="button"
+                      onClick={() => setFlipped((f) => !f)}
                   className="relative h-72 w-full max-w-md [perspective:1200px]"
                   aria-label="Flip card"
                 >
@@ -304,6 +382,8 @@ export function FlashcardViewer({
                 </Button>
               </div>
             </div>
+              </>
+            )}
           </>
         )}
       </SheetContent>

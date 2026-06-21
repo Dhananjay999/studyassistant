@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Clock, HelpCircle, ListChecks, Loader2, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { GlassCard } from "@/components/common/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Seo } from "@/components/common/Seo";
@@ -32,9 +33,7 @@ export default function QuizzesPage() {
       <Seo title="Quizzes — Aeva" noindex path="/quizzes" />
       <div className="p-4">
         {isLoading ? (
-          <div className="grid place-items-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
+          <CardGridSkeleton />
         ) : quizzes.length === 0 ? (
           <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-20 text-center">
             <ListChecks className="mb-3 h-8 w-8 text-muted-foreground" />
