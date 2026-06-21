@@ -3,9 +3,14 @@
 from collections.abc import Generator
 from typing import Any
 
-from aeva.llm.llm_client import LLMClient
 from aeva.llm import prompts
-from aeva.mcp.base import BaseTool, ToolContext, ToolDefinition
+from aeva.llm.llm_client import LLMClient
+from aeva.mcp.base import (
+    LEARNING_ACTIONS,
+    BaseTool,
+    ToolContext,
+    ToolDefinition,
+)
 
 
 class WebSearchTool(BaseTool):
@@ -30,6 +35,11 @@ class WebSearchTool(BaseTool):
             ),
             parameters_schema=prompts.WEB_SEARCH_PARAMS,
         )
+
+    @property
+    def available_actions(self) -> list[str]:
+        """A web answer supports the full learning toolkit."""
+        return LEARNING_ACTIONS
 
     def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
         """Run web search grounded generation."""

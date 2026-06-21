@@ -155,6 +155,7 @@ export function ChatMessages({
                 !msg.meta?.quiz &&
                 !msg.meta?.flashcards && (
                   <SuggestedActions
+                    availableActions={msg.meta?.available_actions}
                     busy={quizBusy}
                     topic={topic}
                     mediaAvailable={mediaAvailable}

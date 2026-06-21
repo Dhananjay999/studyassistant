@@ -18,6 +18,8 @@ export type ActionKind = "prompt" | "quiz" | "flashcards";
 
 export interface PrimaryAction {
   id: string;
+  /** Backend action key (from response.available_actions) this maps to. */
+  key: string;
   label: string;
   icon: LucideIcon;
   kind: ActionKind;
@@ -30,6 +32,7 @@ export interface PrimaryAction {
 export const PRIMARY_ACTIONS: PrimaryAction[] = [
   {
     id: "create_quiz",
+    key: "QUIZ",
     label: "Create Quiz",
     icon: Sparkles,
     kind: "quiz",
@@ -37,6 +40,7 @@ export const PRIMARY_ACTIONS: PrimaryAction[] = [
   },
   {
     id: "create_flashcards",
+    key: "FLASHCARDS",
     label: "Create Flashcards",
     icon: Layers,
     kind: "flashcards",
@@ -44,6 +48,7 @@ export const PRIMARY_ACTIONS: PrimaryAction[] = [
   },
   {
     id: "explain_simpler",
+    key: "SIMPLIFY",
     label: "Explain Simpler",
     icon: Minimize2,
     kind: "prompt",
@@ -52,6 +57,7 @@ export const PRIMARY_ACTIONS: PrimaryAction[] = [
   },
   {
     id: "explain_detail",
+    key: "DETAIL",
     label: "Explain in Detail",
     icon: Maximize2,
     kind: "prompt",
@@ -59,6 +65,7 @@ export const PRIMARY_ACTIONS: PrimaryAction[] = [
   },
   {
     id: "summarize",
+    key: "SUMMARY",
     label: "Summarize",
     icon: FileText,
     kind: "prompt",
@@ -66,6 +73,7 @@ export const PRIMARY_ACTIONS: PrimaryAction[] = [
   },
   {
     id: "study_plan",
+    key: "STUDY_PLAN",
     label: "Study Plan",
     icon: ScrollText,
     kind: "prompt",
@@ -75,6 +83,7 @@ export const PRIMARY_ACTIONS: PrimaryAction[] = [
   },
   {
     id: "analyze",
+    key: "ANALYZE",
     label: "Analyze Topic",
     icon: Microscope,
     kind: "prompt",

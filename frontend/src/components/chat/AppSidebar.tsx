@@ -20,6 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { BrandLogo } from "@/components/common/BrandLogo";
 import { cn } from "@/lib/utils";
 import { formatShortcut } from "@/lib/platform";
 import type { Session } from "@/types";
@@ -60,6 +61,7 @@ function groupSessions(sessions: Session[]) {
 
 export function AppSidebar({
   collapsed,
+  canCollapse = true,
   onToggleCollapse,
   onNewChat,
   onSearch,
@@ -69,6 +71,8 @@ export function AppSidebar({
   onDeleteSession,
 }: {
   collapsed: boolean;
+  /** Whether to show the collapse toggle (false in the mobile drawer). */
+  canCollapse?: boolean;
   onToggleCollapse: () => void;
   onNewChat: () => void;
   onSearch: () => void;
@@ -99,57 +103,66 @@ export function AppSidebar({
         collapsed ? "w-16" : "w-64",
       )}
     >
-      {/* Top section */}
-      <div className="flex flex-col gap-1 p-2">
-        <div
-          className={cn(
-            "flex items-center gap-1",
-            collapsed && "flex-col",
-          )}
-        >
-          <Button
-            onClick={onNewChat}
+      {/* Brand: mobile only (desktop shows it in the top header).
+         The collapse toggle is the desktop-only control. */}
+      <div className="flex items-center gap-2 px-3 pt-3">
+        <BrandLogo withWordmark={!collapsed} className="lg:hidden" />
+        {canCollapse && (
+          <IconBtn
+            label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={onToggleCollapse}
             className={cn(
-              "h-9 gap-2 rounded-xl",
-              collapsed ? "w-9 p-0" : "flex-1 justify-start",
+              "hidden lg:inline-flex",
+              collapsed ? "mx-auto" : "ml-auto",
             )}
-            aria-label="New chat"
           >
-            <Plus className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>New chat</span>}
-          </Button>
-          {!collapsed && (
-            <>
-              <IconBtn
-                label={`Search (${formatShortcut(["mod", "F"])})`}
-                onClick={onSearch}
-              >
-                <Search className="h-4 w-4" />
-              </IconBtn>
-              <IconBtn label="Collapse sidebar" onClick={onToggleCollapse}>
-                <PanelLeftClose className="h-4 w-4" />
-              </IconBtn>
-            </>
-          )}
-        </div>
-        {collapsed && (
-          <>
-            <IconBtn label="Search" onClick={onSearch} className="w-9 self-center">
-              <Search className="h-4 w-4" />
-            </IconBtn>
-            <IconBtn
-              label="Expand sidebar"
-              onClick={onToggleCollapse}
-              className="w-9 self-center"
-            >
+            {collapsed ? (
               <PanelLeft className="h-4 w-4" />
-            </IconBtn>
-          </>
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
+          </IconBtn>
+        )}
+      </div>
+
+      {/* Primary actions */}
+      <div className="flex flex-col gap-1.5 p-3">
+        <Button
+          onClick={onNewChat}
+          className={cn(
+            "h-10 gap-2 rounded-xl",
+            collapsed ? "w-10 self-center p-0" : "w-full justify-start",
+          )}
+          aria-label="New chat"
+        >
+          <Plus className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>New chat</span>}
+        </Button>
+        {collapsed ? (
+          <IconBtn
+            label="Search"
+            onClick={onSearch}
+            className="self-center"
+          >
+            <Search className="h-4 w-4" />
+          </IconBtn>
+        ) : (
+          <Button
+            variant="ghost"
+            onClick={onSearch}
+            className="h-10 w-full justify-start gap-2 rounded-xl text-muted-foreground"
+          >
+            <Search className="h-4 w-4 shrink-0" />
+            <span className="flex-1 text-left">Search</span>
+            <span className="text-[10px] text-muted-foreground/70">
+              {formatShortcut(["mod", "F"])}
+            </span>
+          </Button>
         )}
       </div>
 
       {/* Main navigation */}
-      <nav className="flex flex-col gap-0.5 px-2 pb-2">
+      <nav className="flex flex-col gap-1 px-3 pb-2">
         {NAV.map((item) => {
           const Icon = item.icon;
           const active =
@@ -189,7 +202,7 @@ export function AppSidebar({
 
       {/* Chat history (hidden when collapsed) */}
       {!collapsed && (
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {grouped.length === 0 && (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">
               No chats yet.

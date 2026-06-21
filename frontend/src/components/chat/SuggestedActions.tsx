@@ -12,8 +12,8 @@ import type { CreateBookmarkInput, QuizOptions } from "@/types";
 
 // Border-only "premium AI action" chip (Linear / Raycast / Gemini feel).
 const HIGHLIGHT_CHIP = cn(
-  "group inline-flex items-center gap-1.5 rounded-full border",
-  "border-brand-1/40 bg-background px-3.5 py-1.5 text-xs font-semibold",
+  "group inline-flex shrink-0 snap-start items-center gap-1.5 rounded-full",
+  "border border-brand-1/40 bg-background px-3.5 py-2 text-xs font-semibold",
   "text-foreground transition-all hover:border-brand-1/70",
   "hover:shadow-[0_0_12px_-2px_hsl(var(--brand-1)/0.5)] disabled:opacity-60",
 );
@@ -50,7 +50,7 @@ const chip = {
 };
 
 export function SuggestedActions({
-  content,
+  availableActions,
   busy,
   topic,
   mediaAvailable,
@@ -61,6 +61,8 @@ export function SuggestedActions({
   onCreateFlashcards,
   onCopy,
 }: {
+  /** Action keys the backend says apply to this response (undefined = all). */
+  availableActions?: string[];
   busy: boolean;
   topic: string;
   mediaAvailable: boolean;
@@ -73,6 +75,12 @@ export function SuggestedActions({
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Render only the actions the backend exposed for this response. Undefined
+  // (e.g. older messages) falls back to the full set for compatibility.
+  const visibleActions = availableActions
+    ? PRIMARY_ACTIONS.filter((a) => availableActions.includes(a.key))
+    : PRIMARY_ACTIONS;
 
   useEffect(() => {
     if (!busy) setActiveId(null);
@@ -103,13 +111,14 @@ export function SuggestedActions({
 
   return (
     <div className="mt-3">
+      {visibleActions.length > 0 && (
       <motion.div
         variants={container}
         initial="hidden"
         animate="show"
-        className="flex flex-wrap gap-2"
+        className="flex snap-x gap-2 overflow-x-auto pb-1 scrollbar-hide sm:flex-wrap sm:overflow-visible sm:pb-0"
       >
-        {PRIMARY_ACTIONS.map((action) => {
+        {visibleActions.map((action) => {
           const Icon = action.icon;
           const loading = busy && activeId === action.id;
 
@@ -161,7 +170,11 @@ export function SuggestedActions({
 
           // kind === "prompt"
           return (
-            <motion.div key={action.id} variants={chip}>
+            <motion.div
+              key={action.id}
+              variants={chip}
+              className="shrink-0 snap-start"
+            >
               <motion.div
                 whileHover={{ scale: 1.04, y: -1 }}
                 whileTap={{ scale: 0.97 }}
@@ -169,7 +182,7 @@ export function SuggestedActions({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 gap-1.5 rounded-full px-3 text-xs"
+                  className="h-8 gap-1.5 rounded-full px-3 text-xs"
                   disabled={busy}
                   onClick={() => firePrompt(action)}
                 >
@@ -185,6 +198,7 @@ export function SuggestedActions({
           );
         })}
       </motion.div>
+      )}
 
       {/* Secondary utility actions — icons that expand to labels on hover */}
       <div className="mt-2.5 flex items-center gap-1 border-t border-border/40 pt-2">

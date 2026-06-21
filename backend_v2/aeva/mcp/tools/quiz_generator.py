@@ -4,10 +4,10 @@ from typing import Any
 
 from flask import current_app
 
-from aeva.llm.llm_client import LLMClient
 from aeva.llm import prompts
-from aeva.media.attachments import download_attachments
+from aeva.llm.llm_client import LLMClient
 from aeva.mcp.base import BaseTool, ToolContext, ToolDefinition
+from aeva.media.attachments import download_attachments
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
 
@@ -51,6 +51,11 @@ class QuizGeneratorTool(BaseTool):
             ),
             parameters_schema=prompts.QUIZ_GENERATOR_PARAMS,
         )
+
+    @property
+    def response_type(self) -> str:
+        """Quizzes render a dedicated card, not action chips."""
+        return "QUIZ"
 
     @staticmethod
     def _wants_media(params: dict[str, Any], ctx: ToolContext) -> bool:

@@ -6,9 +6,9 @@ from collections.abc import Generator
 from typing import Any
 
 from aeva.common.errors import ERROR_CODES, CustomError
-from aeva.llm.llm_client import LLMClient
 from aeva.llm import prompts
-from aeva.mcp.base import ToolContext
+from aeva.llm.llm_client import LLMClient
+from aeva.mcp.base import BaseTool, ToolContext
 from aeva.mcp.registry import ToolRegistry
 from aeva.orchestration.models import (
     AssistantContext,
@@ -76,6 +76,7 @@ class AssistantOrchestrator:
         tool_ctx = self._build_tool_ctx(ctx, enriched_message, history)
 
         result = self.registry.execute(tool_name, tool_ctx, tool_params)
+        self._attach_actions(tool_name, result)
         display_text = self._format_display(tool_name, result)
         msg = self._persist_answer(
             ctx, session, tool_name, result, display_text
@@ -130,6 +131,8 @@ class AssistantOrchestrator:
             display_text = self._format_display(tool_name, result)
             yield LLMClient.format_sse_chunk(display_text)
 
+        # Static, no-LLM tags ride only this final frame.
+        self._attach_actions(tool_name, result, tool)
         self._persist_answer(ctx, session, tool_name, result, display_text)
         yield LLMClient.format_sse_chunk(
             "",
@@ -238,6 +241,25 @@ class AssistantOrchestrator:
         """Pull the tool name and params from a run_tool plan."""
         tool_info = plan.get("tool") or {}
         return tool_info.get("name", "web_search"), tool_info.get("params") or {}
+
+    def _attach_actions(
+        self,
+        tool_name: str,
+        result: dict[str, Any],
+        tool: BaseTool | None = None,
+    ) -> None:
+        """Stamp the tool's response_type + available_actions onto the result.
+
+        These come from the tool's *static* properties — no extra LLM call —
+        and travel only in the final ``done`` SSE frame's ``content``. Each tool
+        owns its action set, so the UI is response-aware and new MCP tools can
+        expose new actions without any frontend change.
+        """
+        if not isinstance(result, dict):
+            return
+        tool = tool or self.registry.get(tool_name)
+        result["response_type"] = tool.response_type
+        result["available_actions"] = tool.available_actions
 
     def _selected_media(
         self, ctx: AssistantContext

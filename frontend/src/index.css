@@ -184,6 +184,22 @@
     display: none;
   }
 
+  /* --- Safe-area helpers (notch / Dynamic Island / gesture bars) --- */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Height of the mobile bottom nav incl. the home-indicator inset. */
+  .h-bottomnav {
+    height: calc(3.75rem + env(safe-area-inset-bottom));
+  }
+  /* Clear the fixed mobile bottom nav so content/composer isn't hidden. */
+  .pb-bottomnav {
+    padding-bottom: calc(3.75rem + env(safe-area-inset-bottom));
+  }
+
   /* Mask helper for fading marquee edges */
   .mask-fade-x {
     -webkit-mask-image: linear-gradient(

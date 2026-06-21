@@ -268,14 +268,23 @@ export function FlashcardViewer({
               <>
                 <div className="flex flex-1 flex-col items-center justify-center gap-4 px-5 py-6">
                   {card ? (
-                    <button
-                      type="button"
-                      onClick={() => setFlipped((f) => !f)}
-                  className="relative h-72 w-full max-w-md [perspective:1200px]"
-                  aria-label="Flip card"
-                >
+                    <motion.div
+                      drag="x"
+                      dragSnapToOrigin
+                      dragConstraints={{ left: 0, right: 0 }}
+                      dragElastic={0.5}
+                      onDragEnd={(_e, info) => {
+                        if (info.offset.x < -80) go(1);
+                        else if (info.offset.x > 80) go(-1);
+                      }}
+                      onTap={() => setFlipped((f) => !f)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Flip card; swipe left or right to navigate"
+                      className="relative h-72 w-full max-w-md cursor-grab touch-pan-y [perspective:1200px] active:cursor-grabbing"
+                    >
                   <motion.div
-                    className="relative h-full w-full [transform-style:preserve-3d]"
+                    className="pointer-events-none relative h-full w-full [transform-style:preserve-3d]"
                     animate={{ rotateY: flipped ? 180 : 0 }}
                     transition={{ duration: 0.5 }}
                   >
@@ -305,12 +314,15 @@ export function FlashcardViewer({
                       </div>
                     </div>
                   </motion.div>
-                </button>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  This set has no cards.
-                </p>
-              )}
+                    </motion.div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      This set has no cards.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground sm:hidden">
+                    Swipe to move • tap to flip
+                  </p>
 
               {/* Study rating */}
               <div className="flex flex-wrap justify-center gap-2">

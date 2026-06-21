@@ -52,6 +52,11 @@ class FlashcardGeneratorTool(BaseTool):
             parameters_schema=prompts.FLASHCARD_GENERATOR_PARAMS,
         )
 
+    @property
+    def response_type(self) -> str:
+        """Flashcards render a dedicated card, not action chips."""
+        return "FLASHCARDS"
+
     @staticmethod
     def _wants_media(params: dict[str, Any], ctx: ToolContext) -> bool:
         """Decide whether to build cards from uploaded material."""

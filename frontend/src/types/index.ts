@@ -104,6 +104,9 @@ export interface MessageMeta {
   quiz?: QuizContent;
   quiz_result?: { evaluation: QuizEvaluation; feedback: QuizFeedback };
   flashcards?: FlashcardContent;
+  /** Backend-driven follow-up action keys for this response (response-aware). */
+  available_actions?: string[];
+  response_type?: string;
 }
 
 export interface Message {

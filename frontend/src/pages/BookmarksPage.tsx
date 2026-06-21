@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   Bookmark,
   Check,
   FileText,
@@ -37,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Seo } from "@/components/common/Seo";
+import { AppShell } from "@/components/AppShell";
 import { cn } from "@/lib/utils";
 import {
   useBookmarks,
@@ -181,24 +181,8 @@ export default function BookmarksPage() {
   return (
     <>
       <Seo title="Bookmarks — Aeva" noindex path="/bookmarks" />
-      <div className="flex min-h-dvh flex-col bg-background">
-        <header className="flex items-center gap-2 border-b border-border/50 px-4 py-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/chat")}
-            aria-label="Back to chat"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <Bookmark className="h-5 w-5 text-brand-1" />
-          <h1 className="font-display text-lg font-bold">Bookmarks</h1>
-          <Badge variant="secondary" className="ml-1">
-            {bookmarks.length}
-          </Badge>
-        </header>
-
-        <div className="flex flex-1 flex-col lg:flex-row">
+      <AppShell title="Bookmarks">
+        <div className="flex min-h-full flex-col lg:flex-row">
           {/* Folder navigation */}
           <aside className="w-full shrink-0 border-b border-border/50 p-3 lg:w-64 lg:border-b-0 lg:border-r">
             <div className="mb-2 flex items-center justify-between px-1">
@@ -348,7 +332,7 @@ export default function BookmarksPage() {
             )}
           </main>
         </div>
-      </div>
+      </AppShell>
     </>
   );
 }

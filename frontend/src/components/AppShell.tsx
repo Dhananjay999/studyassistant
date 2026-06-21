@@ -4,6 +4,7 @@ import { Menu } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/chat/AppSidebar";
+import { MobileNav } from "@/components/MobileNav";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { useDeleteSession, useSessions } from "@/hooks/api";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
@@ -48,6 +49,7 @@ export function AppShell({
   const sidebar = (mobile: boolean) => (
     <AppSidebar
       collapsed={mobile ? false : collapsed}
+      canCollapse={!mobile}
       onToggleCollapse={toggleCollapse}
       onNewChat={newChat}
       onSearch={() => setPaletteOpen(true)}
@@ -73,7 +75,7 @@ export function AppShell({
       </Sheet>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex items-center gap-2 border-b border-border/50 px-4 py-3">
+        <header className="flex items-center gap-2 border-b border-border/50 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
           <Button
             variant="ghost"
             size="icon"
@@ -85,8 +87,12 @@ export function AppShell({
           </Button>
           <h1 className="font-display text-lg font-bold">{title}</h1>
         </header>
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        <div className="flex-1 overflow-y-auto pb-bottomnav lg:pb-0">
+          {children}
+        </div>
       </main>
+
+      <MobileNav />
 
       <GlobalCommandPalette
         open={paletteOpen}

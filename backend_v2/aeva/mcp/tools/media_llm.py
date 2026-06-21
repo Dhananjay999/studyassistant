@@ -3,10 +3,15 @@
 from collections.abc import Generator
 from typing import Any
 
-from aeva.llm.llm_client import LLMClient
 from aeva.llm import prompts
+from aeva.llm.llm_client import LLMClient
+from aeva.mcp.base import (
+    LEARNING_ACTIONS,
+    BaseTool,
+    ToolContext,
+    ToolDefinition,
+)
 from aeva.media.attachments import download_attachments
-from aeva.mcp.base import BaseTool, ToolContext, ToolDefinition
 from aeva.supabase.supabase_service import SupabaseService
 
 NO_MEDIA_MESSAGE = (
@@ -47,6 +52,11 @@ class MediaLLMTool(BaseTool):
             ),
             parameters_schema=prompts.MEDIA_PARAMS,
         )
+
+    @property
+    def available_actions(self) -> list[str]:
+        """Study material supports the full learning toolkit."""
+        return LEARNING_ACTIONS
 
     def _build_attachments(
         self,

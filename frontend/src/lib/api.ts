@@ -168,6 +168,8 @@ export async function getMessages(id: string): Promise<Message[]> {
           toolUsed === "flashcard_generator"
             ? (inner as unknown as Message["meta"]["flashcards"])
             : undefined,
+        available_actions: inner.available_actions as string[] | undefined,
+        response_type: inner.response_type as string | undefined,
       },
     } satisfies Message;
   });

@@ -2,9 +2,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Bookmark, LogOut, Menu, PanelRight, Sparkles, Square } from "lucide-react";
+import {
+  Bookmark,
+  FolderOpen,
+  LogOut,
+  Menu,
+  Search,
+  Sparkles,
+  Square,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -28,10 +41,10 @@ import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
+import { MobileNav } from "@/components/MobileNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
-import { formatShortcut } from "@/lib/platform";
 import type { ThinkingHint } from "@/lib/loadingMessages";
 import {
   qk,
@@ -294,6 +307,12 @@ export default function ChatPage() {
                           (content.sources as Message["meta"]["sources"]) || [],
                         quiz,
                         flashcards,
+                        available_actions: content.available_actions as
+                          | string[]
+                          | undefined,
+                        response_type: content.response_type as
+                          | string
+                          | undefined,
                       },
                     }
                   : m,
@@ -522,6 +541,7 @@ export default function ChatPage() {
   const renderSidebar = (mobile: boolean) => (
     <AppSidebar
       collapsed={mobile ? false : collapsed}
+      canCollapse={!mobile}
       onToggleCollapse={toggleCollapse}
       onNewChat={handleNewChat}
       onSearch={() => setPaletteOpen(true)}
@@ -552,7 +572,7 @@ export default function ChatPage() {
       <Seo title="StudyAssistant — Chat with Aeva" noindex path="/chat" />
       <div className="flex h-dvh flex-col bg-background">
         {/* Top bar */}
-        <header className="z-10 flex items-center gap-2 border-b border-border/50 px-3 py-2">
+        <header className="z-10 flex items-center gap-2 border-b border-border/50 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
           <Button
             variant="ghost"
             size="icon"
@@ -573,9 +593,10 @@ export default function ChatPage() {
             size="sm"
             className="gap-1.5 xl:hidden"
             onClick={() => setMediaOpen(true)}
+            aria-label="Your files"
           >
-            <PanelRight className="h-4 w-4" />
-            <span className="hidden sm:inline">Materials</span>
+            <FolderOpen className="h-4 w-4" />
+            <span className="hidden sm:inline">Files</span>
             {media.length > 0 && (
               <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
                 {media.length}
@@ -587,6 +608,7 @@ export default function ChatPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                className="hidden lg:inline-flex"
                 onClick={() => navigate("/bookmarks")}
                 aria-label="Bookmarks"
               >
@@ -595,23 +617,18 @@ export default function ChatPage() {
             </TooltipTrigger>
             <TooltipContent>Bookmarks</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setPaletteOpen(true)}
-                aria-label="Search"
-              >
-                <Sparkles className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              Search ({formatShortcut(["mod", "F"])})
-            </TooltipContent>
-          </Tooltip>
-          <ThemeToggle />
-          <Avatar className="h-8 w-8">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+          <div className="hidden lg:block">
+            <ThemeToggle />
+          </div>
+          <Avatar className="hidden h-8 w-8 lg:flex">
             <AvatarImage src={user?.avatar_url || undefined} />
             <AvatarFallback>
               {user?.full_name?.[0] || user?.email?.[0] || "?"}
@@ -620,6 +637,7 @@ export default function ChatPage() {
           <Button
             variant="ghost"
             size="icon"
+            className="hidden lg:inline-flex"
             onClick={logout}
             aria-label="Log out"
           >
@@ -639,7 +657,7 @@ export default function ChatPage() {
           </Sheet>
 
           {/* Chat column */}
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden pb-bottomnav lg:pb-0">
             <div className="flex-1 overflow-y-auto">
               {preview ? (
                 <BookmarkPreview
@@ -749,11 +767,15 @@ export default function ChatPage() {
           <aside className="hidden w-72 shrink-0 border-l border-border/50 p-3 xl:block">
             {mediaSidebar}
           </aside>
-          <Sheet open={mediaOpen} onOpenChange={setMediaOpen}>
-            <SheetContent side="right" className="w-80 p-4 sm:w-96">
-              <div className="mt-6 h-[calc(100%-1.5rem)]">{mediaSidebar}</div>
-            </SheetContent>
-          </Sheet>
+          {/* Mobile/tablet: files open as a bottom sheet, not a side panel. */}
+          <Drawer open={mediaOpen} onOpenChange={setMediaOpen}>
+            <DrawerContent className="max-h-[85vh] pb-safe">
+              <DrawerTitle className="sr-only">Your files</DrawerTitle>
+              <div className="h-[70vh] overflow-hidden px-4 pb-2">
+                {mediaSidebar}
+              </div>
+            </DrawerContent>
+          </Drawer>
         </div>
       </div>
 
@@ -771,6 +793,8 @@ export default function ChatPage() {
         onNewChat={handleNewChat}
         onSelectSession={(id) => setSearchParams({ sessionId: id })}
       />
+
+      <MobileNav />
     </>
   );
 }
