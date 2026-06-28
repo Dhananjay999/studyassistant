@@ -676,9 +676,11 @@ class AssistantOrchestrator:
         words = text.split()
         is_quiz = "quiz" in text or "test" in text
 
-        # Flashcard requests are a clear intent — never clarify them.
+        # Flashcards + media is the same source fork as quizzes (build from
+        # the document or from the discussion?) — let the planner ask which.
+        # Without media, flashcards are a clear intent and never need it.
         if "flashcard" in text or "flash card" in text:
-            return True
+            return not ctx.media_ids
 
         # Quiz + media is a real fork (quiz the document or the discussion?) —
         # let the planner ask which.

@@ -5,6 +5,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUp, Loader2, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SlashCommandMenu } from "@/components/chat/SlashCommandMenu";
@@ -26,9 +27,21 @@ export const ChatComposer = forwardRef<
     onQuizCommand?: () => void;
     disabled?: boolean;
     uploading?: boolean;
+    /** Number of files currently selected for context (0 = hide indicator). */
+    selectedCount?: number;
+    /** Open the file selector/sidebar when the indicator is tapped. */
+    onOpenFiles?: () => void;
   }
 >(function ChatComposer(
-  { onSend, onUpload, onQuizCommand, disabled, uploading },
+  {
+    onSend,
+    onUpload,
+    onQuizCommand,
+    disabled,
+    uploading,
+    selectedCount = 0,
+    onOpenFiles,
+  },
   ref,
 ) {
   const [value, setValue] = useState("");
@@ -135,6 +148,32 @@ export const ChatComposer = forwardRef<
             onHover={setActiveIndex}
           />
         )}
+        <AnimatePresence initial={false}>
+          {selectedCount > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.18 }}
+              className="mb-2 flex"
+            >
+              <button
+                type="button"
+                onClick={onOpenFiles}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1",
+                  "border-brand-1/30 bg-brand-1/10 text-xs font-medium text-brand-1",
+                  "transition-colors hover:bg-brand-1/20 active:scale-[0.98]",
+                )}
+                aria-label="View files selected for context"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                {selectedCount} file{selectedCount === 1 ? "" : "s"} selected
+                for context
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div
           className={cn(
             "glass-strong flex items-end gap-2 rounded-2xl p-2 shadow-glow",

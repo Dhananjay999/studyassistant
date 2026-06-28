@@ -153,7 +153,7 @@ export default function BookmarkDetailPage() {
               )}
             </div>
           ) : (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
+            <div className="learning-content prose prose-sm max-w-none dark:prose-invert">
               <ReactMarkdown>
                 {bookmark.content || "_No content saved._"}
               </ReactMarkdown>

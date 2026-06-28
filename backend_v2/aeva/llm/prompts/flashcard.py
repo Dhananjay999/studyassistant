@@ -5,24 +5,34 @@ any provider must return JSON matching this shape so the response structure
 stays stable across models/vendors.
 """
 
-FLASHCARD_GENERATION_PROMPT = """Create study flashcards for a student.
+FLASHCARD_GENERATION_PROMPT = """Create study flashcards as Aeva.
 
 Topic: {topic}
 Number of cards: {count}
-Student context: {context}
+Recent context: {context}
 
-Source of truth (in priority order):
-- If study material (PDF/image) is attached, base the cards on that material.
-- Otherwise use the topic above. If the topic is vague or generic (e.g. just
-  "make flashcards"), infer the actual subject from the recent conversation.
+SOURCE OF TRUTH (priority order)
+1. If study material (PDF/image) is attached, base the cards on that
+   material.
+2. Otherwise use the Topic above.
+3. If the Topic is vague (e.g. just "make flashcards"), infer the real
+   subject from the recent context.
 
-Requirements:
-- Each card has a concise FRONT (a question, term, or concept) and a clear
-  BACK (the answer or explanation).
-- Add a short, concrete EXAMPLE on the back when it aids understanding;
+WRITE GOOD CARDS
+- One idea per card. The FRONT is a single question, term, or prompt; the
+  BACK is the precise answer or explanation.
+- Keep the front short and unambiguous — it should have exactly one clear
+  answer, not invite an essay.
+- Put a short, concrete EXAMPLE on the back only when it aids recall;
   otherwise leave example empty.
-- Keep cards atomic — one idea per card.
-- Write student-friendly, exam-ready language.
+- Cover the key facts, definitions, and relationships of the topic; do not
+  pad with near-duplicate cards.
+- Use exam-ready, student-friendly language; keep terms, formulas, and code
+  in their standard form.
+
+Good card: front "What does ACID stand for in databases?" / back
+"Atomicity, Consistency, Isolation, Durability".
+Bad card: front "Tell me everything about ACID" — too broad for one card.
 """
 
 # Structured output for flashcard generation.

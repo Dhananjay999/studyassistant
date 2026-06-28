@@ -9,30 +9,54 @@ import {
 } from "react";
 
 /**
- * Appearance preferences that aren't covered by the theme (which `next-themes`
- * owns). Persisted to localStorage and applied to <html> as a data attribute /
- * class so plain CSS in index.css can react without re-rendering the tree.
+ * Appearance preferences that aren't covered by light/dark (which `next-themes`
+ * owns). Persisted to localStorage and applied to <html> as data attributes /
+ * classes so plain CSS in index.css can react without re-rendering the tree.
  *
- * `compact` is wired through for the UI but not yet applied — it ships as a
- * "coming soon" toggle, so the type lives here to keep the surface stable.
+ * - `colorTheme` is an orthogonal accent palette (purple/ocean/…); it layers on
+ *   top of light/dark via `[data-theme]` overrides of the CSS color tokens.
+ * - `fontSize` + `contentFont` affect ONLY learning content
+ *   (`.learning-content`), never navigation or UI chrome.
+ * - `compact` is wired through but not yet applied (ships as "coming soon").
  */
 export type FontSize = "small" | "medium" | "large";
 
+export type ColorTheme =
+  | "default"
+  | "ocean"
+  | "emerald"
+  | "sunset"
+  | "gold"
+  | "rose";
+
+export type ContentFont =
+  | "inter"
+  | "poppins"
+  | "nunito"
+  | "source-sans"
+  | "roboto";
+
 interface Preferences {
+  colorTheme: ColorTheme;
   fontSize: FontSize;
+  contentFont: ContentFont;
   reduceMotion: boolean;
   compact: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
+  setColorTheme: (theme: ColorTheme) => void;
   setFontSize: (size: FontSize) => void;
+  setContentFont: (font: ContentFont) => void;
   setReduceMotion: (on: boolean) => void;
   setCompact: (on: boolean) => void;
   reset: () => void;
 }
 
 const DEFAULTS: Preferences = {
+  colorTheme: "default",
   fontSize: "medium",
+  contentFont: "inter",
   reduceMotion: false,
   compact: false,
 };
@@ -56,7 +80,9 @@ function load(): Preferences {
 
 function apply(prefs: Preferences): void {
   const root = document.documentElement;
+  root.dataset.theme = prefs.colorTheme;
   root.dataset.fontSize = prefs.fontSize;
+  root.dataset.contentFont = prefs.contentFont;
   root.classList.toggle("reduce-motion", prefs.reduceMotion);
   root.classList.toggle("compact", prefs.compact);
 }
@@ -74,8 +100,16 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     }
   }, [prefs]);
 
+  const setColorTheme = useCallback(
+    (colorTheme: ColorTheme) => setPrefs((p) => ({ ...p, colorTheme })),
+    [],
+  );
   const setFontSize = useCallback(
     (fontSize: FontSize) => setPrefs((p) => ({ ...p, fontSize })),
+    [],
+  );
+  const setContentFont = useCallback(
+    (contentFont: ContentFont) => setPrefs((p) => ({ ...p, contentFont })),
     [],
   );
   const setReduceMotion = useCallback(
@@ -91,12 +125,22 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const value = useMemo<PreferencesContextValue>(
     () => ({
       ...prefs,
+      setColorTheme,
       setFontSize,
+      setContentFont,
       setReduceMotion,
       setCompact,
       reset,
     }),
-    [prefs, setFontSize, setReduceMotion, setCompact, reset],
+    [
+      prefs,
+      setColorTheme,
+      setFontSize,
+      setContentFont,
+      setReduceMotion,
+      setCompact,
+      reset,
+    ],
   );
 
   return (

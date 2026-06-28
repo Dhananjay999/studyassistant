@@ -5,6 +5,7 @@ import {
   Bookmark,
   Check,
   FileText,
+  FolderInput,
   FolderPlus,
   Layers,
   ListChecks,
@@ -20,6 +21,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { SwipeableRow } from "@/components/common/SwipeableRow";
+import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { FolderPickerSheet } from "@/components/bookmarks/FolderPickerSheet";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useLongPress } from "@/hooks/useLongPress";
 import {
   Select,
   SelectContent,
@@ -31,8 +37,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Seo } from "@/components/common/Seo";
@@ -81,6 +85,8 @@ export default function BookmarksPage() {
   const removeBookmark = useDeleteBookmark();
   const updateBookmark = useUpdateBookmark();
 
+  const isMobile = useIsMobile();
+
   const [activeCollection, setActiveCollection] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<BookmarkType | "all">("all");
@@ -91,19 +97,73 @@ export default function BookmarksPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
-  const [deletingBookmarkId, setDeletingBookmarkId] = useState<string | null>(
-    null,
-  );
 
-  const removeBookmarkById = async (id: string) => {
-    setDeletingBookmarkId(id);
+  // Multi-select (entered via long-press or the Select toggle).
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Pending move (folder picker) / delete (confirm) for one or many bookmarks.
+  const [moveState, setMoveState] = useState<{
+    ids: string[];
+    currentId?: string | null;
+  } | null>(null);
+  const [confirmIds, setConfirmIds] = useState<string[] | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const enterSelect = (id: string) => {
+    setSelectMode(true);
+    setSelectedIds(new Set([id]));
+  };
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const exitSelect = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const confirmDelete = async () => {
+    if (!confirmIds) return;
+    const ids = confirmIds;
+    setBulkBusy(true);
     try {
-      await removeBookmark.mutateAsync(id);
-      toast.success("Removed from bookmarks");
+      await Promise.all(ids.map((id) => removeBookmark.mutateAsync(id)));
+      toast.success(
+        ids.length === 1
+          ? "Removed from bookmarks"
+          : `Removed ${ids.length} bookmarks`,
+      );
+      setConfirmIds(null);
+      exitSelect();
     } catch {
-      toast.error("Couldn't remove bookmark");
+      toast.error("Couldn't remove bookmarks");
     } finally {
-      setDeletingBookmarkId(null);
+      setBulkBusy(false);
+    }
+  };
+
+  const applyMove = async (collectionId: string | null) => {
+    if (!moveState) return;
+    const ids = moveState.ids;
+    setBulkBusy(true);
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          updateBookmark.mutateAsync({ id, collection_id: collectionId }),
+        ),
+      );
+      toast.success(ids.length === 1 ? "Moved" : `Moved ${ids.length} bookmarks`);
+      setMoveState(null);
+      exitSelect();
+    } catch {
+      toast.error("Couldn't move bookmarks");
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -292,6 +352,16 @@ export default function BookmarksPage() {
                   <SelectItem value="name">Name</SelectItem>
                 </SelectContent>
               </Select>
+              {filtered.length > 0 && (
+                <Button
+                  variant={selectMode ? "default" : "outline"}
+                  className="gap-2 sm:w-auto"
+                  onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+                >
+                  <ListChecks className="h-4 w-4" />
+                  {selectMode ? "Done" : "Select"}
+                </Button>
+              )}
             </div>
 
             <div className="mb-4 flex flex-wrap gap-1.5">
@@ -317,23 +387,131 @@ export default function BookmarksPage() {
                     key={b.id}
                     bookmark={b}
                     folderName={collectionName(b.collection_id)}
-                    collections={collections}
+                    swipeEnabled={isMobile}
+                    selectMode={selectMode}
+                    selected={selectedIds.has(b.id)}
+                    onToggleSelect={() => toggleSelect(b.id)}
+                    onEnterSelect={() => enterSelect(b.id)}
                     onOpen={() =>
                       navigate("/chat", { state: { previewBookmark: b } })
                     }
-                    onMove={(collectionId) =>
-                      updateBookmark.mutate({ id: b.id, collection_id: collectionId })
+                    onRequestMove={() =>
+                      setMoveState({ ids: [b.id], currentId: b.collection_id })
                     }
-                    removing={deletingBookmarkId === b.id}
-                    onRemove={() => removeBookmarkById(b.id)}
+                    onRequestRemove={() => setConfirmIds([b.id])}
                   />
                 ))}
               </div>
             )}
           </main>
         </div>
+
+        {selectMode && (
+          <SelectionBar
+            count={selectedIds.size}
+            total={filtered.length}
+            onSelectAll={() =>
+              setSelectedIds(new Set(filtered.map((b) => b.id)))
+            }
+            onMove={() =>
+              selectedIds.size > 0 &&
+              setMoveState({ ids: [...selectedIds] })
+            }
+            onDelete={() =>
+              selectedIds.size > 0 && setConfirmIds([...selectedIds])
+            }
+            onCancel={exitSelect}
+          />
+        )}
+
+        <FolderPickerSheet
+          open={moveState !== null}
+          onOpenChange={(o) => !o && setMoveState(null)}
+          collections={collections}
+          currentId={moveState?.currentId}
+          count={moveState?.ids.length ?? 1}
+          busy={bulkBusy}
+          onPick={applyMove}
+        />
+
+        <ConfirmModal
+          open={confirmIds !== null}
+          onOpenChange={(o) => !o && setConfirmIds(null)}
+          title={
+            (confirmIds?.length ?? 0) > 1
+              ? `Remove ${confirmIds?.length} bookmarks?`
+              : "Remove bookmark?"
+          }
+          description="This can't be undone."
+          confirmText="Remove"
+          destructive
+          loading={bulkBusy}
+          onConfirm={confirmDelete}
+        />
       </AppShell>
     </>
+  );
+}
+
+function SelectionBar({
+  count,
+  total,
+  onSelectAll,
+  onMove,
+  onDelete,
+  onCancel,
+}: {
+  count: number;
+  total: number;
+  onSelectAll: () => void;
+  onMove: () => void;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-border/60 bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="mx-auto flex max-w-3xl items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onCancel}
+          aria-label="Cancel selection"
+        >
+          <X className="h-5 w-5" />
+        </Button>
+        <span className="text-sm font-medium">{count} selected</span>
+        {count < total && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            onClick={onSelectAll}
+          >
+            Select all
+          </Button>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={count === 0}
+            onClick={onMove}
+          >
+            <FolderInput className="h-4 w-4" /> Move
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="gap-1.5"
+            disabled={count === 0}
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4" /> Delete
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -408,24 +586,51 @@ function FolderRow({
 function BookmarkCard({
   bookmark,
   folderName,
-  collections,
-  removing = false,
+  swipeEnabled,
+  selectMode,
+  selected,
+  onToggleSelect,
+  onEnterSelect,
   onOpen,
-  onMove,
-  onRemove,
+  onRequestMove,
+  onRequestRemove,
 }: {
   bookmark: BookmarkT;
   folderName: string;
-  collections: Array<{ id: string; name: string }>;
-  removing?: boolean;
+  swipeEnabled: boolean;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onEnterSelect: () => void;
   onOpen: () => void;
-  onMove: (collectionId: string) => void;
-  onRemove: () => void;
+  onRequestMove: () => void;
+  onRequestRemove: () => void;
 }) {
   const meta = TYPE_META[bookmark.item_type];
   const Icon = meta.icon;
-  return (
-    <div className="flex flex-col rounded-2xl border border-border/60 bg-card/50 p-4 transition-colors hover:border-brand-1/40">
+
+  // Long-press enters multi-select; a plain tap opens (or toggles in select
+  // mode). Movement cancels the press so it never fires mid-scroll/-swipe.
+  const press = useLongPress({
+    onLongPress: () => {
+      if (!selectMode) onEnterSelect();
+    },
+    onTap: () => {
+      if (selectMode) onToggleSelect();
+    },
+  });
+
+  const card = (
+    <div
+      {...press}
+      className={cn(
+        "flex h-full flex-col rounded-2xl border bg-card/50 p-4 transition-colors",
+        selected
+          ? "border-brand-1 ring-1 ring-brand-1"
+          : "border-border/60 hover:border-brand-1/40",
+        selectMode && "cursor-pointer select-none",
+      )}
+    >
       <div className="mb-2 flex items-center gap-2">
         <Badge variant="secondary" className="gap-1 text-[10px]">
           <Icon className="h-3 w-3" /> {meta.label}
@@ -433,59 +638,93 @@ function BookmarkCard({
         <span className="ml-auto text-[10px] text-muted-foreground">
           {new Date(bookmark.created_at).toLocaleDateString()}
         </span>
-      </div>
-      <button type="button" onClick={onOpen} className="text-left">
-        <h3 className="line-clamp-2 text-sm font-semibold hover:underline">
-          {bookmark.title || "Untitled"}
-        </h3>
-        {bookmark.content && (
-          <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">
-            {bookmark.content}
-          </p>
+        {selectMode && (
+          <span
+            className={cn(
+              "grid h-5 w-5 place-items-center rounded-full border transition-colors",
+              selected
+                ? "border-brand-1 bg-brand-1 text-white"
+                : "border-muted-foreground/40",
+            )}
+            aria-hidden
+          >
+            {selected && <Check className="h-3.5 w-3.5" />}
+          </span>
         )}
-      </button>
-      <div className="mt-3 flex items-center gap-1 border-t border-border/40 pt-2">
+      </div>
+
+      {selectMode ? (
+        <div className="text-left">
+          <h3 className="line-clamp-2 text-sm font-semibold">
+            {bookmark.title || "Untitled"}
+          </h3>
+          {bookmark.content && (
+            <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">
+              {bookmark.content}
+            </p>
+          )}
+        </div>
+      ) : (
+        <button type="button" onClick={onOpen} className="text-left">
+          <h3 className="line-clamp-2 text-sm font-semibold hover:underline">
+            {bookmark.title || "Untitled"}
+          </h3>
+          {bookmark.content && (
+            <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">
+              {bookmark.content}
+            </p>
+          )}
+        </button>
+      )}
+
+      <div className="mt-auto flex items-center gap-1 border-t border-border/40 pt-3">
         <Badge variant="outline" className="text-[10px]">
           {folderName}
         </Badge>
-        <div className="ml-auto flex items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-              >
-                Move
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Move to folder</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {collections.map((c) => (
-                <DropdownMenuItem key={c.id} onClick={() => onMove(c.id)}>
-                  {c.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-            onClick={onRemove}
-            disabled={removing}
-            aria-label="Remove bookmark"
-          >
-            {removing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
+        {!selectMode && (
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs"
+              onClick={onRequestMove}
+            >
+              <FolderInput className="h-3.5 w-3.5" /> Move
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={onRequestRemove}
+              aria-label="Remove bookmark"
+            >
               <Trash2 className="h-3.5 w-3.5" />
-            )}
-          </Button>
-        </div>
+            </Button>
+          </div>
+        )}
       </div>
     </div>
+  );
+
+  return (
+    <SwipeableRow
+      disabled={!swipeEnabled || selectMode}
+      className="h-full rounded-2xl"
+      leading={{
+        icon: <FolderInput className="h-5 w-5" />,
+        label: "Move",
+        onAction: onRequestMove,
+        className: "bg-brand-1",
+      }}
+      trailing={{
+        icon: <Trash2 className="h-5 w-5" />,
+        label: "Delete",
+        onAction: onRequestRemove,
+        className: "bg-destructive",
+      }}
+    >
+      {card}
+    </SwipeableRow>
   );
 }
 

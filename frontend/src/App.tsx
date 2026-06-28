@@ -25,6 +25,10 @@ const QuizzesPage = lazy(() => import("@/pages/QuizzesPage"));
 const FlashcardsPage = lazy(() => import("@/pages/FlashcardsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
+// Hidden Super Admin panel. The path is an unguessable secret AND the panel
+// has its own server-verified auth — the URL is never trusted on its own.
+const AdminApp = lazy(() => import("@/pages/admin/AdminApp"));
+const ADMIN_ROUTE = "/admin/0670246c/no-access/b7bb2c4485f1/82cacc27d7";
 
 function RouteFallback() {
   return <AppLoader />;
@@ -110,6 +114,7 @@ export default function App() {
                         </ProtectedRoute>
                       }
                     />
+                    <Route path={ADMIN_ROUTE} element={<AdminApp />} />
                     <Route path="*" element={<NotFound />} />
                       </Routes>
                     </Suspense>

@@ -117,7 +117,7 @@ export function ChatMessages({
                       if (el) contentRefs.current.set(msg.id, el);
                       else contentRefs.current.delete(msg.id);
                     }}
-                    className="prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-pre:my-2"
+                    className="learning-content prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-pre:my-2"
                   >
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                     {msg.streaming && (

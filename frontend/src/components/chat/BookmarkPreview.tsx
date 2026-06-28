@@ -49,7 +49,7 @@ export function BookmarkPreview({
               {bookmark.title}
             </p>
           )}
-          <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-2">
+          <div className="learning-content prose prose-sm max-w-none dark:prose-invert prose-p:my-2">
             <ReactMarkdown>
               {bookmark.content || "_No content saved._"}
             </ReactMarkdown>

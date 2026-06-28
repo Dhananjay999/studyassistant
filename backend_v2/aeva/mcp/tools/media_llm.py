@@ -80,7 +80,9 @@ class MediaLLMTool(BaseTool):
         prompt = prompts.MEDIA_PROMPT.format(query=query)
         answer = self.llm.generate(
             prompt,
-            system_prompt=prompts.personalize(None, ctx.personalization),
+            system_prompt=prompts.personalize(
+                prompts.SYSTEM_PROMPT, ctx.personalization
+            ),
             attachments=attachments,
             history=ctx.history,
         )
@@ -112,7 +114,9 @@ class MediaLLMTool(BaseTool):
         answer = ""
         for chunk in llm.generate_stream(
             prompt,
-            system_prompt=prompts.personalize(None, ctx.personalization),
+            system_prompt=prompts.personalize(
+                prompts.SYSTEM_PROMPT, ctx.personalization
+            ),
             attachments=attachments,
             history=ctx.history,
         ):

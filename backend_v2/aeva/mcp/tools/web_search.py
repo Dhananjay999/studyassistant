@@ -47,7 +47,9 @@ class WebSearchTool(BaseTool):
         prompt = prompts.WEB_SEARCH_PROMPT.format(query=query)
         answer = self.llm.generate(
             prompt,
-            system_prompt=prompts.personalize(None, ctx.personalization),
+            system_prompt=prompts.personalize(
+                prompts.SYSTEM_PROMPT, ctx.personalization
+            ),
             use_search=True,
             history=ctx.history,
         )
@@ -72,7 +74,9 @@ class WebSearchTool(BaseTool):
         answer = ""
         for chunk in llm.generate_stream(
             prompt,
-            system_prompt=prompts.personalize(None, ctx.personalization),
+            system_prompt=prompts.personalize(
+                prompts.SYSTEM_PROMPT, ctx.personalization
+            ),
             use_search=True,
             history=ctx.history,
         ):

@@ -289,7 +289,7 @@ export function FlashcardViewer({
                     transition={{ duration: 0.5 }}
                   >
                     <div className="absolute inset-0 grid place-items-center rounded-2xl border border-border/60 bg-card p-6 text-center [backface-visibility:hidden]">
-                      <div>
+                      <div className="learning-content">
                         <Badge variant="secondary" className="mb-3">
                           Question
                         </Badge>
@@ -300,7 +300,7 @@ export function FlashcardViewer({
                       </div>
                     </div>
                     <div className="absolute inset-0 grid place-items-center overflow-auto rounded-2xl border border-brand-1/30 bg-card p-6 text-center [backface-visibility:hidden] [transform:rotateY(180deg)]">
-                      <div>
+                      <div className="learning-content">
                         <Badge className="mb-3 bg-brand-gradient text-white">
                           Answer
                         </Badge>

@@ -46,6 +46,7 @@ import { OnboardingFlow } from "@/components/learning/OnboardingFlow";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import { useSwipe } from "@/hooks/useSwipe";
 import type { ThinkingHint } from "@/lib/loadingMessages";
 import {
   qk,
@@ -105,6 +106,13 @@ export default function ChatPage() {
   const [thinkingHint, setThinkingHint] = useState<ThinkingHint | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
+
+  // Touch navigation: swipe right opens the nav drawer, swipe left opens the
+  // files sheet. Touch-only, so desktop pointer use is unaffected.
+  const chatSwipe = useSwipe({
+    onSwipeRight: () => setSidebarOpen(true),
+    onSwipeLeft: () => setMediaOpen(true),
+  });
 
   const [activeQuiz, setActiveQuiz] = useState<QuizContent | null>(null);
   const [quizOpen, setQuizOpen] = useState(false);
@@ -667,7 +675,7 @@ export default function ChatPage() {
 
           {/* Chat column */}
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden pb-bottomnav lg:pb-0">
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto" {...chatSwipe}>
               {preview ? (
                 <BookmarkPreview
                   bookmark={preview}
@@ -769,6 +777,8 @@ export default function ChatPage() {
               onQuizCommand={openQuizSetup}
               disabled={streaming}
               uploading={uploads.some((u) => u.status === "uploading")}
+              selectedCount={selected.size}
+              onOpenFiles={() => setMediaOpen(true)}
             />
           </main>
 

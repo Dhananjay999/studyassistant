@@ -9,6 +9,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_smorest import Api
 
+from aeva.admin.admin_controller import blueprint as admin_bp
 from aeva.assistant.assistant_controller import blueprint as assistant_bp
 from aeva.auth.auth_controller import blueprint as auth_bp
 from aeva.bookmark.bookmark_controller import blueprint as bookmark_bp
@@ -99,6 +100,13 @@ def load_env_vars(app: Flask) -> None:
         os.environ.get("COOKIE_SECURE", "false").lower() == "true"
     )
 
+    # Super Admin panel (optional). When any of these is unset the admin
+    # panel stays disabled and its auth fails closed — existing deployments
+    # are unaffected. Never hardcode these; they live only in the env.
+    app.config["ADMIN_USERNAME"] = os.environ.get("ADMIN_USERNAME", "")
+    app.config["ADMIN_PASSWORD"] = os.environ.get("ADMIN_PASSWORD", "")
+    app.config["ADMIN_JWT_SECRET"] = os.environ.get("ADMIN_JWT_SECRET", "")
+
     required = [
         "SUPABASE_URL",
         "SUPABASE_SERVICE_ROLE_KEY",
@@ -155,6 +163,7 @@ def create_app() -> Flask:
     api.register_blueprint(search_bp)
     api.register_blueprint(flashcard_bp)
     api.register_blueprint(learning_profile_bp)
+    api.register_blueprint(admin_bp)
 
     @app.errorhandler(CustomError)
     def handle_custom_error(error: CustomError) -> tuple[Any, int]:

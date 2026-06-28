@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useSubmitQuiz } from "@/hooks/api";
+import { useSwipe } from "@/hooks/useSwipe";
 import { cn } from "@/lib/utils";
 import type { QuizContent, QuizSubmitResult } from "@/types";
 
@@ -36,6 +37,13 @@ export function QuizRunner({
   const total = questions.length;
   const q = questions[idx];
   const answered = Object.values(answers).filter((a) => a.length).length;
+
+  // Touch: swipe left → next question, swipe right → previous. Mirrors the
+  // arrow-key navigation and the on-screen Prev/Next buttons.
+  const swipe = useSwipe({
+    onSwipeLeft: () => setIdx((i) => Math.min(total - 1, i + 1)),
+    onSwipeRight: () => setIdx((i) => Math.max(0, i - 1)),
+  });
 
   // Start the timer when the runner mounts (i.e. a new attempt begins).
   useEffect(() => {
@@ -104,9 +112,9 @@ export function QuizRunner({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-5 py-6">
+      <div className="flex-1 overflow-y-auto px-5 py-6" {...swipe}>
         {q ? (
-          <div className="mx-auto max-w-2xl space-y-5">
+          <div className="learning-content mx-auto max-w-2xl space-y-5">
             <p className="text-base font-medium leading-relaxed sm:text-lg">
               {q.prompt}
             </p>

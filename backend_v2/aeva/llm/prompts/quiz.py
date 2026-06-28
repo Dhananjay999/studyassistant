@@ -6,34 +6,53 @@ provider must return JSON matching these shapes so the response structure
 stays stable across models/vendors.
 """
 
-QUIZ_GENERATION_PROMPT = """Create a study quiz for a student.
+QUIZ_GENERATION_PROMPT = """Create a study quiz as Aeva.
 
 Topic: {topic}
 Number of questions: {count}
 Difficulty: {difficulty}
 Question types to include: {types}
-Student context: {context}
+Recent context: {context}
 
-Source of truth (in priority order):
-- If study material (PDF/image) is attached, base the quiz on that material.
-- Otherwise use the topic above. If the topic is vague or generic (e.g. just
-  "make a quiz"), infer the actual subject from the recent conversation.
+SOURCE OF TRUTH (priority order)
+1. If study material (PDF/image) is attached, base EVERY question on that
+   material.
+2. Otherwise use the Topic above.
+3. If the Topic is vague or generic (e.g. just "make a quiz"), infer the
+   real subject from the recent context — do not invent an unrelated one.
 
-Question types — STRICT:
-- Use ONLY these question types: {types}. Do not use any other type.
-- If only one type is listed, EVERY question must be exactly that type.
-- If multiple types are listed, mix only among those types.
+QUESTION TYPES — STRICT
+- Use ONLY these types: {types}. Never use a type that is not listed.
+- One type listed -> every question is exactly that type.
+- Several listed -> mix only among them.
+- single_select: exactly one correct option.
+- multi_select: two or more correct options (never exactly one).
+- true_false: options are exactly ["True", "False"], one correct.
+- Every entry in correct_answers must match an option value verbatim.
 
-Requirements:
-- For single_select, exactly one correct answer in correct_answers.
-- For multi_select, two or more correct answers in correct_answers.
-- For true_false, options must be ["True", "False"] with one correct answer.
-- Use option values that match correct_answers entries.
-- Write clear, student-friendly questions.
-- Include a brief explanation per question.
+DIFFICULTY
+- easy: recall and definitions.
+- medium: apply a concept to a clear example.
+- hard: multi-step reasoning, edge cases, or comparing ideas.
+Calibrate to the student's level from context; do not make "easy" trivial or
+"hard" unfair.
+
+WRITE GOOD QUESTIONS
+- Test understanding, not trick wording. One idea per question.
+- Make every option plausible; distractors should reflect real
+  misconceptions, not obvious throwaways.
+- Avoid "all of the above"/"none of the above", giveaways, and answers
+  inferable from the phrasing alone.
+- Add a brief explanation per question that teaches WHY the answer is right.
+
+Good question: "Which ACID property guarantees a transaction completes fully
+or not at all?" options Atomicity / Consistency / Isolation / Durability.
+Bad question: "Atomicity means all-or-nothing. True or False?" — the stem
+gives the answer away.
 """
 
-QUIZ_FEEDBACK_PROMPT = """A student completed a quiz. Provide helpful learning feedback.
+QUIZ_FEEDBACK_PROMPT = """A student completed a quiz. Give learning feedback
+as Aeva.
 
 Quiz:
 {quiz}
@@ -41,14 +60,17 @@ Quiz:
 Student answers:
 {answers}
 
-Evaluation (backend scored):
+Evaluation (backend scored — this is the source of truth for correctness):
 {evaluation}
 
-Provide encouraging feedback, explain mistakes, identify weak topics,
-and suggest study recommendations.
+Trust the evaluation for what is right or wrong; do not re-grade. Write
+encouraging, specific feedback: explain each mistake, name the weak topics
+behind them, and suggest concrete study recommendations. Reference the actual
+questions; keep each item short.
 """
 
-QUIZ_ANALYSIS_PROMPT = """A student finished a quiz. Analyze their performance.
+QUIZ_ANALYSIS_PROMPT = """A student finished a quiz. Analyse their
+performance as Aeva.
 
 Quiz (with correct answers and explanations):
 {quiz}
@@ -56,17 +78,21 @@ Quiz (with correct answers and explanations):
 Student answers:
 {answers}
 
-Evaluation (backend scored, includes per-question correctness):
+Evaluation (backend scored — source of truth, includes per-question
+correctness):
 {evaluation}
 
-Write an encouraging, specific performance analysis:
+Trust the evaluation for correctness; do not re-score. Write an encouraging,
+specific analysis grounded in the actual questions:
 - strengths: concepts the student clearly understands (what they got right).
 - weaknesses: concepts they struggled with (cite the questions they missed).
-- common_mistakes: recurring error patterns you notice across wrong answers.
-- revise_topics: concrete topics/subtopics to revise next, most important first.
+- common_mistakes: recurring error patterns across the wrong answers.
+- revise_topics: concrete topics/subtopics to revise next, most important
+  first.
 - study_plan: an ordered, actionable step-by-step plan to close the gaps.
 
-Be concrete and reference the actual questions. Keep each item short.
+Keep each item short and concrete. If the student got everything right, say
+so and suggest a harder next step instead of inventing weaknesses.
 """
 
 # Structured output for quiz generation.

@@ -152,16 +152,152 @@
     scroll-behavior: auto !important;
   }
 
-  /* App font-size preference (Appearance settings). Scales the rem base so the
-     whole UI grows/shrinks proportionally. Medium (100%) is the default. */
+  /* Learning-content typography (Appearance settings). These affect ONLY
+     `.learning-content` (AI responses, quizzes, flashcards, summaries, notes)
+     — never navigation or UI chrome. */
   html[data-font-size="small"] {
-    font-size: 93.75%; /* 15px */
+    --content-font-size: 0.9375rem; /* 15px */
   }
   html[data-font-size="medium"] {
-    font-size: 100%; /* 16px */
+    --content-font-size: 1rem; /* 16px */
   }
   html[data-font-size="large"] {
-    font-size: 112.5%; /* 18px */
+    --content-font-size: 1.125rem; /* 18px */
+  }
+
+  html[data-content-font="inter"] {
+    --content-font: "Inter Variable", Inter, system-ui, sans-serif;
+  }
+  html[data-content-font="poppins"] {
+    --content-font: Poppins, system-ui, sans-serif;
+  }
+  html[data-content-font="nunito"] {
+    --content-font: Nunito, system-ui, sans-serif;
+  }
+  html[data-content-font="source-sans"] {
+    --content-font: "Source Sans 3", system-ui, sans-serif;
+  }
+  html[data-content-font="roboto"] {
+    --content-font: Roboto, system-ui, sans-serif;
+  }
+
+  /* Apply the content typography. The doubled class out-specifies Tailwind's
+     `prose-sm` font-size (a single utility class) without !important. */
+  .learning-content {
+    font-family: var(--content-font, inherit);
+  }
+  .learning-content.learning-content {
+    font-size: var(--content-font-size, 1rem);
+  }
+
+  /* ----------------------------------------------------------------------
+     Color themes. Orthogonal to light/dark: each overrides only the accent
+     tokens (primary, ring, sidebar accent, brand ramp) for light and dark.
+     The default (purple) uses the base :root / .dark values, so no override.
+     -------------------------------------------------------------------- */
+  html[data-theme="ocean"] {
+    --primary: 208 90% 48%;
+    --ring: 208 90% 48%;
+    --sidebar-primary: 208 90% 48%;
+    --sidebar-ring: 208 90% 48%;
+    --brand-1: 208 90% 52%;
+    --brand-2: 224 84% 60%;
+    --brand-3: 192 92% 50%;
+    --brand-4: 174 84% 42%;
+  }
+  html[data-theme="ocean"].dark {
+    --primary: 206 92% 60%;
+    --ring: 206 92% 60%;
+    --sidebar-primary: 206 92% 60%;
+    --sidebar-ring: 206 92% 60%;
+    --brand-1: 206 92% 62%;
+    --brand-2: 224 88% 68%;
+    --brand-3: 192 94% 60%;
+    --brand-4: 174 84% 50%;
+  }
+
+  html[data-theme="emerald"] {
+    --primary: 160 84% 36%;
+    --ring: 160 84% 36%;
+    --sidebar-primary: 160 84% 36%;
+    --sidebar-ring: 160 84% 36%;
+    --brand-1: 160 84% 40%;
+    --brand-2: 174 80% 38%;
+    --brand-3: 192 84% 46%;
+    --brand-4: 140 70% 46%;
+  }
+  html[data-theme="emerald"].dark {
+    --primary: 158 78% 46%;
+    --ring: 158 78% 46%;
+    --sidebar-primary: 158 78% 46%;
+    --sidebar-ring: 158 78% 46%;
+    --brand-1: 158 78% 50%;
+    --brand-2: 174 76% 48%;
+    --brand-3: 192 84% 56%;
+    --brand-4: 140 70% 54%;
+  }
+
+  html[data-theme="sunset"] {
+    --primary: 22 90% 50%;
+    --ring: 22 90% 50%;
+    --sidebar-primary: 22 90% 50%;
+    --sidebar-ring: 22 90% 50%;
+    --brand-1: 22 90% 54%;
+    --brand-2: 8 84% 58%;
+    --brand-3: 38 94% 52%;
+    --brand-4: 350 80% 58%;
+  }
+  html[data-theme="sunset"].dark {
+    --primary: 24 92% 58%;
+    --ring: 24 92% 58%;
+    --sidebar-primary: 24 92% 58%;
+    --sidebar-ring: 24 92% 58%;
+    --brand-1: 24 92% 62%;
+    --brand-2: 8 86% 64%;
+    --brand-3: 38 94% 60%;
+    --brand-4: 350 82% 64%;
+  }
+
+  html[data-theme="gold"] {
+    --primary: 40 92% 40%;
+    --ring: 40 92% 40%;
+    --sidebar-primary: 40 92% 40%;
+    --sidebar-ring: 40 92% 40%;
+    --brand-1: 40 92% 46%;
+    --brand-2: 32 88% 48%;
+    --brand-3: 48 96% 50%;
+    --brand-4: 24 84% 50%;
+  }
+  html[data-theme="gold"].dark {
+    --primary: 43 90% 52%;
+    --ring: 43 90% 52%;
+    --sidebar-primary: 43 90% 52%;
+    --sidebar-ring: 43 90% 52%;
+    --brand-1: 43 92% 56%;
+    --brand-2: 32 90% 56%;
+    --brand-3: 48 96% 60%;
+    --brand-4: 24 86% 58%;
+  }
+
+  html[data-theme="rose"] {
+    --primary: 340 80% 50%;
+    --ring: 340 80% 50%;
+    --sidebar-primary: 340 80% 50%;
+    --sidebar-ring: 340 80% 50%;
+    --brand-1: 340 82% 56%;
+    --brand-2: 320 78% 56%;
+    --brand-3: 290 70% 58%;
+    --brand-4: 12 84% 60%;
+  }
+  html[data-theme="rose"].dark {
+    --primary: 340 84% 62%;
+    --ring: 340 84% 62%;
+    --sidebar-primary: 340 84% 62%;
+    --sidebar-ring: 340 84% 62%;
+    --brand-1: 340 86% 66%;
+    --brand-2: 320 80% 66%;
+    --brand-3: 290 72% 66%;
+    --brand-4: 12 86% 66%;
   }
 }
 

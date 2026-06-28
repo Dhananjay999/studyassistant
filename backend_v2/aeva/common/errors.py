@@ -54,6 +54,21 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
         "message": "Internal server error",
         "status": 500,
     },
+    "ADMIN_INVALID_CREDENTIALS": {
+        "code": "ADMIN_INVALID_CREDENTIALS",
+        "message": "Invalid admin credentials",
+        "status": 401,
+    },
+    "ADMIN_UNAUTHORIZED": {
+        "code": "ADMIN_UNAUTHORIZED",
+        "message": "Admin authentication required",
+        "status": 401,
+    },
+    "ADMIN_NOT_CONFIGURED": {
+        "code": "ADMIN_NOT_CONFIGURED",
+        "message": "Admin panel is not configured on this server",
+        "status": 503,
+    },
 }
 
 
