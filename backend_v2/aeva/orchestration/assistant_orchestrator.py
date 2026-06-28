@@ -2,13 +2,14 @@
 
 import json
 import logging
+import re
 from collections.abc import Generator
 from typing import Any
 
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
-from aeva.mcp.base import BaseTool, ToolContext
+from aeva.mcp.base import LEARNING_ACTIONS, BaseTool, ToolContext
 from aeva.mcp.registry import ToolRegistry
 from aeva.orchestration.models import (
     AssistantContext,
@@ -23,6 +24,21 @@ from aeva.orchestration.models import (
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
+
+# Exact greetings / acknowledgements that never warrant learning-action chips.
+_SMALLTALK = frozenset({
+    "hi", "hello", "hey", "hiya", "howdy", "yo",
+    "thanks", "thank you", "thx", "ok", "okay", "k", "kk", "cool", "nice",
+    "bye", "goodbye", "good morning", "good afternoon", "good evening",
+    "how are you", "what's up", "whats up", "sup",
+})
+
+# Demonstratives that stand in for a subject the request never names. Used only
+# to PRESERVE a clarification the planner already asked for — so over-matching
+# common words here cannot, on its own, trigger an unwanted clarification.
+_REFERENCE_RE = re.compile(
+    r"\b(this|that|these|those|the above|the following)\b",
+)
 
 
 class AssistantOrchestrator:
@@ -60,7 +76,9 @@ class AssistantOrchestrator:
 
     def run(self, ctx: AssistantContext) -> AssistantResult:
         """Execute one assistant turn (non-streaming)."""
-        session, history, enriched_message, plan = self._setup_and_plan(ctx)
+        session, history, enriched_message, plan, personalization = (
+            self._setup_and_plan(ctx)
+        )
 
         # Quiz requested but not yet configured -> ask the client to open the
         # setup popover instead of generating with defaults.
@@ -73,10 +91,12 @@ class AssistantOrchestrator:
             return self._handle_clarification(ctx, plan, enriched_message)
 
         tool_name, tool_params = self._resolve_tool(plan)
-        tool_ctx = self._build_tool_ctx(ctx, enriched_message, history)
+        tool_ctx = self._build_tool_ctx(
+            ctx, enriched_message, history, personalization
+        )
 
         result = self.registry.execute(tool_name, tool_ctx, tool_params)
-        self._attach_actions(tool_name, result)
+        self._attach_actions(tool_name, result, plan)
         display_text = self._format_display(tool_name, result)
         msg = self._persist_answer(
             ctx, session, tool_name, result, display_text
@@ -94,7 +114,9 @@ class AssistantOrchestrator:
         self, ctx: AssistantContext
     ) -> Generator[str, None, None]:
         """Execute one assistant turn, streaming the answer as SSE frames."""
-        session, history, enriched_message, plan = self._setup_and_plan(ctx)
+        session, history, enriched_message, plan, personalization = (
+            self._setup_and_plan(ctx)
+        )
 
         # Quiz requested but not yet configured -> open the setup popover.
         if ctx.quiz_options is None and self._is_quiz_intent(
@@ -109,7 +131,9 @@ class AssistantOrchestrator:
             return
 
         tool_name, tool_params = self._resolve_tool(plan)
-        tool_ctx = self._build_tool_ctx(ctx, enriched_message, history)
+        tool_ctx = self._build_tool_ctx(
+            ctx, enriched_message, history, personalization
+        )
         tool = self.registry.get(tool_name)
 
         full_text = ""
@@ -132,7 +156,7 @@ class AssistantOrchestrator:
             yield LLMClient.format_sse_chunk(display_text)
 
         # Static, no-LLM tags ride only this final frame.
-        self._attach_actions(tool_name, result, tool)
+        self._attach_actions(tool_name, result, plan, tool)
         self._persist_answer(ctx, session, tool_name, result, display_text)
         yield LLMClient.format_sse_chunk(
             "",
@@ -142,12 +166,23 @@ class AssistantOrchestrator:
 
     def _setup_and_plan(
         self, ctx: AssistantContext
-    ) -> tuple[dict[str, Any], list[dict[str, str]], str, dict[str, Any]]:
-        """Shared prep for both run paths: load, record, and plan the turn."""
+    ) -> tuple[
+        dict[str, Any], list[dict[str, str]], str, dict[str, Any], str
+    ]:
+        """Shared prep for both run paths: load, record, and plan the turn.
+
+        Returns ``(session, history, enriched_message, plan, personalization)``.
+        The personalization block is built once here from the user's profile and
+        reused for both planning (so clarifications honour the language) and the
+        tool execution.
+        """
         session = self.supabase.get_session(ctx.session_id, ctx.user_id)
         if not session:
             raise CustomError(ERROR_CODES["NOT_FOUND"])
 
+        personalization = prompts.build_personalization_block(
+            self.supabase.get_profile(ctx.user_id)
+        )
         history = self._get_history(ctx.session_id)
         enriched_message = ctx.message
 
@@ -179,51 +214,80 @@ class AssistantOrchestrator:
 
         self.supabase.add_message(ctx.session_id, "user", ctx.message)
 
-        # A resolved "which file?" answer runs media_llm on the chosen file(s).
+        # Deterministic plans (resolved file choice, popover-driven quiz/flash)
+        # skip LLM planning entirely.
+        forced = self._forced_plan(ctx, media_choice_ids)
+        if forced is not None:
+            return session, history, enriched_message, forced, personalization
+
+        # Several files selected + a vague request -> ask which file to use.
+        if not ctx.clarification and ctx.media_ids and len(ctx.media_ids) > 1:
+            decision = self._disambiguate_media(ctx, enriched_message)
+            if decision is not None:
+                return (
+                    session, history, enriched_message, decision,
+                    personalization,
+                )
+
+        plan = self._plan_turn(
+            ctx, history, enriched_message, ctx.clarification, personalization
+        )
+        plan = self._refine_plan(plan, ctx, enriched_message, history)
+        return session, history, enriched_message, plan, personalization
+
+    def _forced_plan(
+        self,
+        ctx: AssistantContext,
+        media_choice_ids: list[str] | None,
+    ) -> dict[str, Any] | None:
+        """Deterministic plan that bypasses the planner, or None to plan."""
         if media_choice_ids is not None:
-            plan = {
+            # A resolved "which file?" answer runs media_llm on the choice.
+            return {
                 "action": "run_tool",
                 "tool": {
                     "name": "media_llm",
                     "params": {"media_ids": media_choice_ids},
                 },
             }
-            return session, history, enriched_message, plan
-
-        # Create Flashcards action forces flashcard generation (no planning).
         if ctx.flashcard_options is not None:
-            plan = {
+            # Create Flashcards action forces flashcard generation.
+            return {
                 "action": "run_tool",
                 "tool": {
                     "name": "flashcard_generator",
                     "params": self._flashcard_params(ctx.flashcard_options),
                 },
             }
-            return session, history, enriched_message, plan
-
-        # Explicit quiz settings from the setup popover skip LLM planning.
         if ctx.quiz_options is not None:
-            plan = {
+            # Explicit quiz settings from the setup popover.
+            return {
                 "action": "run_tool",
                 "tool": {
                     "name": "quiz_generator",
                     "params": self._quiz_params_from_options(ctx.quiz_options),
                 },
             }
-            return session, history, enriched_message, plan
+        return None
 
-        # Several files selected + a vague request -> ask which file to use.
-        if not ctx.clarification and ctx.media_ids and len(ctx.media_ids) > 1:
-            decision = self._disambiguate_media(ctx, enriched_message)
-            if decision is not None:
-                return session, history, enriched_message, decision
+    def _refine_plan(
+        self,
+        plan: dict[str, Any],
+        ctx: AssistantContext,
+        enriched_message: str,
+        history: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        """Apply the over-clarification guard and the small-talk backstop.
 
-        plan = self._plan_turn(
-            ctx, history, enriched_message, ctx.clarification
-        )
-
+        A "clarify" plan is downgraded to a tool only when clarification is
+        genuinely unnecessary AND the message has no unresolved reference that
+        forces it. Small talk always drops to no learning actions.
+        """
         if (
             plan.get("action") == "clarify"
+            and not self._has_unresolved_reference(
+                enriched_message, ctx, history
+            )
             and self._clarification_unnecessary(
                 enriched_message, ctx, history
             )
@@ -234,7 +298,11 @@ class AssistantOrchestrator:
             )
             plan = self._fallback_tool_plan(ctx, enriched_message)
 
-        return session, history, enriched_message, plan
+        if plan.get("action") == "run_tool" and self._is_smalltalk(
+            enriched_message
+        ):
+            plan["available_actions"] = []
+        return plan
 
     @staticmethod
     def _resolve_tool(plan: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -246,20 +314,37 @@ class AssistantOrchestrator:
         self,
         tool_name: str,
         result: dict[str, Any],
+        plan: dict[str, Any],
         tool: BaseTool | None = None,
     ) -> None:
-        """Stamp the tool's response_type + available_actions onto the result.
+        """Stamp the response_type + available_actions onto the result.
 
-        These come from the tool's *static* properties — no extra LLM call —
-        and travel only in the final ``done`` SSE frame's ``content``. Each tool
-        owns its action set, so the UI is response-aware and new MCP tools can
-        expose new actions without any frontend change.
+        ``response_type`` is the tool's static category. The action set is the
+        tool's fixed set when it has one (a generated quiz always offers
+        ``OPEN_QUIZ``); otherwise it is the planner's per-response choice, which
+        is what keeps a greeting from offering the full learning toolkit. Both
+        travel only in the final ``done`` SSE frame's ``content``.
         """
         if not isinstance(result, dict):
             return
         tool = tool or self.registry.get(tool_name)
         result["response_type"] = tool.response_type
-        result["available_actions"] = tool.available_actions
+        result["available_actions"] = self._resolve_actions(tool, plan)
+
+    @staticmethod
+    def _resolve_actions(tool: BaseTool, plan: dict[str, Any]) -> list[str]:
+        """Pick the action set for a response: tool-fixed, planned, or default.
+
+        A non-empty ``tool.available_actions`` is intrinsic and wins. Otherwise
+        the planner's ``available_actions`` is honoured verbatim (including an
+        empty list for greetings). The default only applies when the planner was
+        skipped entirely (e.g. a resolved file-choice running media_llm).
+        """
+        if tool.available_actions:
+            return tool.available_actions
+        if "available_actions" in plan:
+            return list(plan["available_actions"])
+        return list(LEARNING_ACTIONS)
 
     def _selected_media(
         self, ctx: AssistantContext
@@ -365,8 +450,13 @@ class AssistantOrchestrator:
         ctx: AssistantContext,
         enriched_message: str,
         history: list[dict[str, str]],
+        personalization: str,
     ) -> ToolContext:
-        """Build the runtime context passed to a tool."""
+        """Build the runtime context passed to a tool.
+
+        ``personalization`` is the block already built in ``_setup_and_plan`` so
+        the user's profile is loaded once per turn.
+        """
         return ToolContext(
             user_id=ctx.user_id,
             session_id=ctx.session_id,
@@ -374,6 +464,7 @@ class AssistantOrchestrator:
             enriched_message=enriched_message,
             media_ids=ctx.media_ids,
             history=history,
+            personalization=personalization,
         )
 
     def _persist_answer(
@@ -504,8 +595,13 @@ class AssistantOrchestrator:
         history: list[dict[str, str]],
         enriched_message: str,
         clarification: object | None,
+        personalization: str = "",
     ) -> dict[str, Any]:
-        """Ask LLM to clarify or pick a tool."""
+        """Ask LLM to clarify or pick a tool.
+
+        The personalization block rides the planner's system prompt too, so any
+        clarification question it writes is phrased in the user's language.
+        """
         tools_desc = json.dumps(
             [
                 {
@@ -539,8 +635,32 @@ class AssistantOrchestrator:
             prompt,
             prompts.PLAN_TURN_SCHEMA,
             history=history,
-            system_prompt=prompts.SYSTEM_PROMPT,
+            system_prompt=prompts.personalize(
+                prompts.SYSTEM_PROMPT, personalization
+            ),
         )
+
+    @staticmethod
+    def _is_smalltalk(message: str) -> bool:
+        """Whether a message is a bare greeting/acknowledgement."""
+        return message.strip().lower().rstrip("!.?") in _SMALLTALK
+
+    @staticmethod
+    def _has_unresolved_reference(
+        message: str,
+        ctx: AssistantContext,
+        history: list[dict[str, str]],
+    ) -> bool:
+        """Report a demonstrative ("explain this") with nothing to resolve it.
+
+        True only when the message leans on "this/that/..." AND there is no
+        attached media, no prior conversation, and no grounding source content —
+        the subject genuinely cannot be recovered, so a clarification the model
+        asked for must stand rather than be suppressed.
+        """
+        if ctx.media_ids or history or ctx.source_content is not None:
+            return False
+        return bool(_REFERENCE_RE.search(message.lower()))
 
     @staticmethod
     def _clarification_unnecessary(
@@ -570,12 +690,7 @@ class AssistantOrchestrator:
         if is_quiz:
             return len(words) > 3 or bool(history)
 
-        greetings = {
-            "hi", "hello", "hey", "hiya", "howdy", "yo",
-            "thanks", "thank you", "thx", "ok", "okay", "bye",
-            "goodbye", "good morning", "good afternoon", "good evening",
-        }
-        if text in greetings:
+        if text in _SMALLTALK:
             return True
 
         # Short casual messages (e.g. "hi there", "how are you")

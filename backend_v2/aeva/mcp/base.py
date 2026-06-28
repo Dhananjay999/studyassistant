@@ -14,8 +14,12 @@ ACTION_DETAIL = "DETAIL"
 ACTION_SUMMARY = "SUMMARY"
 ACTION_STUDY_PLAN = "STUDY_PLAN"
 ACTION_ANALYZE = "ANALYZE"
+# Open the dedicated card a generator just produced.
+ACTION_OPEN_QUIZ = "OPEN_QUIZ"
+ACTION_OPEN_FLASHCARDS = "OPEN_FLASHCARDS"
 
-# The full learning toolkit, offered on normal study answers.
+# The full learning toolkit a substantive study answer can offer. The planner
+# narrows this per response — a greeting or clarification exposes none of it.
 LEARNING_ACTIONS = [
     ACTION_QUIZ,
     ACTION_FLASHCARDS,
@@ -25,6 +29,18 @@ LEARNING_ACTIONS = [
     ACTION_STUDY_PLAN,
     ACTION_ANALYZE,
 ]
+
+# Coarse response categories the client can branch rendering on. They are part
+# of the response contract: each tool (or the orchestrator) stamps exactly one.
+RESPONSE_NORMAL = "NORMAL"
+RESPONSE_CLARIFICATION = "CLARIFICATION"
+RESPONSE_SUMMARY = "SUMMARY"
+RESPONSE_QUIZ_CREATED = "QUIZ_CREATED"
+RESPONSE_FLASHCARD_CREATED = "FLASHCARD_CREATED"
+RESPONSE_WEB_SEARCH = "WEB_SEARCH"
+RESPONSE_FILE_ANALYSIS = "FILE_ANALYSIS"
+RESPONSE_ERROR = "ERROR"
+RESPONSE_NOT_RELEVANT = "NOT_RELEVANT"
 
 
 @dataclass
@@ -46,6 +62,9 @@ class ToolContext:
     enriched_message: str
     media_ids: list[str] | None
     history: list[dict[str, str]] = field(default_factory=list)
+    # Optional system-prompt fragment built from the user's learning profile;
+    # empty when the user has not completed onboarding.
+    personalization: str = ""
 
 
 class BaseTool(ABC):
@@ -62,18 +81,20 @@ class BaseTool(ABC):
 
     @property
     def available_actions(self) -> list[str]:
-        """Follow-up actions the client may offer for this tool's output.
+        """Fixed follow-up actions this tool's output always exposes.
 
-        Tools own their own action set so the UI stays response-aware and new
-        MCP tools can expose new actions without any frontend change. Defaults
-        to none (e.g. quiz/flashcard tools render their own dedicated card UI).
+        A non-empty list means the action set is intrinsic to the tool (e.g. a
+        generated quiz always offers ``OPEN_QUIZ``) and the orchestrator uses it
+        verbatim. The empty default means "defer to the planner", which decides
+        per response which learning actions are actually meaningful — so a
+        greeting answered by the same tool exposes no actions at all.
         """
         return []
 
     @property
     def response_type(self) -> str:
         """Coarse response category the client can branch rendering on."""
-        return "NORMAL"
+        return RESPONSE_NORMAL
 
     def can_stream(self) -> bool:
         """Whether this tool streams text token-by-token via execute_stream."""

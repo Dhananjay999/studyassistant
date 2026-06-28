@@ -1,334 +1,209 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { History, Loader2, Play } from "lucide-react";
 import {
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Layers,
-  Trophy,
-  XCircle,
-} from "lucide-react";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { BookmarkButton } from "@/components/BookmarkButton";
-import { useCreateSession, useSubmitQuiz } from "@/hooks/api";
+import { QuizRunner } from "@/components/quiz/QuizRunner";
+import { QuizAttemptReport } from "@/components/quiz/QuizAttemptReport";
+import { QuizAttemptsTab } from "@/components/quiz/QuizAttemptsTab";
+import { useQuizAttempt } from "@/hooks/api";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
-import type {
-  ChatSeed,
-  QuizContent,
-  QuizEvaluation,
-  QuizFeedback,
-} from "@/types";
+import type { QuizContent, QuizSubmitResult } from "@/types";
 
+type View = "menu" | "run" | "report";
+type Tab = "take" | "attempts";
+
+/** How the dashboard opens: a freshly-opened quiz jumps straight into taking
+ * ("run"); the library opens the dashboard on a chosen tab. */
+export type QuizInitialView = "run" | "take" | "attempts";
+
+/**
+ * Quiz dashboard. A reusable learning resource: take new attempts, browse the
+ * full attempt history, and open any attempt as a permanent report card.
+ * Desktop is a centered modal (~960px / 85vh); mobile is full-screen.
+ */
 export function QuizDrawer({
   quiz,
   open,
   onOpenChange,
+  initialView = "run",
 }: {
   quiz: QuizContent | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialView?: QuizInitialView;
 }) {
-  const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [result, setResult] = useState<{
-    evaluation: QuizEvaluation;
-    feedback: QuizFeedback;
-  } | null>(null);
-  const submitMutation = useSubmitQuiz();
+  const isMobile = useIsMobile();
+  const [view, setView] = useState<View>("menu");
+  const [tab, setTab] = useState<Tab>("take");
+  const [freshResult, setFreshResult] = useState<QuizSubmitResult | null>(null);
+  const [openAttemptId, setOpenAttemptId] = useState<string | null>(null);
 
-  // Reset whenever a different quiz is opened.
-  useEffect(() => {
-    setIdx(0);
-    setAnswers({});
-    setResult(null);
-  }, [quiz?.quiz_id]);
+  const quizId = quiz?.quiz_id ?? "";
 
-  // Arrow-key navigation between questions while taking the quiz.
+  // (Re)initialise the dashboard whenever a quiz is opened or the entry point
+  // changes. A freshly-opened quiz goes straight into a new attempt.
   useEffect(() => {
-    if (!open || result) return undefined;
-    const last = (quiz?.questions?.length ?? 0) - 1;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") setIdx((i) => Math.min(last, i + 1));
-      else if (e.key === "ArrowLeft") setIdx((i) => Math.max(0, i - 1));
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, result, quiz?.questions?.length]);
+    if (!open) return;
+    setFreshResult(null);
+    setOpenAttemptId(null);
+    if (initialView === "run") {
+      setView("run");
+      setTab("take");
+    } else {
+      setView("menu");
+      setTab(initialView);
+    }
+  }, [open, quiz?.quiz_id, initialView]);
+
+  // Historical attempt detail (only fetched while viewing a saved attempt).
+  const attemptQuery = useQuizAttempt(
+    quizId,
+    view === "report" && !freshResult ? openAttemptId : null,
+  );
+  const detail = attemptQuery.data;
 
   if (!quiz) return null;
-  const questions = quiz.questions ?? [];
-  const total = questions.length;
-  const q = questions[idx];
-  const answered = Object.values(answers).filter((a) => a.length).length;
 
-  const setSingle = (qid: string, v: string) => {
-    setAnswers((p) => ({ ...p, [qid]: [v] }));
-    // Single-select & true/false auto-advance after a short beat.
-    if (idx < total - 1) {
-      window.setTimeout(() => setIdx((i) => Math.min(total - 1, i + 1)), 500);
-    }
-  };
-  const toggleMulti = (qid: string, v: string) =>
-    setAnswers((p) => {
-      const cur = p[qid] || [];
-      return {
-        ...p,
-        [qid]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v],
-      };
-    });
-
-  const submit = async () => {
-    const res = await submitMutation.mutateAsync({
-      id: quiz.quiz_id,
-      answers,
-    });
-    setResult({ evaluation: res.evaluation, feedback: res.feedback });
+  const backToAttempts = () => {
+    setFreshResult(null);
+    setOpenAttemptId(null);
+    setView("menu");
+    setTab("attempts");
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
-      >
-        <div className="border-b border-border/50 px-5 py-4">
-          <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
-          {!result && total > 0 && (
-            <>
-              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span>
-                  Question {idx + 1} of {total}
-                </span>
-                <span>{answered} answered</span>
-              </div>
-              <Progress
-                value={((idx + 1) / total) * 100}
-                className="mt-2 h-1"
-              />
-            </>
-          )}
-        </div>
-
-        <ScrollArea className="flex-1">
-          <div className="px-5 py-5">
-            {result ? (
-              <QuizResults quiz={quiz} result={result} />
-            ) : q ? (
-              <div className="space-y-4">
-                <p className="text-base font-medium leading-relaxed">
-                  {q.prompt}
-                </p>
-                {q.type === "multi_select" ? (
-                  <div className="space-y-2">
-                    {q.options.map((opt) => (
-                      <label
-                        key={opt}
-                        className={cn(
-                          "flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition-colors",
-                          (answers[q.id] || []).includes(opt)
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:bg-muted/50",
-                        )}
-                      >
-                        <Checkbox
-                          checked={(answers[q.id] || []).includes(opt)}
-                          onCheckedChange={() => toggleMulti(q.id, opt)}
-                        />
-                        {opt}
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <RadioGroup
-                    value={answers[q.id]?.[0] || ""}
-                    onValueChange={(v) => setSingle(q.id, v)}
-                    className="space-y-2"
-                  >
-                    {q.options.map((opt) => (
-                      <Label
-                        key={opt}
-                        htmlFor={`${q.id}-${opt}`}
-                        className={cn(
-                          "flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm font-normal transition-colors",
-                          answers[q.id]?.[0] === opt
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:bg-muted/50",
-                        )}
-                      >
-                        <RadioGroupItem value={opt} id={`${q.id}-${opt}`} />
-                        {opt}
-                      </Label>
-                    ))}
-                  </RadioGroup>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </ScrollArea>
-
-        {!result && (
-          <div className="flex items-center justify-between gap-2 border-t border-border/50 px-5 py-4">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={idx === 0}
-              onClick={() => setIdx((i) => Math.max(0, i - 1))}
-              className="gap-1"
-            >
-              <ChevronLeft className="h-4 w-4" /> Prev
-            </Button>
-            {idx < total - 1 ? (
-              <Button
-                size="sm"
-                onClick={() => setIdx((i) => Math.min(total - 1, i + 1))}
-                className="gap-1"
-              >
-                Next <ChevronRight className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={submit}
-                disabled={submitMutation.isPending}
-              >
-                {submitMutation.isPending ? "Submitting…" : "Submit quiz"}
-              </Button>
-            )}
-          </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={cn(
+          "flex flex-col gap-0 overflow-hidden p-0",
+          isMobile
+            ? "h-dvh w-screen max-w-none rounded-none border-0"
+            : "h-[85vh] w-[min(960px,95vw)] max-w-none rounded-2xl",
         )}
-      </SheetContent>
-    </Sheet>
+      >
+        <DialogTitle className="sr-only">{quiz.title}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Take the quiz, review attempts, and track your progress.
+        </DialogDescription>
+
+        {view === "report" ? (
+          freshResult ? (
+            <QuizAttemptReport
+              quiz={quiz}
+              evaluation={freshResult.evaluation}
+              attemptId={freshResult.attempt_id}
+              onClose={() => onOpenChange(false)}
+              onBack={backToAttempts}
+            />
+          ) : detail ? (
+            <QuizAttemptReport
+              quiz={detail.quiz}
+              evaluation={detail.evaluation}
+              attemptId={detail.attempt_id}
+              attemptNumber={detail.attempt_number}
+              initialAnalysis={detail.ai_analysis}
+              onClose={() => onOpenChange(false)}
+              onBack={backToAttempts}
+            />
+          ) : (
+            <div className="grid flex-1 place-items-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )
+        ) : view === "run" ? (
+          <>
+            <header className="border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
+              <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
+            </header>
+            <QuizRunner
+              quiz={quiz}
+              onSubmitted={(res) => {
+                setFreshResult(res);
+                setView("report");
+              }}
+            />
+          </>
+        ) : (
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab(v as Tab)}
+            className="flex flex-1 flex-col overflow-hidden"
+          >
+            <header className="space-y-3 border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
+              <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
+              <TabsList className="grid w-full max-w-xs grid-cols-2">
+                <TabsTrigger value="take">Take Quiz</TabsTrigger>
+                <TabsTrigger value="attempts">Attempts</TabsTrigger>
+              </TabsList>
+            </header>
+
+            <div className="flex-1 overflow-y-auto px-5 py-6">
+              <TabsContent value="take" className="mt-0">
+                <TakePanel
+                  quiz={quiz}
+                  onStart={() => setView("run")}
+                  onViewAttempts={() => setTab("attempts")}
+                />
+              </TabsContent>
+              <TabsContent value="attempts" className="mt-0">
+                <QuizAttemptsTab
+                  quizId={quizId}
+                  onStartAttempt={() => setView("run")}
+                  onOpenAttempt={(attemptId) => {
+                    setFreshResult(null);
+                    setOpenAttemptId(attemptId);
+                    setView("report");
+                  }}
+                />
+              </TabsContent>
+            </div>
+          </Tabs>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function QuizResults({
+function TakePanel({
   quiz,
-  result,
+  onStart,
+  onViewAttempts,
 }: {
   quiz: QuizContent;
-  result: { evaluation: QuizEvaluation; feedback: QuizFeedback };
+  onStart: () => void;
+  onViewAttempts: () => void;
 }) {
-  const navigate = useNavigate();
-  const createSession = useCreateSession();
-  const questions = quiz.questions ?? [];
-
-  const makeFlashcards = async () => {
-    const content =
-      `${quiz.title}\n\n` +
-      questions.map((q) => q.prompt).join("\n") +
-      (result.feedback.weak_topics.length
-        ? `\n\nFocus areas: ${result.feedback.weak_topics.join(", ")}`
-        : "");
-    const seed: ChatSeed = {
-      mode: "flashcards",
-      content,
-      title: quiz.title,
-    };
-    const session = await createSession.mutateAsync({});
-    navigate(`/chat?sessionId=${session.id}`, { state: { seed } });
-  };
-
+  const count = quiz.questions?.length ?? 0;
   return (
-    <div className="space-y-5">
-      <div className="rounded-2xl bg-brand-gradient p-5 text-center text-white shadow-glow">
-        <Trophy className="mx-auto h-7 w-7" />
-        <p className="mt-2 font-display text-3xl font-extrabold">
-          {result.evaluation.score}%
-        </p>
-        <p className="text-sm opacity-90">
-          {result.evaluation.correct_count}/{result.evaluation.total} correct
-        </p>
+    <div className="mx-auto grid max-w-md place-items-center py-10 text-center">
+      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-gradient text-white shadow-glow">
+        <Play className="h-6 w-6" />
       </div>
-
-      <div className="space-y-2">
-        {result.evaluation.per_question.map((row, i) => {
-          const q = questions.find((x) => x.id === row.question_id);
-          return (
-            <div
-              key={row.question_id}
-              className={cn(
-                "rounded-xl border p-3 text-sm",
-                row.is_correct
-                  ? "border-emerald-500/30 bg-emerald-500/5"
-                  : "border-red-500/30 bg-red-500/5",
-              )}
-            >
-              <div className="flex items-start gap-2">
-                {row.is_correct ? (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                ) : (
-                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                )}
-                <div>
-                  <p className="font-medium">
-                    {i + 1}. {q?.prompt ?? row.question_id}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Your answer: {row.user_answer.join(", ") || "—"}
-                  </p>
-                  {!row.is_correct && (
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                      Correct: {row.correct_answer.join(", ")}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="space-y-2 rounded-xl border border-border/50 p-4 text-sm">
-        <p className="font-semibold">Feedback</p>
-        <p className="text-muted-foreground">{result.feedback.summary}</p>
-        {result.feedback.weak_topics.length > 0 && (
-          <p className="text-xs">
-            <span className="font-medium">Focus on: </span>
-            {result.feedback.weak_topics.join(", ")}
-          </p>
-        )}
-        {result.feedback.recommendations.length > 0 && (
-          <ul className="list-inside list-disc text-xs text-muted-foreground">
-            {result.feedback.recommendations.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Learning flow: turn the result into more study */}
-      <div className="space-y-2">
-        <p className="text-sm font-semibold">Keep learning</p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            onClick={makeFlashcards}
-            disabled={createSession.isPending}
-            className="flex-1 gap-1.5 bg-brand-gradient text-white"
-          >
-            <Layers className="h-4 w-4" /> Create Flashcards
-          </Button>
-          <BookmarkButton
-            label
-            item={{
-              item_type: "quiz",
-              item_ref: quiz.quiz_id,
-              title: quiz.title,
-              content: quiz.topic || quiz.title,
-              metadata: {
-                quiz_id: quiz.quiz_id,
-                score: result.evaluation.score,
-              },
-            }}
-          />
-        </div>
-      </div>
+      <h3 className="mt-4 font-display text-xl font-bold">Ready to start?</h3>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {count} question{count === 1 ? "" : "s"} · scored instantly. Every
+        attempt is saved so you can track your progress.
+      </p>
+      <Button
+        onClick={onStart}
+        className="mt-5 w-full gap-2 bg-brand-gradient text-white"
+      >
+        <Play className="h-4 w-4" /> Start New Attempt
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={onViewAttempts}
+        className="mt-2 gap-1.5 text-muted-foreground"
+      >
+        <History className="h-4 w-4" /> View past attempts
+      </Button>
     </div>
   );
 }

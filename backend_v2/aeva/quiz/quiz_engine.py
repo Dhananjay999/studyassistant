@@ -28,7 +28,7 @@ class QuizEngine:
         correct: list[str],
         user: list[str],
     ) -> bool:
-        """Check if user answer matches correct answer."""
+        """Check if user answer fully matches the correct answer."""
         if question_type == "multi_select":
             return {cls._normalize(a) for a in user} == {
                 cls._normalize(a) for a in correct
@@ -45,6 +45,20 @@ class QuizEngine:
         return cls._normalize(user[0]) == cls._normalize(correct[0])
 
     @classmethod
+    def _is_partial(
+        cls,
+        question_type: str,
+        correct: list[str],
+        user: list[str],
+    ) -> bool:
+        """Multi-select answer that overlaps the key but isn't exact."""
+        if question_type != "multi_select" or not user:
+            return False
+        chosen = {cls._normalize(a) for a in user}
+        key = {cls._normalize(a) for a in correct}
+        return chosen != key and bool(chosen & key)
+
+    @classmethod
     def evaluate(
         cls,
         questions: list[dict[str, Any]],
@@ -53,26 +67,44 @@ class QuizEngine:
         """Evaluate answers and return score + per-question breakdown."""
         per_question: list[dict[str, Any]] = []
         correct_count = 0
+        partial_count = 0
+        attempted_count = 0
 
         for q in questions:
             qid = q["id"]
             user = user_answers.get(qid, [])
             correct = q["correct_answers"]
+            attempted = bool(user)
             is_correct = cls._is_correct(q["type"], correct, user)
+            partial = (not is_correct) and cls._is_partial(
+                q["type"], correct, user
+            )
+            if attempted:
+                attempted_count += 1
             if is_correct:
                 correct_count += 1
+            elif partial:
+                partial_count += 1
             per_question.append({
                 "question_id": qid,
                 "is_correct": is_correct,
+                "partial": partial,
+                "attempted": attempted,
                 "user_answer": user,
                 "correct_answer": correct,
+                "explanation": q.get("explanation"),
             })
 
         total = len(questions)
         score = (correct_count / total * 100) if total else 0.0
+        incorrect_count = attempted_count - correct_count - partial_count
         return {
             "score": round(score, 1),
-            "correct_count": correct_count,
             "total": total,
+            "correct_count": correct_count,
+            "partial_count": partial_count,
+            "incorrect_count": max(incorrect_count, 0),
+            "attempted_count": attempted_count,
+            "unanswered_count": total - attempted_count,
             "per_question": per_question,
         }

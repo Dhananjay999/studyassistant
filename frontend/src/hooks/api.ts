@@ -4,7 +4,12 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import * as api from "@/lib/api";
-import type { CreateBookmarkInput, Session, StudyRating } from "@/types";
+import type {
+  CreateBookmarkInput,
+  LearningProfileInput,
+  Session,
+  StudyRating,
+} from "@/types";
 
 export const qk = {
   sessions: ["sessions"] as const,
@@ -12,9 +17,13 @@ export const qk = {
   bookmarks: ["bookmarks"] as const,
   collections: ["collections"] as const,
   quizzes: ["quizzes"] as const,
+  quizAttempts: (quizId: string) => ["quiz-attempts", quizId] as const,
+  quizAttempt: (quizId: string, attemptId: string) =>
+    ["quiz-attempts", quizId, attemptId] as const,
   flashcards: ["flashcards"] as const,
   flashcardSet: (id: string) => ["flashcards", id] as const,
   search: (q: string) => ["search", q] as const,
+  learningProfile: ["learning-profile"] as const,
 };
 
 /* -------------------------------- sessions -------------------------------- */
@@ -70,14 +79,55 @@ export function useDeleteMedia() {
 /* ---------------------------------- quiz ---------------------------------- */
 
 export function useSubmitQuiz() {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { id: string; answers: Record<string, string[]> }) =>
-      api.submitQuiz(v.id, v.answers),
+    mutationFn: (v: {
+      id: string;
+      answers: Record<string, string[]>;
+      timeTakenSeconds?: number;
+    }) => api.submitQuiz(v.id, v.answers, v.timeTakenSeconds),
+    // Refresh the quizzes list + this quiz's attempt history.
+    onSuccess: (_data, v) => {
+      qc.invalidateQueries({ queryKey: qk.quizzes });
+      qc.invalidateQueries({ queryKey: qk.quizAttempts(v.id) });
+    },
+  });
+}
+
+export function useAnalyzeQuiz() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; attemptId: string }) =>
+      api.analyzeQuiz(v.id, v.attemptId),
+    // Flip the attempt's "View AI Analysis" state across list + detail.
+    onSuccess: (_data, v) => {
+      qc.invalidateQueries({ queryKey: qk.quizAttempts(v.id) });
+      qc.invalidateQueries({ queryKey: qk.quizAttempt(v.id, v.attemptId) });
+    },
   });
 }
 
 export function useQuizzes() {
   return useQuery({ queryKey: qk.quizzes, queryFn: api.listQuizzes });
+}
+
+export function useQuizAttempts(quizId: string, enabled = true) {
+  return useQuery({
+    queryKey: qk.quizAttempts(quizId),
+    queryFn: () => api.listQuizAttempts(quizId),
+    enabled: enabled && Boolean(quizId),
+  });
+}
+
+export function useQuizAttempt(
+  quizId: string,
+  attemptId: string | null,
+) {
+  return useQuery({
+    queryKey: qk.quizAttempt(quizId, attemptId ?? ""),
+    queryFn: () => api.getQuizAttempt(quizId, attemptId as string),
+    enabled: Boolean(quizId) && Boolean(attemptId),
+  });
 }
 
 /* ------------------------------- flashcards ------------------------------- */
@@ -182,6 +232,34 @@ export function useDeleteCollection() {
       qc.invalidateQueries({ queryKey: qk.collections });
       qc.invalidateQueries({ queryKey: qk.bookmarks });
     },
+  });
+}
+
+/* ---------------------------- learning profile ---------------------------- */
+
+export function useLearningProfile() {
+  return useQuery({
+    queryKey: qk.learningProfile,
+    queryFn: api.getLearningProfile,
+  });
+}
+
+export function useSaveLearningProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: LearningProfileInput) =>
+      api.saveLearningProfile(input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.learningProfile }),
+  });
+}
+
+export function useSkipPersonalization() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.skipPersonalization(),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.learningProfile }),
   });
 }
 

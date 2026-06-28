@@ -12,8 +12,10 @@ import {
   PanelLeftClose,
   Plus,
   Search,
+  Settings,
   Trash2,
 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -21,6 +23,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { BrandLogo } from "@/components/common/BrandLogo";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { cn } from "@/lib/utils";
 import { formatShortcut } from "@/lib/platform";
 import type { Session } from "@/types";
@@ -83,9 +87,14 @@ export function AppSidebar({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const { open: openSettings } = useSettings();
   const grouped = groupSessions(sessions);
   const onChats = location.pathname === "/chat";
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const accountName = user?.full_name || "Student";
+  const accountInitial = user?.full_name?.[0] || user?.email?.[0] || "?";
 
   const handleDelete = async (id: string) => {
     setDeletingId(id);
@@ -250,6 +259,50 @@ export function AppSidebar({
           ))}
         </div>
       )}
+
+      {/* Account entry — always pinned to the bottom-left; opens Settings. */}
+      <div className="mt-auto border-t border-border/50 p-2">
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => openSettings()}
+                aria-label="Account & settings"
+                className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl transition-colors hover:bg-accent/60"
+              >
+                <Avatar className="h-7 w-7">
+                  <AvatarImage src={user?.avatar_url || undefined} />
+                  <AvatarFallback className="text-[10px]">
+                    {accountInitial}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Account &amp; settings</TooltipContent>
+          </Tooltip>
+        ) : (
+          <button
+            type="button"
+            onClick={() => openSettings()}
+            className="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition-colors hover:bg-accent/60"
+          >
+            <Avatar className="h-8 w-8 shrink-0">
+              <AvatarImage src={user?.avatar_url || undefined} />
+              <AvatarFallback className="text-xs">
+                {accountInitial}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{accountName}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {user?.email}
+              </p>
+            </div>
+            <Settings className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

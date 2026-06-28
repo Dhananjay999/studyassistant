@@ -7,8 +7,11 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { PreferencesProvider } from "@/contexts/PreferencesContext";
+import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { SigningInModal } from "@/components/auth/SigningInModal";
+import { SettingsExperience } from "@/components/settings/SettingsExperience";
 import { queryClient } from "@/lib/queryClient";
 import LandingPage from "@/pages/LandingPage";
 import AuthCallback from "@/pages/AuthCallback";
@@ -39,13 +42,16 @@ export default function App() {
     <HelmetProvider>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <AuthProvider>
-            <TooltipProvider delayDuration={200}>
-              <Sonner position="top-center" />
-              <SigningInModal />
-              <BrowserRouter>
-                <Suspense fallback={<RouteFallback />}>
-                  <Routes>
+          <PreferencesProvider>
+            <AuthProvider>
+              <SettingsProvider>
+                <TooltipProvider delayDuration={200}>
+                  <Sonner position="top-center" />
+                  <SigningInModal />
+                  <SettingsExperience />
+                  <BrowserRouter>
+                    <Suspense fallback={<RouteFallback />}>
+                      <Routes>
                     <Route path="/" element={<HomeRoute />} />
                     <Route path="/auth/callback" element={<AuthCallback />} />
                     <Route
@@ -105,11 +111,13 @@ export default function App() {
                       }
                     />
                     <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </Suspense>
-              </BrowserRouter>
-            </TooltipProvider>
-          </AuthProvider>
+                      </Routes>
+                    </Suspense>
+                  </BrowserRouter>
+                </TooltipProvider>
+              </SettingsProvider>
+            </AuthProvider>
+          </PreferencesProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </HelmetProvider>

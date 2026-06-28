@@ -1,5 +1,12 @@
 // Centralized, AI-first loading copy so every surface speaks the same language.
 
+// Staged copy for the post-Google sign-in handoff (the redirect overlay).
+export const AUTH_MESSAGES = [
+  "Signing you in…",
+  "Verifying your account…",
+  "Preparing your workspace…",
+];
+
 export const APP_BOOT_MESSAGES = [
   "Preparing your learning workspace…",
   "Setting things up for you…",

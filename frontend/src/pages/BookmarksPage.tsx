@@ -181,7 +181,7 @@ export default function BookmarksPage() {
   return (
     <>
       <Seo title="Bookmarks — Aeva" noindex path="/bookmarks" />
-      <AppShell title="Bookmarks">
+      <AppShell title="Bookmarks" hideDesktopSidebar backTo="/chat">
         <div className="flex min-h-full flex-col lg:flex-row">
           {/* Folder navigation */}
           <aside className="w-full shrink-0 border-b border-border/50 p-3 lg:w-64 lg:border-b-0 lg:border-r">

@@ -42,6 +42,7 @@ import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { MobileNav } from "@/components/MobileNav";
+import { OnboardingFlow } from "@/components/learning/OnboardingFlow";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
@@ -73,11 +74,19 @@ import type {
 const uid = () => crypto.randomUUID();
 
 export default function ChatPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
+
+  // Optional personalization onboarding: shown once for users who have not yet
+  // completed or skipped it. Dismissed locally so it never reappears mid-session.
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const showOnboarding =
+    !!user &&
+    (user.personalization_status ?? "pending") === "pending" &&
+    !onboardingDismissed;
 
   const sessionsQuery = useSessions();
   const sessions = sessionsQuery.data ?? [];
@@ -795,6 +804,14 @@ export default function ChatPage() {
       />
 
       <MobileNav />
+
+      <OnboardingFlow
+        open={showOnboarding}
+        onDone={() => {
+          setOnboardingDismissed(true);
+          void refreshUser();
+        }}
+      />
     </>
   );
 }

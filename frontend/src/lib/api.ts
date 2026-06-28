@@ -7,11 +7,16 @@ import type {
   Bookmark,
   BookmarkCollection,
   CreateBookmarkInput,
+  LearningProfile,
+  LearningProfileInput,
   MediaItem,
   FlashcardAnalytics,
   FlashcardListItem,
   FlashcardSetDetail,
   Message,
+  QuizAnalysis,
+  QuizAttemptDetail,
+  QuizAttemptSummary,
   QuizContent,
   QuizListItem,
   QuizSubmitResult,
@@ -38,6 +43,10 @@ export const ENDPOINTS = {
   QUIZZES: "/quiz/",
   QUIZ: (id: string) => `/quiz/${id}`,
   QUIZ_SUBMIT: (id: string) => `/quiz/${id}/submit`,
+  QUIZ_ANALYZE: (id: string) => `/quiz/${id}/analyze`,
+  QUIZ_ATTEMPTS: (id: string) => `/quiz/${id}/attempts`,
+  QUIZ_ATTEMPT: (id: string, attemptId: string) =>
+    `/quiz/${id}/attempts/${attemptId}`,
   BOOKMARKS: "/bookmarks/",
   BOOKMARK: (id: string) => `/bookmarks/${id}`,
   COLLECTIONS: "/bookmarks/collections",
@@ -46,6 +55,8 @@ export const ENDPOINTS = {
   FLASHCARDS: "/flashcards/",
   FLASHCARD: (id: string) => `/flashcards/${id}`,
   FLASHCARD_STUDY: (id: string) => `/flashcards/${id}/study`,
+  LEARNING_PROFILE: "/learning-profile/",
+  LEARNING_PROFILE_SKIP: "/learning-profile/skip",
 } as const;
 
 type TokenGetter = () => string | null;
@@ -252,13 +263,42 @@ export const deleteMedia = (id: string) =>
 export const listQuizzes = () =>
   unwrap<QuizListItem[]>(ENDPOINTS.QUIZZES);
 
-export const getQuiz = (id: string) => unwrap<QuizContent>(ENDPOINTS.QUIZ(id));
+export const getQuiz = async (id: string): Promise<QuizContent> => {
+  // The detail endpoint may key the id as `id`; the client always needs
+  // `quiz_id`, so derive it from the requested id as a guaranteed fallback.
+  const q = await unwrap<QuizContent & { id?: string }>(ENDPOINTS.QUIZ(id));
+  return { ...q, quiz_id: q.quiz_id ?? q.id ?? id };
+};
 
-export const submitQuiz = (id: string, answers: Record<string, string[]>) =>
+export const submitQuiz = (
+  id: string,
+  answers: Record<string, string[]>,
+  timeTakenSeconds = 0,
+) =>
   unwrap<QuizSubmitResult>(ENDPOINTS.QUIZ_SUBMIT(id), {
     method: "POST",
-    body: JSON.stringify({ answers }),
+    body: JSON.stringify({ answers, time_taken_seconds: timeTakenSeconds }),
   });
+
+export const analyzeQuiz = (id: string, attemptId: string) =>
+  unwrap<QuizAnalysis>(ENDPOINTS.QUIZ_ANALYZE(id), {
+    method: "POST",
+    body: JSON.stringify({ attempt_id: attemptId }),
+  });
+
+export const listQuizAttempts = (quizId: string) =>
+  unwrap<QuizAttemptSummary[]>(ENDPOINTS.QUIZ_ATTEMPTS(quizId));
+
+export const getQuizAttempt = async (
+  quizId: string,
+  attemptId: string,
+): Promise<QuizAttemptDetail> => {
+  const a = await unwrap<QuizAttemptDetail>(
+    ENDPOINTS.QUIZ_ATTEMPT(quizId, attemptId),
+  );
+  // The quiz detail endpoint keys the id as `id`; the client needs `quiz_id`.
+  return { ...a, quiz: { ...a.quiz, quiz_id: a.quiz.quiz_id ?? quizId } };
+};
 
 /* -------------------------------- bookmarks ------------------------------- */
 
@@ -320,6 +360,22 @@ export const recordFlashcardStudy = (
   unwrap<FlashcardAnalytics>(ENDPOINTS.FLASHCARD_STUDY(setId), {
     method: "POST",
     body: JSON.stringify({ flashcard_id: flashcardId, rating }),
+  });
+
+/* --------------------------- learning profile ----------------------------- */
+
+export const getLearningProfile = () =>
+  unwrap<LearningProfile>(ENDPOINTS.LEARNING_PROFILE);
+
+export const saveLearningProfile = (input: LearningProfileInput) =>
+  unwrap<LearningProfile>(ENDPOINTS.LEARNING_PROFILE, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+
+export const skipPersonalization = () =>
+  unwrap<LearningProfile>(ENDPOINTS.LEARNING_PROFILE_SKIP, {
+    method: "POST",
   });
 
 /* --------------------------------- search --------------------------------- */

@@ -6,7 +6,7 @@ from typing import Any
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
 from aeva.mcp.base import (
-    LEARNING_ACTIONS,
+    RESPONSE_FILE_ANALYSIS,
     BaseTool,
     ToolContext,
     ToolDefinition,
@@ -54,9 +54,9 @@ class MediaLLMTool(BaseTool):
         )
 
     @property
-    def available_actions(self) -> list[str]:
-        """Study material supports the full learning toolkit."""
-        return LEARNING_ACTIONS
+    def response_type(self) -> str:
+        """Answers grounded in uploaded files are file analysis."""
+        return RESPONSE_FILE_ANALYSIS
 
     def _build_attachments(
         self,
@@ -80,6 +80,7 @@ class MediaLLMTool(BaseTool):
         prompt = prompts.MEDIA_PROMPT.format(query=query)
         answer = self.llm.generate(
             prompt,
+            system_prompt=prompts.personalize(None, ctx.personalization),
             attachments=attachments,
             history=ctx.history,
         )
@@ -110,7 +111,10 @@ class MediaLLMTool(BaseTool):
         prompt = prompts.MEDIA_PROMPT.format(query=query)
         answer = ""
         for chunk in llm.generate_stream(
-            prompt, attachments=attachments, history=ctx.history
+            prompt,
+            system_prompt=prompts.personalize(None, ctx.personalization),
+            attachments=attachments,
+            history=ctx.history,
         ):
             answer += chunk
             yield chunk

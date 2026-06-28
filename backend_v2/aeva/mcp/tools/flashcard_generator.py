@@ -7,7 +7,13 @@ from flask import current_app
 from aeva.flashcard.flashcard_repository import FlashcardRepository
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
-from aeva.mcp.base import BaseTool, ToolContext, ToolDefinition
+from aeva.mcp.base import (
+    ACTION_OPEN_FLASHCARDS,
+    RESPONSE_FLASHCARD_CREATED,
+    BaseTool,
+    ToolContext,
+    ToolDefinition,
+)
 from aeva.media.attachments import download_attachments
 from aeva.supabase.supabase_service import SupabaseService
 
@@ -54,8 +60,13 @@ class FlashcardGeneratorTool(BaseTool):
 
     @property
     def response_type(self) -> str:
-        """Flashcards render a dedicated card, not action chips."""
-        return "FLASHCARDS"
+        """A generated flashcard set is its own response category."""
+        return RESPONSE_FLASHCARD_CREATED
+
+    @property
+    def available_actions(self) -> list[str]:
+        """The only meaningful action is opening the set just created."""
+        return [ACTION_OPEN_FLASHCARDS]
 
     @staticmethod
     def _wants_media(params: dict[str, Any], ctx: ToolContext) -> bool:
@@ -100,7 +111,9 @@ class FlashcardGeneratorTool(BaseTool):
         data = self.llm.generate_structured(
             prompt,
             prompts.FLASHCARD_GENERATION_SCHEMA,
-            system_prompt=prompts.SYSTEM_PROMPT,
+            system_prompt=prompts.personalize(
+                prompts.SYSTEM_PROMPT, ctx.personalization
+            ),
             history=history,
             attachments=attachments,
         )

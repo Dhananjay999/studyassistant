@@ -130,7 +130,8 @@
     font-family: "Sora Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   }
 
-  /* Respect reduced motion globally. */
+  /* Respect reduced motion globally — both the OS preference and the in-app
+     Appearance toggle (which sets .reduce-motion on <html>). */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -140,6 +141,27 @@
       transition-duration: 0.001ms !important;
       scroll-behavior: auto !important;
     }
+  }
+
+  html.reduce-motion *,
+  html.reduce-motion *::before,
+  html.reduce-motion *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* App font-size preference (Appearance settings). Scales the rem base so the
+     whole UI grows/shrinks proportionally. Medium (100%) is the default. */
+  html[data-font-size="small"] {
+    font-size: 93.75%; /* 15px */
+  }
+  html[data-font-size="medium"] {
+    font-size: 100%; /* 16px */
+  }
+  html[data-font-size="large"] {
+    font-size: 112.5%; /* 18px */
   }
 }
 

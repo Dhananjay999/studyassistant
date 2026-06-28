@@ -1,15 +1,8 @@
 import { useState } from "react";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import type { ClarificationAnswer, ClarificationData } from "@/types";
 
 export function ClarificationPanel({
@@ -23,7 +16,24 @@ export function ClarificationPanel({
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [custom, setCustom] = useState("");
-  const [showCustom, setShowCustom] = useState(false);
+
+  const singleQuestion = data.questions.length === 1;
+
+  const pickOption = (questionId: string, option: string) => {
+    if (busy) return;
+    // One question: tapping a chip is the whole answer — submit immediately.
+    if (singleQuestion) {
+      onSubmit({ action: "answer", answers: { [questionId]: option } });
+      return;
+    }
+    setAnswers((prev) => ({ ...prev, [questionId]: option }));
+  };
+
+  const sendCustom = () => {
+    const text = custom.trim();
+    if (busy || !text) return;
+    onSubmit({ action: "custom", custom_text: text });
+  };
 
   return (
     <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
@@ -35,29 +45,31 @@ export function ClarificationPanel({
 
       <div className="mt-3 space-y-3">
         {data.questions.map((q) => (
-          <div key={q.id} className="space-y-1.5">
+          <div key={q.id} className="space-y-2">
             <label className="text-xs font-medium">{q.text}</label>
             {q.options && q.options.length > 0 ? (
-              <Select
-                value={answers[q.id] || ""}
-                onValueChange={(v) =>
-                  setAnswers((p) => ({ ...p, [q.id]: v }))
-                }
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {q.options.map((opt) => (
-                    <SelectItem key={opt} value={opt}>
-                      {opt}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex flex-wrap gap-2">
+                {q.options.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => pickOption(q.id, opt)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-60",
+                      answers[q.id] === opt
+                        ? "border-amber-500 bg-amber-500/15 text-amber-800 dark:text-amber-200"
+                        : "border-border bg-background hover:border-amber-500/60 hover:bg-amber-500/10",
+                    )}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
             ) : (
               <Input
                 value={answers[q.id] || ""}
+                placeholder="Type your answer…"
                 onChange={(e) =>
                   setAnswers((p) => ({ ...p, [q.id]: e.target.value }))
                 }
@@ -67,41 +79,44 @@ export function ClarificationPanel({
           </div>
         ))}
 
-        {showCustom && (
-          <Textarea
-            placeholder="Type your own answer…"
+        {/* Always available: type your own answer instead of a chip. */}
+        <div className="flex items-center gap-2">
+          <Input
             value={custom}
+            placeholder="Or type your own answer…"
+            disabled={busy}
             onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                sendCustom();
+              }
+            }}
+            className="h-9"
           />
-        )}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={() => onSubmit({ action: "answer", answers })}
-        >
-          Submit
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => setShowCustom((v) => !v)}
-        >
-          Custom
-        </Button>
-        {showCustom && (
           <Button
             size="sm"
             variant="secondary"
             disabled={busy || !custom.trim()}
-            onClick={() => onSubmit({ action: "custom", custom_text: custom })}
+            onClick={sendCustom}
+            className="shrink-0 gap-1.5"
           >
+            <Send className="h-3.5 w-3.5" />
             Send
           </Button>
-        )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {/* Single-option questions submit on chip tap; this covers free-text
+            and multi-question answers. */}
+        <Button
+          size="sm"
+          disabled={busy || Object.keys(answers).length === 0}
+          onClick={() => onSubmit({ action: "answer", answers })}
+        >
+          Submit
+        </Button>
         <Button
           size="sm"
           variant="ghost"

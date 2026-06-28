@@ -48,6 +48,27 @@ Provide encouraging feedback, explain mistakes, identify weak topics,
 and suggest study recommendations.
 """
 
+QUIZ_ANALYSIS_PROMPT = """A student finished a quiz. Analyze their performance.
+
+Quiz (with correct answers and explanations):
+{quiz}
+
+Student answers:
+{answers}
+
+Evaluation (backend scored, includes per-question correctness):
+{evaluation}
+
+Write an encouraging, specific performance analysis:
+- strengths: concepts the student clearly understands (what they got right).
+- weaknesses: concepts they struggled with (cite the questions they missed).
+- common_mistakes: recurring error patterns you notice across wrong answers.
+- revise_topics: concrete topics/subtopics to revise next, most important first.
+- study_plan: an ordered, actionable step-by-step plan to close the gaps.
+
+Be concrete and reference the actual questions. Keep each item short.
+"""
+
 # Structured output for quiz generation.
 QUIZ_GENERATION_SCHEMA: dict = {
     "type": "object",
@@ -118,6 +139,25 @@ QUIZ_FEEDBACK_SCHEMA: dict = {
         },
     },
     "required": ["summary", "weak_topics", "recommendations", "per_question"],
+}
+
+# Structured output for on-demand AI performance analysis.
+QUIZ_ANALYSIS_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "strengths": {"type": "array", "items": {"type": "string"}},
+        "weaknesses": {"type": "array", "items": {"type": "string"}},
+        "common_mistakes": {"type": "array", "items": {"type": "string"}},
+        "revise_topics": {"type": "array", "items": {"type": "string"}},
+        "study_plan": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "strengths",
+        "weaknesses",
+        "common_mistakes",
+        "revise_topics",
+        "study_plan",
+    ],
 }
 
 # MCP tool input schema (what the planner fills in to call this tool).

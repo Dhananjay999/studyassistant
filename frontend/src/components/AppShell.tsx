@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu } from "lucide-react";
+import { ArrowLeft, Menu } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/chat/AppSidebar";
@@ -15,9 +15,15 @@ const KEY = "aeva_sidebar_collapsed";
 export function AppShell({
   title,
   children,
+  hideDesktopSidebar = false,
+  backTo,
 }: {
   title: string;
   children: ReactNode;
+  /** Hide the chat-session rail on desktop (the page becomes full-width). */
+  hideDesktopSidebar?: boolean;
+  /** When set, show a Back button (desktop) that navigates here. */
+  backTo?: string;
 }) {
   const navigate = useNavigate();
   const sessions = useSessions().data ?? [];
@@ -65,9 +71,11 @@ export function AppShell({
 
   return (
     <div className="flex h-dvh bg-background">
-      <aside className="hidden shrink-0 border-r border-border/50 lg:block">
-        {sidebar(false)}
-      </aside>
+      {!hideDesktopSidebar && (
+        <aside className="hidden shrink-0 border-r border-border/50 lg:block">
+          {sidebar(false)}
+        </aside>
+      )}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-72 p-0">
           {sidebar(true)}
@@ -85,6 +93,16 @@ export function AppShell({
           >
             <Menu className="h-5 w-5" />
           </Button>
+          {backTo && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden gap-1.5 lg:inline-flex"
+              onClick={() => navigate(backTo)}
+            >
+              <ArrowLeft className="h-4 w-4" /> Back
+            </Button>
+          )}
           <h1 className="font-display text-lg font-bold">{title}</h1>
         </header>
         <div className="flex-1 overflow-y-auto pb-bottomnav lg:pb-0">

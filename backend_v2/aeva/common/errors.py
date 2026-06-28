@@ -44,6 +44,11 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
         "message": "Quiz not found",
         "status": 404,
     },
+    "QUIZ_ATTEMPT_NOT_FOUND": {
+        "code": "QUIZ_ATTEMPT_NOT_FOUND",
+        "message": "Quiz attempt not found",
+        "status": 404,
+    },
     "INTERNAL_ERROR": {
         "code": "INTERNAL_ERROR",
         "message": "Internal server error",

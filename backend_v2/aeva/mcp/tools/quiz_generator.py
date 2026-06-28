@@ -6,7 +6,13 @@ from flask import current_app
 
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
-from aeva.mcp.base import BaseTool, ToolContext, ToolDefinition
+from aeva.mcp.base import (
+    ACTION_OPEN_QUIZ,
+    RESPONSE_QUIZ_CREATED,
+    BaseTool,
+    ToolContext,
+    ToolDefinition,
+)
 from aeva.media.attachments import download_attachments
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
@@ -54,8 +60,13 @@ class QuizGeneratorTool(BaseTool):
 
     @property
     def response_type(self) -> str:
-        """Quizzes render a dedicated card, not action chips."""
-        return "QUIZ"
+        """A generated quiz is its own response category."""
+        return RESPONSE_QUIZ_CREATED
+
+    @property
+    def available_actions(self) -> list[str]:
+        """The only meaningful action is opening the quiz just created."""
+        return [ACTION_OPEN_QUIZ]
 
     @staticmethod
     def _wants_media(params: dict[str, Any], ctx: ToolContext) -> bool:
@@ -119,7 +130,9 @@ class QuizGeneratorTool(BaseTool):
         quiz_data = self.llm.generate_structured(
             prompt,
             prompts.QUIZ_GENERATION_SCHEMA,
-            system_prompt=prompts.SYSTEM_PROMPT,
+            system_prompt=prompts.personalize(
+                prompts.SYSTEM_PROMPT, ctx.personalization
+            ),
             history=history,
             attachments=attachments,
         )

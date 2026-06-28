@@ -10,12 +10,22 @@ import { APP_BOOT_MESSAGES } from "@/lib/loadingMessages";
  */
 export function AppLoader({
   messages = APP_BOOT_MESSAGES,
+  aurora = false,
 }: {
   messages?: string[];
+  /** Adds an animated gradient backdrop (used for the auth handoff). */
+  aurora?: boolean;
 }) {
   return (
-    <div className="grid h-dvh place-items-center bg-background px-6">
-      <div className="flex w-full max-w-sm flex-col items-center text-center">
+    <div className="relative grid h-dvh place-items-center overflow-hidden bg-background px-6">
+      {aurora && (
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-0 animate-gradient-pan bg-brand-gradient bg-[length:200%_200%] opacity-[0.10]" />
+          <div className="absolute -left-24 top-1/4 h-72 w-72 animate-float rounded-full bg-brand-1/20 blur-3xl" />
+          <div className="absolute -right-20 bottom-1/4 h-72 w-72 animate-float-slow rounded-full bg-brand-3/20 blur-3xl" />
+        </div>
+      )}
+      <div className="relative flex w-full max-w-sm flex-col items-center text-center">
         <motion.span
           className="relative grid h-16 w-16 place-items-center rounded-2xl bg-brand-gradient shadow-glow"
           animate={{ scale: [1, 1.08, 1] }}

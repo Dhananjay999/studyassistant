@@ -162,6 +162,18 @@ class SupabaseService:
         )
         return result.data if result else None
 
+    def update_learning_profile(
+        self, user_id: str, fields: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Patch learning-profile columns on the user's profile row."""
+        result = (
+            self.client.table("profiles")
+            .update(fields)
+            .eq("id", user_id)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
     # --- Sessions ---
 
     def create_session(

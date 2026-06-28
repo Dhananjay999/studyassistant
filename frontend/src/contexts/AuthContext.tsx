@@ -28,6 +28,7 @@ interface AuthContextValue {
     refreshToken: string,
     expiresIn: number,
   ) => Promise<void>;
+  refreshUser: () => Promise<void>;
   logout: () => void;
 }
 
@@ -102,6 +103,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadUser = useCallback(async () => {
     setUser(await getMe());
   }, []);
+
+  // Re-fetch the current user (e.g. after onboarding changes the profile),
+  // ignoring transient failures so a stale-but-usable session is kept.
+  const refreshUser = useCallback(async () => {
+    try {
+      await loadUser();
+    } catch {
+      /* keep existing user */
+    }
+  }, [loadUser]);
 
   useEffect(() => {
     setTokenGetter(() => tokenRef.current);
@@ -213,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signingIn,
         signInWithGoogle,
         setSession,
+        refreshUser,
         logout,
       }}
     >

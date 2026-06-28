@@ -11,11 +11,36 @@ export type ToolUsed =
 export type QuestionType = "single_select" | "multi_select" | "true_false";
 export type Difficulty = "easy" | "medium" | "hard";
 
+export type PersonalizationStatus = "pending" | "completed" | "skipped";
+
 export interface User {
   id: string;
   email: string;
   full_name: string | null;
   avatar_url: string | null;
+  // Onboarding state. Optional because older /auth/me payloads may omit it;
+  // treat a missing value as "pending".
+  personalization_status?: PersonalizationStatus;
+}
+
+/** Optional learning profile used to personalize Aeva's responses. */
+export interface LearningProfile {
+  education_level: string | null;
+  preferred_language: string | null;
+  explanation_style: string | null;
+  favorite_subjects: string[];
+  learning_goal: string | null;
+  personalization_status: PersonalizationStatus;
+  personalization_updated_at: string | null;
+}
+
+/** Patch sent when saving the learning profile (all fields optional). */
+export interface LearningProfileInput {
+  education_level?: string | null;
+  preferred_language?: string | null;
+  explanation_style?: string | null;
+  favorite_subjects?: string[];
+  learning_goal?: string | null;
 }
 
 export interface Session {
@@ -60,16 +85,35 @@ export interface QuizContent {
   source?: string;
 }
 
+export interface QuizPerQuestion {
+  question_id: string;
+  is_correct: boolean;
+  partial: boolean;
+  attempted: boolean;
+  user_answer: string[];
+  correct_answer: string[];
+  explanation?: string | null;
+}
+
 export interface QuizEvaluation {
-  score: number;
-  correct_count: number;
+  score: number; // accuracy %, 0-100
   total: number;
-  per_question: Array<{
-    question_id: string;
-    is_correct: boolean;
-    user_answer: string[];
-    correct_answer: string[];
-  }>;
+  correct_count: number;
+  partial_count: number;
+  incorrect_count: number;
+  attempted_count: number;
+  unanswered_count: number;
+  time_taken_seconds?: number;
+  per_question: QuizPerQuestion[];
+}
+
+/** On-demand AI performance analysis (returned by /quiz/:id/analyze). */
+export interface QuizAnalysis {
+  strengths: string[];
+  weaknesses: string[];
+  common_mistakes: string[];
+  revise_topics: string[];
+  study_plan: string[];
 }
 
 export interface QuizFeedback {
@@ -82,7 +126,33 @@ export interface QuizFeedback {
 export interface QuizSubmitResult {
   attempt_id: string;
   evaluation: QuizEvaluation;
-  feedback: QuizFeedback;
+}
+
+/** One row in a quiz's attempt history (GET /quiz/:id/attempts). */
+export interface QuizAttemptSummary {
+  id: string;
+  attempt_number: number;
+  score: number;
+  total: number;
+  correct_count: number;
+  incorrect_count: number;
+  partial_count: number;
+  unanswered_count: number;
+  time_taken_seconds: number;
+  created_at: string;
+  is_best: boolean;
+  has_analysis: boolean;
+}
+
+/** A single attempt's full report (GET /quiz/:id/attempts/:attemptId). */
+export interface QuizAttemptDetail {
+  attempt_id: string;
+  attempt_number: number;
+  quiz: QuizContent;
+  answers: Record<string, string[]>;
+  evaluation: QuizEvaluation;
+  ai_analysis: QuizAnalysis | null;
+  created_at: string;
 }
 
 // Settings the user picks in the quiz-setup popover.
@@ -282,6 +352,11 @@ export interface QuizListItem {
   session_id: string;
   created_at: string;
   question_count: number;
+  // Best-attempt summary (null when the quiz has never been attempted).
+  attempt_count: number;
+  best_score: number | null;
+  best_correct: number | null;
+  last_attempt_at: string | null;
 }
 
 /* --------------------------------- search --------------------------------- */

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { BrandLogo } from "@/components/common/BrandLogo";
+import { AppLoader } from "@/components/common/AppLoader";
+import { AUTH_MESSAGES } from "@/lib/loadingMessages";
 
 export default function AuthCallback() {
   const { setSession } = useAuth();
@@ -46,13 +46,5 @@ export default function AuthCallback() {
     }
   }, [setSession, navigate]);
 
-  return (
-    <div className="flex h-dvh flex-col items-center justify-center gap-5 bg-background">
-      <BrandLogo withWordmark={false} className="animate-float scale-125" />
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-        Signing you in…
-      </div>
-    </div>
-  );
+  return <AppLoader aurora messages={AUTH_MESSAGES} />;
 }

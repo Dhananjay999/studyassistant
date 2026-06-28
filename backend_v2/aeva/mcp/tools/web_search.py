@@ -6,7 +6,7 @@ from typing import Any
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
 from aeva.mcp.base import (
-    LEARNING_ACTIONS,
+    RESPONSE_WEB_SEARCH,
     BaseTool,
     ToolContext,
     ToolDefinition,
@@ -37,15 +37,20 @@ class WebSearchTool(BaseTool):
         )
 
     @property
-    def available_actions(self) -> list[str]:
-        """A web answer supports the full learning toolkit."""
-        return LEARNING_ACTIONS
+    def response_type(self) -> str:
+        """Grounded web answers are their own response category."""
+        return RESPONSE_WEB_SEARCH
 
     def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
         """Run web search grounded generation."""
         query = params.get("query") or ctx.enriched_message
         prompt = prompts.WEB_SEARCH_PROMPT.format(query=query)
-        answer = self.llm.generate(prompt, use_search=True, history=ctx.history)
+        answer = self.llm.generate(
+            prompt,
+            system_prompt=prompts.personalize(None, ctx.personalization),
+            use_search=True,
+            history=ctx.history,
+        )
         return {
             "answer": answer,
             "sources": self.llm.last_sources,
@@ -66,7 +71,10 @@ class WebSearchTool(BaseTool):
         prompt = prompts.WEB_SEARCH_PROMPT.format(query=query)
         answer = ""
         for chunk in llm.generate_stream(
-            prompt, use_search=True, history=ctx.history
+            prompt,
+            system_prompt=prompts.personalize(None, ctx.personalization),
+            use_search=True,
+            history=ctx.history,
         ):
             answer += chunk
             yield chunk

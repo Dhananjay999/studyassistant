@@ -16,6 +16,9 @@ from aeva.chat.chat_controller import blueprint as chat_bp
 from aeva.common.errors import CustomError
 from aeva.containers import Container
 from aeva.flashcard.flashcard_controller import blueprint as flashcard_bp
+from aeva.learning_profile.learning_profile_controller import (
+    blueprint as learning_profile_bp,
+)
 from aeva.media.media_controller import blueprint as media_bp
 from aeva.quiz.quiz_controller import blueprint as quiz_bp
 from aeva.search.search_controller import blueprint as search_bp
@@ -151,6 +154,7 @@ def create_app() -> Flask:
     api.register_blueprint(bookmark_bp)
     api.register_blueprint(search_bp)
     api.register_blueprint(flashcard_bp)
+    api.register_blueprint(learning_profile_bp)
 
     @app.errorhandler(CustomError)
     def handle_custom_error(error: CustomError) -> tuple[Any, int]:

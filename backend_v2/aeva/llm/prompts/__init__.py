@@ -13,7 +13,13 @@ from aeva.llm.prompts.flashcard import (
 )
 from aeva.llm.prompts.media import MEDIA_PARAMS, MEDIA_PROMPT
 from aeva.llm.prompts.orchestrator import PLAN_TURN_PROMPT, PLAN_TURN_SCHEMA
+from aeva.llm.prompts.personalization import (
+    build_personalization_block,
+    personalize,
+)
 from aeva.llm.prompts.quiz import (
+    QUIZ_ANALYSIS_PROMPT,
+    QUIZ_ANALYSIS_SCHEMA,
     QUIZ_FEEDBACK_PROMPT,
     QUIZ_FEEDBACK_SCHEMA,
     QUIZ_GENERATION_PROMPT,
@@ -31,6 +37,8 @@ __all__ = [
     "MEDIA_PROMPT",
     "PLAN_TURN_PROMPT",
     "PLAN_TURN_SCHEMA",
+    "QUIZ_ANALYSIS_PROMPT",
+    "QUIZ_ANALYSIS_SCHEMA",
     "QUIZ_FEEDBACK_PROMPT",
     "QUIZ_FEEDBACK_SCHEMA",
     "QUIZ_GENERATION_PROMPT",
@@ -39,4 +47,6 @@ __all__ = [
     "SYSTEM_PROMPT",
     "WEB_SEARCH_PARAMS",
     "WEB_SEARCH_PROMPT",
+    "build_personalization_block",
+    "personalize",
 ]

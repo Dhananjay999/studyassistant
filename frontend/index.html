@@ -58,7 +58,46 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <!-- Branded first-paint splash. Lives inside #root so React replaces it
+         automatically on mount — no blank/white flash before the app loads. -->
+    <style>
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #0b0b13;
+        z-index: 9999;
+      }
+      #app-splash .mark {
+        width: 64px;
+        height: 64px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #7c3aed, #4f46e5, #06b6d4);
+        box-shadow: 0 10px 40px -10px rgba(124, 58, 237, 0.6);
+        display: grid;
+        place-items: center;
+        animation: appSplashPulse 1.6s ease-in-out infinite;
+      }
+      @keyframes appSplashPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.08); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #app-splash .mark { animation: none; }
+      }
+    </style>
+    <div id="root">
+      <div id="app-splash">
+        <div class="mark" aria-label="Loading Aeva">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none"
+            stroke="#fff" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z" />
+          </svg>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
