@@ -16,6 +16,7 @@ from aeva.bookmark.bookmark_controller import blueprint as bookmark_bp
 from aeva.chat.chat_controller import blueprint as chat_bp
 from aeva.common.errors import CustomError
 from aeva.containers import Container
+from aeva.delay.delay_controller import blueprint as delay_bp
 from aeva.flashcard.flashcard_controller import blueprint as flashcard_bp
 from aeva.learning_profile.learning_profile_controller import (
     blueprint as learning_profile_bp,
@@ -164,6 +165,7 @@ def create_app() -> Flask:
     api.register_blueprint(flashcard_bp)
     api.register_blueprint(learning_profile_bp)
     api.register_blueprint(admin_bp)
+    api.register_blueprint(delay_bp)
 
     @app.errorhandler(CustomError)
     def handle_custom_error(error: CustomError) -> tuple[Any, int]:
