@@ -45,6 +45,29 @@ def load_env_vars(app: Flask) -> None:
     )
 
     app.config["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "")
+    # Groq (OpenAI-compatible API). Optional: leave GROQ_API_KEY blank to keep
+    # Groq disabled, so Gemini-only deployments are unaffected. To use Groq, set
+    # a capability's LLM_*_PROVIDER (or LLM_PROVIDER) to "groq" and its model
+    # (LLM_*_MODEL / LLM_MODEL) to a Groq model, e.g. openai/gpt-oss-20b.
+    app.config["GROQ_API_KEY"] = os.environ.get("GROQ_API_KEY", "")
+    app.config["GROQ_BASE_URL"] = os.environ.get(
+        "GROQ_BASE_URL", "https://api.groq.com/openai/v1"
+    )
+    # Cap on completion tokens per Groq call. Reasoning models (e.g.
+    # openai/gpt-oss-20b) otherwise truncate long structured output mid-document
+    # -- Groq reports this as json_validate_failed. The cap is also reserved
+    # against the account's tokens-per-minute limit (prompt + cap <= TPM), so it
+    # is kept modest; raise it on higher Groq tiers if responses get cut off.
+    app.config["GROQ_MAX_TOKENS"] = int(
+        os.environ.get("GROQ_MAX_TOKENS", "4096")
+    )
+    # Reasoning effort for reasoning-capable Groq models ("low"/"medium"/"high").
+    # Lower effort leaves more of the token budget for the answer, which keeps
+    # structured output from being truncated. Blank disables the parameter for
+    # non-reasoning Groq models, which reject it.
+    app.config["GROQ_REASONING_EFFORT"] = os.environ.get(
+        "GROQ_REASONING_EFFORT", "low"
+    )
     default_model = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
     app.config["LLM_MODEL"] = default_model
     # Per-capability models (fall back to LLM_MODEL when unset).
@@ -79,6 +102,10 @@ def load_env_vars(app: Flask) -> None:
     app.config["LLM_QUIZ_PROVIDER"] = os.environ.get(
         "LLM_QUIZ_PROVIDER", default_provider
     )
+    app.config["LLM_FLASHCARD_PROVIDER"] = os.environ.get(
+        "LLM_FLASHCARD_PROVIDER", default_provider
+    )
+
     app.config["QUIZ_MAX_QUESTIONS"] = int(
         os.environ.get("QUIZ_MAX_QUESTIONS", "10")
     )

@@ -11,10 +11,12 @@ from flask import current_app
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.llm.providers.base import LLMProvider
 from aeva.llm.providers.gemini import GeminiProvider
+from aeva.llm.providers.groq import GroqProvider
 
 # Registry of available providers keyed by their config name.
 PROVIDERS: dict[str, type[LLMProvider]] = {
     "gemini": GeminiProvider,
+    "groq": GroqProvider,
 }
 
 
