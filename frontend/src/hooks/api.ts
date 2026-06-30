@@ -7,6 +7,7 @@ import * as api from "@/lib/api";
 import type {
   CreateBookmarkInput,
   LearningProfileInput,
+  MediaItem,
   Session,
   StudyRating,
 } from "@/types";
@@ -14,6 +15,8 @@ import type {
 export const qk = {
   sessions: ["sessions"] as const,
   media: ["media"] as const,
+  // Nested under ["media"] so invalidating qk.media also invalidates per-item.
+  mediaItem: (id: string) => ["media", id] as const,
   bookmarks: ["bookmarks"] as const,
   collections: ["collections"] as const,
   quizzes: ["quizzes"] as const,
@@ -63,16 +66,35 @@ export function useDeleteSession() {
 
 /* ---------------------------------- media --------------------------------- */
 
-/** All of the user's media (newest first), independent of session. */
+/**
+ * All of the user's media (newest first), independent of session. The list is
+ * kept fresh by optimistic writes (upload via SSE, delete below), so it rarely
+ * needs re-fetching — a long staleTime avoids redundant GET /media calls.
+ */
 export function useMedia() {
-  return useQuery({ queryKey: qk.media, queryFn: () => api.listMedia() });
+  return useQuery({
+    queryKey: qk.media,
+    queryFn: () => api.listMedia(),
+    staleTime: 5 * 60_000,
+  });
 }
 
 export function useDeleteMedia() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.deleteMedia(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.media }),
+    // Optimistically drop the row; roll back if the request fails. No refetch.
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: qk.media });
+      const prev = qc.getQueryData<MediaItem[]>(qk.media);
+      qc.setQueryData<MediaItem[]>(qk.media, (cur) =>
+        cur?.filter((m) => m.id !== id),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData(qk.media, ctx.prev);
+    },
   });
 }
 

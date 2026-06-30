@@ -55,3 +55,19 @@ class LLMProvider(ABC):
         use_search: bool = False,
     ) -> Generator[str, None, None]:
         """Stream the response, yielding text chunks as they arrive."""
+
+    def embed(
+        self,
+        texts: list[str],
+        *,
+        task_type: str = "RETRIEVAL_DOCUMENT",
+        output_dimensionality: int = 768,
+    ) -> list[list[float]]:
+        """Return one embedding vector per input text.
+
+        Only providers backing the RAG retrieval layer implement this; the
+        default refuses so a misconfigured embedding provider fails loudly
+        rather than silently returning nothing.
+        """
+        msg = f"{type(self).__name__} does not support embeddings"
+        raise NotImplementedError(msg)

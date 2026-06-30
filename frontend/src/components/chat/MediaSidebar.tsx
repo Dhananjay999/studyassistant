@@ -1,6 +1,6 @@
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  AlertCircle,
   FileText,
   ImageIcon,
   Loader2,
@@ -9,15 +9,17 @@ import {
   X,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BookmarkButton } from "@/components/BookmarkButton";
+import { useDocumentViewer } from "@/contexts/DocumentViewerContext";
 import { cn } from "@/lib/utils";
-import { MAX_SELECTED_FILES } from "@/lib/config";
-import type { MediaItem, UploadProgress } from "@/types";
-
-const PDFViewer = lazy(() => import("@/components/PDFViewer"));
+import { MediaProcessingCard } from "@/components/chat/MediaProcessingCard";
+import {
+  isMediaReady,
+  type MediaItem,
+  type UploadProgress,
+} from "@/types";
 
 function prettySize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -33,6 +35,8 @@ export function MediaSidebar({
   onToggle,
   onDelete,
   onUpload,
+  onRetryUpload,
+  onDismissUpload,
 }: {
   items: MediaItem[];
   uploads: UploadProgress[];
@@ -41,7 +45,10 @@ export function MediaSidebar({
   onToggle: (id: string) => void;
   onDelete: (id: string) => void | Promise<void>;
   onUpload: (files: FileList) => void;
+  onRetryUpload: (id: string) => void;
+  onDismissUpload: (id: string) => void;
 }) {
+  const viewer = useDocumentViewer();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -53,10 +60,6 @@ export function MediaSidebar({
       setDeletingId(null);
     }
   };
-  const [previewPdf, setPreviewPdf] = useState<{
-    url: string;
-    name: string;
-  } | null>(null);
 
   return (
     <div className="flex h-full flex-col">
@@ -65,7 +68,9 @@ export function MediaSidebar({
           <h3 className="font-display text-sm font-semibold">Your materials</h3>
           {items.length > 0 && (
             <p className="text-[11px] text-muted-foreground">
-              {selected.size}/{MAX_SELECTED_FILES} selected for context
+              {selected.size > 0
+                ? `${selected.size} selected for context`
+                : "Select files to use as context"}
             </p>
           )}
         </div>
@@ -89,28 +94,25 @@ export function MediaSidebar({
 
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-2 pr-1">
-          {/* In-progress uploads pinned to the top */}
-          {uploads.map((u) => (
-            <div
-              key={u.id}
-              className="rounded-xl border border-border/60 bg-card/50 p-2.5"
-            >
-              <div className="flex items-center gap-2 text-xs">
-                {u.status === "error" ? (
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-                ) : (
-                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-brand-1" />
-                )}
-                <span className="flex-1 truncate">{u.name}</span>
-                <span className="text-muted-foreground">
-                  {u.status === "error" ? "Failed" : `${u.progress}%`}
-                </span>
-              </div>
-              {u.status !== "error" && (
-                <Progress value={u.progress} className="mt-2 h-1" />
-              )}
-            </div>
-          ))}
+          {/* In-progress uploads pinned to the top, with live SSE progress */}
+          <AnimatePresence initial={false}>
+            {uploads.map((u) => (
+              <motion.div
+                key={u.id}
+                layout
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <MediaProcessingCard
+                  upload={u}
+                  onRetry={() => onRetryUpload(u.id)}
+                  onDismiss={() => onDismissUpload(u.id)}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
 
           {items.length === 0 && uploads.length === 0 && (
             <p className="px-1 py-6 text-center text-xs text-muted-foreground">
@@ -120,6 +122,7 @@ export function MediaSidebar({
 
           {items.map((m) => {
             const isImage = m.mime_type.startsWith("image/");
+            const ready = isMediaReady(m);
             const isSelected = selected.has(m.id);
             const inThisChat =
               !!activeSessionId && m.session_id === activeSessionId;
@@ -135,6 +138,7 @@ export function MediaSidebar({
               >
                 <Checkbox
                   checked={isSelected}
+                  disabled={!ready}
                   onCheckedChange={() => onToggle(m.id)}
                   aria-label={`Use ${m.file_name}`}
                 />
@@ -144,7 +148,10 @@ export function MediaSidebar({
                     isImage
                       ? m.signed_url && setPreviewImage(m.signed_url)
                       : m.signed_url &&
-                        setPreviewPdf({ url: m.signed_url, name: m.file_name })
+                        viewer.openDocument({
+                          url: m.signed_url,
+                          fileName: m.file_name,
+                        })
                   }
                   className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-muted"
                 >
@@ -164,9 +171,18 @@ export function MediaSidebar({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium">{m.file_name}</p>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-muted-foreground">
-                      {prettySize(m.size_bytes)}
-                    </span>
+                    {ready ? (
+                      <span className="text-[10px] text-muted-foreground">
+                        {prettySize(m.size_bytes)}
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        {m.processing_status === "failed"
+                          ? "Processing failed"
+                          : "Processing…"}
+                      </span>
+                    )}
                     {inThisChat && (
                       <Badge
                         variant="secondary"
@@ -226,16 +242,6 @@ export function MediaSidebar({
             className="max-h-[90vh] max-w-full rounded-xl object-contain"
           />
         </div>
-      )}
-
-      {previewPdf && (
-        <Suspense fallback={null}>
-          <PDFViewer
-            url={previewPdf.url}
-            fileName={previewPdf.name}
-            onClose={() => setPreviewPdf(null)}
-          />
-        </Suspense>
       )}
     </div>
   );

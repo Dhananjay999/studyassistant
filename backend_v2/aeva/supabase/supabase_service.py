@@ -13,6 +13,16 @@ from supabase import Client, create_client
 logger = logging.getLogger(__name__)
 
 
+def _vec_to_str(vector: list[float]) -> str:
+    """Serialize an embedding as a pgvector text literal.
+
+    PostgREST speaks JSON, which has no vector type, so a raw list does not
+    round-trip into a ``vector`` column. Postgres casts the text form
+    ``"[0.1,0.2,...]"`` to ``vector`` on insert and as an RPC argument.
+    """
+    return "[" + ",".join(str(v) for v in vector) + "]"
+
+
 class SupabaseService:
     """Central Supabase client wrapper."""
 
@@ -348,6 +358,65 @@ class SupabaseService:
             .eq("user_id", user_id)
             .execute()
         )
+
+    # --- Media RAG (parsing artifacts, pages, chunks, vector search) ---
+
+    def update_media_processing(
+        self, media_id: str, user_id: str, **fields: Any
+    ) -> dict[str, Any] | None:
+        """Patch processing status / artifact columns on a media row."""
+        result = (
+            self.client.table("media")
+            .update(fields)
+            .eq("id", media_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    def insert_media_pages(self, rows: list[dict[str, Any]]) -> None:
+        """Bulk-insert per-page metadata rows."""
+        if not rows:
+            return
+        self.client.table("media_pages").insert(rows).execute()
+
+    def insert_media_chunks(self, rows: list[dict[str, Any]]) -> None:
+        """Bulk-insert chunk rows, serializing embeddings for pgvector."""
+        if not rows:
+            return
+        payload = [
+            {**row, "embedding": _vec_to_str(row["embedding"])}
+            for row in rows
+        ]
+        self.client.table("media_chunks").insert(payload).execute()
+
+    def delete_media_chunks(self, media_id: str, user_id: str) -> None:
+        """Drop a document's chunks and pages (for reprocess/cleanup)."""
+        self.client.table("media_chunks").delete().eq(
+            "media_id", media_id
+        ).eq("user_id", user_id).execute()
+        self.client.table("media_pages").delete().eq(
+            "media_id", media_id
+        ).eq("user_id", user_id).execute()
+
+    def match_chunks(
+        self,
+        query_vector: list[float],
+        user_id: str,
+        media_ids: list[str] | None = None,
+        top_k: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Cosine-similarity search over a user's chunks (optional subset)."""
+        result = self.client.rpc(
+            "match_media_chunks",
+            {
+                "query_embedding": _vec_to_str(query_vector),
+                "p_user_id": user_id,
+                "p_media_ids": media_ids or None,
+                "match_count": top_k,
+            },
+        ).execute()
+        return result.data or []
 
     # --- Storage ---
 

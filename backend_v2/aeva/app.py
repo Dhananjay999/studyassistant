@@ -86,6 +86,11 @@ def load_env_vars(app: Flask) -> None:
     app.config["LLM_FLASHCARD_MODEL"] = os.environ.get(
         "LLM_FLASHCARD_MODEL", default_model
     )
+    # Embedding model for the media RAG retrieval layer. Has its own model
+    # (not LLM_MODEL) because chat and embeddings are different model families.
+    app.config["LLM_EMBEDDING_MODEL"] = os.environ.get(
+        "LLM_EMBEDDING_MODEL", "gemini-embedding-001"
+    )
 
     # LLM provider per capability (fall back to LLM_PROVIDER when unset).
     default_provider = os.environ.get("LLM_PROVIDER", "gemini")
@@ -104,6 +109,36 @@ def load_env_vars(app: Flask) -> None:
     )
     app.config["LLM_FLASHCARD_PROVIDER"] = os.environ.get(
         "LLM_FLASHCARD_PROVIDER", default_provider
+    )
+    app.config["LLM_EMBEDDING_PROVIDER"] = os.environ.get(
+        "LLM_EMBEDDING_PROVIDER", default_provider
+    )
+
+    # Media RAG pipeline. LLAMA_CLOUD_API_KEY is optional like Groq: when blank,
+    # parsing is disabled and the media tool falls back to direct attachment, so
+    # Gemini-only deployments still boot. LLAMAPARSE_MODE is the parse tier
+    # (agentic tiers OCR images/handwriting). RAG_EMBEDDING_DIM must match the
+    # vector(N) column in migration 007 and the embed output dimensionality.
+    app.config["LLAMA_CLOUD_API_KEY"] = os.environ.get(
+        "LLAMA_CLOUD_API_KEY", ""
+    )
+    app.config["LLAMAPARSE_MODE"] = os.environ.get(
+        "LLAMAPARSE_MODE", "agentic"
+    )
+    app.config["RAG_EMBEDDING_DIM"] = int(
+        os.environ.get("RAG_EMBEDDING_DIM", "768")
+    )
+    app.config["RAG_TOP_K"] = int(os.environ.get("RAG_TOP_K", "8"))
+    app.config["RAG_CHUNK_TOKENS"] = int(
+        os.environ.get("RAG_CHUNK_TOKENS", "512")
+    )
+    app.config["RAG_CHUNK_OVERLAP"] = int(
+        os.environ.get("RAG_CHUNK_OVERLAP", "64")
+    )
+    # When a doc is not yet indexed, answer it from raw file attachments (the
+    # pre-RAG behavior) instead of refusing. Disable once everything is indexed.
+    app.config["RAG_ATTACHMENT_FALLBACK"] = (
+        os.environ.get("RAG_ATTACHMENT_FALLBACK", "true").lower() == "true"
     )
 
     app.config["QUIZ_MAX_QUESTIONS"] = int(

@@ -44,7 +44,9 @@ import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { MobileNav } from "@/components/MobileNav";
 import { OnboardingFlow } from "@/components/learning/OnboardingFlow";
 import { useAuth } from "@/contexts/AuthContext";
+import { DocumentViewerProvider } from "@/contexts/DocumentViewerContext";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
+import { useMediaProcessing } from "@/hooks/useMediaProcessing";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { useSwipe } from "@/hooks/useSwipe";
 import type { ThinkingHint } from "@/lib/loadingMessages";
@@ -57,20 +59,22 @@ import {
   useSessions,
 } from "@/hooks/api";
 import { getMessages, uploadFileWithProgress } from "@/lib/api";
-import { MAX_SELECTED_FILES, MAX_UPLOAD_FILES } from "@/lib/config";
 import { compressFiles } from "@/utils/compress";
 import type {
   Bookmark as BookmarkData,
   ChatSeed,
   ClarificationAnswer,
   FlashcardContent,
+  MediaItem,
   Message,
   PendingClarification,
   PendingQuizSetup,
+  ProcessingStage,
   QuizContent,
   QuizOptions,
   UploadProgress,
 } from "@/types";
+import { isMediaReady, PROCESSING_STAGES } from "@/types";
 
 const uid = () => crypto.randomUUID();
 
@@ -140,6 +144,7 @@ export default function ChatPage() {
     });
 
   const { start, stop, streaming } = useAssistantStream();
+  const processing = useMediaProcessing();
   const streamIdRef = useRef<string | null>(null);
   const composerRef = useRef<ChatComposerHandle>(null);
   // True while the user is on a fresh, empty "New chat" with no session yet.
@@ -464,49 +469,129 @@ export default function ChatPage() {
     navigate(`/chat?sessionId=${s.id}`, { state: { seed } });
   };
 
-  const handleUpload = async (files: FileList) => {
-    let list = await compressFiles(files);
-    if (list.length > MAX_UPLOAD_FILES) {
-      toast.error(`Up to ${MAX_UPLOAD_FILES} files at a time`);
-      list = list.slice(0, MAX_UPLOAD_FILES);
-    }
-    await Promise.all(
-      list.map(async (file) => {
-        const id = uid();
-        setUploads((prev) => [
-          { id, name: file.name, progress: 0, status: "uploading" },
-          ...prev,
-        ]);
-        try {
-          const item = await uploadFileWithProgress(
-            file,
-            activeId ?? undefined,
-            (p) =>
-              setUploads((prev) =>
-                prev.map((u) => (u.id === id ? { ...u, progress: p } : u)),
-              ),
-          );
-          setUploads((prev) => prev.filter((u) => u.id !== id));
-          qc.invalidateQueries({ queryKey: qk.media });
-          // Auto-select the freshly uploaded file if under the limit.
-          setSelected((prev) =>
-            prev.size < MAX_SELECTED_FILES
-              ? new Set(prev).add(item.id)
-              : prev,
-          );
-        } catch (e) {
-          setUploads((prev) =>
-            prev.map((u) => (u.id === id ? { ...u, status: "error" } : u)),
-          );
-          toast.error(e instanceof Error ? e.message : "Upload failed");
-          window.setTimeout(
-            () => setUploads((prev) => prev.filter((u) => u.id !== id)),
-            4000,
-          );
-        }
-      }),
+  const patchUpload = (id: string, patch: Partial<UploadProgress>) =>
+    setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+
+  const dropUpload = (id: string, delay = 0) =>
+    window.setTimeout(
+      () => setUploads((prev) => prev.filter((u) => u.id !== id)),
+      delay,
     );
+
+  /* --- Optimistic media cache: the upload response and SSE stream are the
+     source of truth, so we never re-fetch GET /media after a change. --- */
+  const upsertMediaCache = (item: MediaItem) =>
+    qc.setQueryData<MediaItem[]>(qk.media, (prev = []) =>
+      prev.some((m) => m.id === item.id) ? prev : [item, ...prev],
+    );
+
+  const setMediaStatus = (mediaId: string, status: ProcessingStage) =>
+    qc.setQueryData<MediaItem[]>(qk.media, (prev) =>
+      prev?.map((m) =>
+        m.id === mediaId ? { ...m, processing_status: status } : m,
+      ),
+    );
+
+  const removeMediaCache = (mediaId: string) =>
+    qc.setQueryData<MediaItem[]>(qk.media, (prev) =>
+      prev?.filter((m) => m.id !== mediaId),
+    );
+
+  // Drive the SSE processing stream for an uploaded media id, mapping frames to
+  // the upload card and keeping the shared media cache in lock-step.
+  const runProcessing = (rowId: string, mediaId: string) =>
+    processing.start(mediaId, {
+      onFrame: (f) => {
+        patchUpload(rowId, {
+          status: "processing",
+          stage: f.stage,
+          progress: f.pct || PROCESSING_STAGES[f.stage]?.pct || 0,
+          message: f.msg,
+        });
+        setMediaStatus(mediaId, f.stage);
+      },
+      onReady: () => {
+        patchUpload(rowId, { status: "ready", stage: "ready", progress: 100 });
+        setMediaStatus(mediaId, "ready");
+        // The freshly indexed file becomes active context automatically.
+        setSelected((prev) => new Set(prev).add(mediaId));
+        dropUpload(rowId, 900);
+      },
+      onError: (msg, recoverable) => {
+        patchUpload(rowId, { status: "error", message: msg, recoverable });
+        // A recoverable run keeps its record (resume); an unrecoverable one was
+        // scrubbed by the backend, so drop it from the cache too.
+        if (recoverable) setMediaStatus(mediaId, "error");
+        else removeMediaCache(mediaId);
+      },
+    });
+
+  const startUpload = async (file: File, rowId = uid()) => {
+    setUploads((prev) => {
+      const row: UploadProgress = {
+        id: rowId,
+        name: file.name,
+        progress: 0,
+        status: "uploading",
+        file,
+      };
+      return prev.some((u) => u.id === rowId)
+        ? prev.map((u) => (u.id === rowId ? row : u))
+        : [row, ...prev];
+    });
+
+    let item: MediaItem;
+    try {
+      item = await uploadFileWithProgress(file, activeId ?? undefined, (p) =>
+        patchUpload(rowId, { progress: p }),
+      );
+    } catch (e) {
+      patchUpload(rowId, {
+        status: "error",
+        recoverable: false,
+        message: e instanceof Error ? e.message : "Upload failed",
+      });
+      return;
+    }
+
+    // Surface the new file immediately, then let the SSE stream advance its
+    // status in place — no GET /media round-trip anywhere in this flow.
+    upsertMediaCache({ ...item, processing_status: "pending" });
+    patchUpload(rowId, {
+      mediaId: item.id,
+      status: "processing",
+      stage: "pending",
+      progress: PROCESSING_STAGES.pending.pct,
+    });
+    await runProcessing(rowId, item.id);
   };
+
+  const handleUpload = async (files: FileList) => {
+    const list = await compressFiles(files);
+    await Promise.all(list.map((file) => startUpload(file)));
+  };
+
+  const handleRetryUpload = (rowId: string) => {
+    const row = uploads.find((u) => u.id === rowId);
+    if (!row) return;
+    if (row.recoverable && row.mediaId) {
+      // Resume the still-present run rather than re-uploading.
+      patchUpload(rowId, {
+        status: "processing",
+        stage: "pending",
+        message: undefined,
+        recoverable: undefined,
+        progress: PROCESSING_STAGES.pending.pct,
+      });
+      void runProcessing(rowId, row.mediaId);
+    } else if (row.file) {
+      void startUpload(row.file, rowId);
+    } else {
+      dropUpload(rowId);
+    }
+  };
+
+  const handleDismissUpload = (rowId: string) => dropUpload(rowId);
 
   const handleNewChat = () => {
     // Land on a fresh, empty composer — the session is created only when the
@@ -547,8 +632,10 @@ export default function ChatPage() {
         next.delete(id);
         return next;
       }
-      if (next.size >= MAX_SELECTED_FILES) {
-        toast.error(`You can select up to ${MAX_SELECTED_FILES} files`);
+      // A file is only usable as context once it has finished indexing.
+      const item = media.find((m) => m.id === id);
+      if (item && !isMediaReady(item)) {
+        toast.error("This file is still being processed");
         return prev;
       }
       next.add(id);
@@ -581,11 +668,13 @@ export default function ChatPage() {
       onToggle={toggleMedia}
       onDelete={(id) => deleteMedia.mutateAsync(id)}
       onUpload={handleUpload}
+      onRetryUpload={handleRetryUpload}
+      onDismissUpload={handleDismissUpload}
     />
   );
 
   return (
-    <>
+    <DocumentViewerProvider>
       <Seo title="StudyAssistant — Chat with Aeva" noindex path="/chat" />
       <div className="flex h-dvh flex-col bg-background">
         {/* Top bar */}
@@ -822,6 +911,6 @@ export default function ChatPage() {
           void refreshUser();
         }}
       />
-    </>
+    </DocumentViewerProvider>
   );
 }

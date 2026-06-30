@@ -1,9 +1,15 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Copy, ExternalLink, Globe } from "lucide-react";
+import { Copy, ExternalLink, FileText, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import type { SourceInfo } from "@/types";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useDocumentViewer } from "@/contexts/DocumentViewerContext";
+import { isDocSource, type SourceInfo } from "@/types";
 
 function domainOf(url?: string): string {
   if (!url) return "";
@@ -72,12 +78,77 @@ function SourceCard({ source }: { source: SourceInfo }) {
   );
 }
 
+/**
+ * A document citation rendered as a compact, ChatGPT-style chip: document name
+ * + cited page, a tooltip with the section/snippet, and a click that opens the
+ * viewer jumped to that page. Many chips scroll horizontally rather than
+ * stacking into a long list.
+ */
+function DocCitationChip({
+  source,
+  onOpen,
+}: {
+  source: SourceInfo;
+  onOpen: () => void;
+}) {
+  const name = source.document_name || "Document";
+  const page = source.page_number;
+  const hasDetail = Boolean(source.section || source.snippet);
+
+  const chip = (
+    <motion.button
+      type="button"
+      onClick={onOpen}
+      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.97 }}
+      className="group inline-flex max-w-[230px] shrink-0 snap-start items-center gap-1.5 rounded-full border border-border/70 bg-card/60 py-1 pl-1.5 pr-2.5 text-xs transition-colors hover:border-brand-1/50 hover:bg-card"
+    >
+      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-1/10 text-brand-1">
+        <FileText className="h-3 w-3" />
+      </span>
+      <span className="truncate font-medium">{name}</span>
+      {page != null && (
+        <span className="shrink-0 whitespace-nowrap text-muted-foreground">
+          · p.{page}
+        </span>
+      )}
+    </motion.button>
+  );
+
+  if (!hasDetail) return chip;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{chip}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        {source.section && (
+          <p className="text-[11px] font-semibold">{source.section}</p>
+        )}
+        {source.snippet && (
+          <p className="mt-0.5 line-clamp-4 text-[11px] text-muted-foreground">
+            {source.snippet}
+          </p>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function SourceCards({ sources }: { sources: SourceInfo[] }) {
+  const viewer = useDocumentViewer();
   if (!sources.length) return null;
+  const docs = sources.filter(isDocSource);
+  const webs = sources.filter((s) => !isDocSource(s));
+  const allDocs = webs.length === 0;
+
   return (
     <div className="mt-3 border-t border-border/40 pt-2.5">
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <Globe className="h-3.5 w-3.5 text-brand-1" />
+        {allDocs ? (
+          <FileText className="h-3.5 w-3.5 text-brand-1" />
+        ) : (
+          <Globe className="h-3.5 w-3.5 text-brand-1" />
+        )}
         <span className="text-xs font-medium">
           Sources used for this answer
         </span>
@@ -85,11 +156,35 @@ export function SourceCards({ sources }: { sources: SourceInfo[] }) {
           {sources.length}
         </Badge>
       </div>
-      <div className="flex snap-x scroll-smooth gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-4">
-        {sources.map((s, i) => (
-          <SourceCard key={i} source={s} />
-        ))}
-      </div>
+
+      {/* Document citations: a compact, horizontally scrollable chip row. */}
+      {docs.length > 0 && (
+        <div className="flex snap-x scroll-smooth gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {docs.map((s, i) => (
+            <DocCitationChip
+              key={`doc-${i}`}
+              source={s}
+              onOpen={() => {
+                if (s.media_id) {
+                  void viewer.openDocumentByMediaId(
+                    s.media_id,
+                    s.page_number ?? undefined,
+                  );
+                }
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Web results keep their richer preview cards. */}
+      {webs.length > 0 && (
+        <div className="mt-2 flex snap-x scroll-smooth gap-2 overflow-x-auto pb-1 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {webs.map((s, i) => (
+            <SourceCard key={`web-${i}`} source={s} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -53,9 +53,21 @@ export interface Session {
 }
 
 export interface SourceInfo {
-  title: string;
+  title?: string;
   url?: string;
   snippet?: string;
+  // Document-citation fields (media_llm RAG answers). When present, the source
+  // points at a page of an uploaded document rather than a web result.
+  document_name?: string;
+  page_number?: number | null;
+  chunk_id?: string;
+  section?: string | null;
+  media_id?: string;
+}
+
+/** A source is a document citation when it carries a media id / document name. */
+export function isDocSource(s: SourceInfo): boolean {
+  return Boolean((s.media_id || s.document_name) && !s.url);
 }
 
 export interface ClarificationQuestion {
@@ -199,13 +211,84 @@ export interface MediaItem {
   size_bytes: number;
   created_at: string;
   signed_url?: string;
+  // RAG processing lifecycle (backend migration 007). Optional because older
+  // payloads omit it; a missing value is treated as ready (see isMediaReady).
+  processing_status?: ProcessingStatus;
+  processing_error?: string | null;
+  page_count?: number | null;
 }
+
+/** A media item is usable as chat context only once it is indexed. */
+export function isMediaReady(m: MediaItem): boolean {
+  return (m.processing_status ?? "ready") === "ready";
+}
+
+// Backend-emitted processing stages, in pipeline order. "uploading" is a
+// client-only stage (the XHR upload finishes before the SSE stream opens).
+export type ProcessingStage =
+  | "uploading"
+  | "pending"
+  | "parsing"
+  | "extracting"
+  | "chunking"
+  | "embedding"
+  | "indexing"
+  | "ready"
+  | "error";
+
+// A media row's persisted status. Mirrors the pipeline stages, plus "failed"
+// (a recoverable failure the backend keeps for a resume).
+export type ProcessingStatus = ProcessingStage | "failed";
+
+interface StageMeta {
+  /** An evocative, animated icon shown while the stage runs. */
+  emoji: string;
+  label: string;
+  pct: number;
+}
+
+// Single source of truth for stage copy, icon, and a nominal progress value
+// (used when a frame omits pct). The backend sends its own per-stage `msg`,
+// which the UI prefers; these labels are the fallback. Renaming a backend
+// stage is a one-line change here.
+export const PROCESSING_STAGES: Record<ProcessingStage, StageMeta> = {
+  uploading: { emoji: "📤", label: "Uploading your file…", pct: 8 },
+  pending: { emoji: "⏳", label: "Queued for processing…", pct: 12 },
+  parsing: { emoji: "📄", label: "Reading your document…", pct: 28 },
+  extracting: { emoji: "🔍", label: "Extracting tables & text…", pct: 48 },
+  chunking: { emoji: "📚", label: "Organizing into knowledge…", pct: 65 },
+  embedding: { emoji: "⚡", label: "Generating embeddings…", pct: 82 },
+  indexing: { emoji: "🧠", label: "Building knowledge index…", pct: 94 },
+  ready: { emoji: "🚀", label: "Document is ready!", pct: 100 },
+  error: { emoji: "⚠️", label: "Something went wrong", pct: 0 },
+};
+
+// Ordered stages for a stepper UI (terminal/synthetic stages excluded).
+export const STAGE_ORDER: ProcessingStage[] = [
+  "uploading",
+  "parsing",
+  "extracting",
+  "chunking",
+  "embedding",
+  "indexing",
+  "ready",
+];
 
 export interface UploadProgress {
   id: string;
+  // Backend media id, set once the upload resolves.
+  mediaId?: string;
   name: string;
-  progress: number; // 0-100
-  status: "uploading" | "error";
+  progress: number; // 0-100 (upload pct, then processing pct)
+  status: "uploading" | "processing" | "ready" | "error";
+  // Current pipeline stage while status is "processing".
+  stage?: ProcessingStage;
+  // Latest SSE message, shown as a sub-label.
+  message?: string;
+  // Original file, kept in memory so a failed upload can be retried in place.
+  file?: File;
+  // For a failed run: true when it can be resumed, false when it must re-upload.
+  recoverable?: boolean;
 }
 
 export interface ClarificationAnswer {

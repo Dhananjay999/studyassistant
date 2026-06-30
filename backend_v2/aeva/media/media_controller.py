@@ -1,8 +1,9 @@
 """Media controller."""
 
+from collections.abc import Generator
 from typing import Any
 
-from flask import request
+from flask import Response, current_app, request
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
@@ -55,6 +56,49 @@ class MediaDetail(MethodView):
         return MediaRepository.delete_media(current_user, media_id)
 
 
+class MediaStatus(MethodView):
+    """Media processing-status route (polling / reconnect)."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def get(
+        current_user: UserData,
+        media_id: str,
+    ) -> dict[str, Any]:
+        """Return a media record with its current processing status."""
+        return MediaRepository.get_status(current_user, media_id)
+
+
+class MediaProcess(MethodView):
+    """Media processing route: streams RAG-pipeline progress via SSE."""
+
+    @staticmethod
+    @user_required
+    def get(
+        current_user: UserData,
+        media_id: str,
+    ) -> Response:
+        """Run (or resume) processing, streaming stage progress as SSE."""
+        app = current_app._get_current_object()  # noqa: SLF001
+
+        def generate() -> Generator[str, None, None]:
+            with app.app_context():
+                yield from MediaRepository.process_stream(
+                    current_user, media_id
+                )
+
+        return Response(
+            generate(),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+
 blueprint.add_url_rule(
     "/", view_func=MediaUpload, endpoint="media_upload"
 )
@@ -62,4 +106,14 @@ blueprint.add_url_rule(
     "/<media_id>",
     view_func=MediaDetail,
     endpoint="media_detail",
+)
+blueprint.add_url_rule(
+    "/<media_id>/status",
+    view_func=MediaStatus,
+    endpoint="media_status",
+)
+blueprint.add_url_rule(
+    "/<media_id>/process",
+    view_func=MediaProcess,
+    endpoint="media_process",
 )

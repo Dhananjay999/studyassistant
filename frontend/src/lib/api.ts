@@ -39,6 +39,8 @@ export const ENDPOINTS = {
   SESSION_MESSAGES: (id: string) => `/sessions/${id}/messages`,
   MEDIA: "/media/",
   MEDIA_ITEM: (id: string) => `/media/${id}`,
+  MEDIA_STATUS: (id: string) => `/media/${id}/status`,
+  MEDIA_PROCESS: (id: string) => `/media/${id}/process`,
   ASSISTANT_STREAM: "/assistant/stream",
   QUIZZES: "/quiz/",
   QUIZ: (id: string) => `/quiz/${id}`,
@@ -257,6 +259,14 @@ export function uploadFileWithProgress(
 
 export const deleteMedia = (id: string) =>
   unwrap<{ id: string }>(ENDPOINTS.MEDIA_ITEM(id), { method: "DELETE" });
+
+/** Current processing status for a media item (polling / SSE reconnect). */
+export const getMediaStatus = (id: string) =>
+  unwrap<MediaItem>(ENDPOINTS.MEDIA_STATUS(id));
+
+/** Absolute URL of the media processing SSE stream. */
+export const mediaProcessUrl = (id: string) =>
+  `${API_BASE_URL}${ENDPOINTS.MEDIA_PROCESS(id)}`;
 
 /* ---------------------------------- quiz ---------------------------------- */
 

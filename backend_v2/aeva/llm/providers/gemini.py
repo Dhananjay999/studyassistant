@@ -2,6 +2,7 @@
 
 import io
 import json
+import math
 from collections.abc import Generator
 from typing import Any
 
@@ -11,6 +12,29 @@ from google.genai import types
 
 from aeva.llm import prompts
 from aeva.llm.providers.base import LLMProvider
+
+# Gemini caps the number of texts accepted per embed_content call; batch under
+# it so a large document's chunks embed across several requests.
+_EMBED_BATCH_SIZE = 100
+
+
+def _l2_normalize(values: list[float]) -> list[float]:
+    """Scale a vector to unit length.
+
+    Gemini embeddings are pre-normalized only at the default 3072 dimensions;
+    truncated outputs (e.g. 768) are not, so cosine search needs an explicit
+    L2 normalization here to stay correct.
+    """
+    norm = math.sqrt(sum(v * v for v in values))
+    if norm == 0:
+        return values
+    return [v / norm for v in values]
+
+
+def _batched(texts: list[str], size: int) -> Generator[list[str], None, None]:
+    """Yield successive slices of ``texts`` of at most ``size`` items."""
+    for start in range(0, len(texts), size):
+        yield texts[start : start + size]
 
 
 class GeminiProvider(LLMProvider):
@@ -161,3 +185,31 @@ class GeminiProvider(LLMProvider):
                 self.last_sources = sources
             if chunk.text:
                 yield chunk.text
+
+    def embed(
+        self,
+        texts: list[str],
+        *,
+        task_type: str = "RETRIEVAL_DOCUMENT",
+        output_dimensionality: int = 768,
+    ) -> list[list[float]]:
+        """Embed texts with Gemini, L2-normalized for cosine search.
+
+        ``task_type`` is ``RETRIEVAL_DOCUMENT`` when indexing chunks and
+        ``RETRIEVAL_QUERY`` for a search query; matching them improves recall.
+        """
+        vectors: list[list[float]] = []
+        for batch in _batched(texts, _EMBED_BATCH_SIZE):
+            response = self.client.models.embed_content(
+                model=self.model,
+                contents=batch,  # type: ignore[arg-type]
+                config=types.EmbedContentConfig(
+                    task_type=task_type,
+                    output_dimensionality=output_dimensionality,
+                ),
+            )
+            vectors.extend(
+                _l2_normalize(list(embedding.values or []))
+                for embedding in response.embeddings or []
+            )
+        return vectors

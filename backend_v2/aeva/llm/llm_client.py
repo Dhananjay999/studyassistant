@@ -94,6 +94,20 @@ class LLMClient:
             use_search=use_search,
         )
 
+    def embed(
+        self,
+        texts: list[str],
+        *,
+        task_type: str = "RETRIEVAL_DOCUMENT",
+        output_dimensionality: int = 768,
+    ) -> list[list[float]]:
+        """Embed texts via the underlying provider (RAG retrieval layer)."""
+        return self._provider.embed(
+            texts,
+            task_type=task_type,
+            output_dimensionality=output_dimensionality,
+        )
+
     @staticmethod
     def format_sse_chunk(
         content: str,

@@ -1,17 +1,27 @@
 """Media repository."""
 
+import json
 import logging
 import uuid
+from collections.abc import Generator
 from typing import Any
 
+from flask import current_app
 from werkzeug.datastructures import FileStorage
 
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import UserData, success_response
-from aeva.media.compression import ALLOWED_IMAGE_TYPES, ALLOWED_PDF_TYPE, compress_media
+from aeva.media.compression import (
+    ALLOWED_IMAGE_TYPES,
+    ALLOWED_PDF_TYPE,
+    compress_media,
+)
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
+
+# Storage-path columns whose files must be removed alongside the original.
+_PARSED_PATH_KEYS = ("parsed_json_path", "parsed_md_path", "parsed_text_path")
 
 ALLOWED_TYPES = ALLOWED_IMAGE_TYPES | {ALLOWED_PDF_TYPE}
 
@@ -93,12 +103,48 @@ class MediaRepository:
         current_user: UserData,
         media_id: str,
     ) -> dict[str, Any]:
-        """Delete a media file."""
+        """Delete a media file and all of its derived artifacts."""
         supabase = SupabaseService()
         record = supabase.get_media(media_id, current_user.id)
         if not record:
             raise CustomError(ERROR_CODES["NOT_FOUND"])
 
         supabase.delete_storage_file(record["storage_path"])
+        for key in _PARSED_PATH_KEYS:
+            if record.get(key):
+                supabase.delete_storage_file(record[key])
+        # media_chunks / media_pages drop via ON DELETE CASCADE.
         supabase.delete_media_record(media_id, current_user.id)
         return success_response("Media deleted", {"id": media_id})
+
+    @staticmethod
+    def get_status(
+        current_user: UserData,
+        media_id: str,
+    ) -> dict[str, Any]:
+        """Return a media record with its processing status (for polling)."""
+        supabase = SupabaseService()
+        record = supabase.get_media(media_id, current_user.id)
+        if not record:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        record["signed_url"] = supabase.get_signed_url(
+            record["storage_path"]
+        )
+        return success_response("Media status", record)
+
+    @staticmethod
+    def process_stream(
+        current_user: UserData,
+        media_id: str,
+    ) -> Generator[str, None, None]:
+        """Stream processing progress as SSE frames.
+
+        Delegates to the container's ``MediaProcessor`` (which owns the staged
+        parse -> chunk -> embed -> index pipeline) and frames each progress
+        event; the ``ready`` and ``error`` stages also carry ``done: true``.
+        """
+        container = current_app.extensions["container"]
+        processor = container.media_processor()
+        for event in processor.process(current_user.id, media_id):
+            done = event["stage"] in ("ready", "error")
+            yield f"data: {json.dumps({**event, 'done': done})}\n\n"

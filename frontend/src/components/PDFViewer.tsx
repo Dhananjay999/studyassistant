@@ -19,6 +19,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 interface PDFViewerProps {
   url: string;
   fileName?: string;
+  /** Page to jump to once the document loads (1-based), e.g. from a citation. */
+  initialPage?: number;
   onClose: () => void;
 }
 
@@ -40,7 +42,12 @@ function touchDistance(touches: React.TouchList): number {
  * pinch-to-zoom, a live page indicator, lazy page rendering, and an optional
  * desktop thumbnail rail — closer to Google Drive than a single-page pager.
  */
-export default function PDFViewer({ url, fileName, onClose }: PDFViewerProps) {
+export default function PDFViewer({
+  url,
+  fileName,
+  initialPage,
+  onClose,
+}: PDFViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(1);
@@ -50,6 +57,7 @@ export default function PDFViewer({ url, fileName, onClose }: PDFViewerProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinch = useRef<{ dist: number; zoom: number } | null>(null);
+  const jumpedRef = useRef(false);
 
   // Track the available width so pages fit it (minus padding).
   useEffect(() => {
@@ -66,10 +74,28 @@ export default function PDFViewer({ url, fileName, onClose }: PDFViewerProps) {
   const baseWidth = Math.max(280, containerWidth - 32);
   const pageWidth = Math.round(baseWidth * zoom);
 
-  const onDocLoad = useCallback(({ numPages: n }: { numPages: number }) => {
-    setNumPages(n);
-    setCurrentPage(1);
-  }, []);
+  const onDocLoad = useCallback(
+    ({ numPages: n }: { numPages: number }) => {
+      setNumPages(n);
+      // Honour an initial page (citation jump); otherwise start at the top.
+      setCurrentPage(initialPage ? clamp(initialPage, 1, n) : 1);
+    },
+    [initialPage],
+  );
+
+  // Scroll to the cited page once the page placeholders are laid out. Runs
+  // once; the placeholders exist immediately so the target is always present.
+  useEffect(() => {
+    if (!numPages || !initialPage || jumpedRef.current) return undefined;
+    jumpedRef.current = true;
+    const target = clamp(initialPage, 1, numPages);
+    const t = window.setTimeout(() => {
+      scrollRef.current
+        ?.querySelector(`[data-page="${target}"]`)
+        ?.scrollIntoView({ block: "start" });
+    }, 100);
+    return () => window.clearTimeout(t);
+  }, [numPages, initialPage]);
 
   const onFirstPageLoad = useCallback(
     ({ width, height }: { width: number; height: number }) => {

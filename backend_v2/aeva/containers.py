@@ -8,6 +8,8 @@ from aeva.mcp.tools.flashcard_generator import FlashcardGeneratorTool
 from aeva.mcp.tools.media_llm import MediaLLMTool
 from aeva.mcp.tools.quiz_generator import QuizGeneratorTool
 from aeva.mcp.tools.web_search import WebSearchTool
+from aeva.media.llamaparse_service import LlamaParseService
+from aeva.media.media_processor import MediaProcessor
 from aeva.supabase.supabase_service import SupabaseService
 
 
@@ -16,12 +18,15 @@ def build_tool_registry(
     media_llm: LLMClient,
     quiz_llm: LLMClient,
     flashcard_llm: LLMClient,
+    embed_llm: LLMClient,
     supabase: SupabaseService,
 ) -> ToolRegistry:
     """Create registry with per-tool LLM clients."""
     registry = ToolRegistry()
     registry.register(WebSearchTool(llm=web_search_llm))
-    registry.register(MediaLLMTool(llm=media_llm, supabase=supabase))
+    registry.register(
+        MediaLLMTool(llm=media_llm, supabase=supabase, embed_llm=embed_llm)
+    )
     registry.register(QuizGeneratorTool(llm=quiz_llm, supabase=supabase))
     registry.register(
         FlashcardGeneratorTool(llm=flashcard_llm, supabase=supabase)
@@ -57,6 +62,18 @@ class Container(containers.DeclarativeContainer):
         LLMClient,
         config_key="LLM_FLASHCARD_MODEL",
     )
+    llm_embedding = providers.Singleton(
+        LLMClient,
+        config_key="LLM_EMBEDDING_MODEL",
+    )
+
+    llamaparse_service = providers.Singleton(LlamaParseService)
+    media_processor = providers.Singleton(
+        MediaProcessor,
+        supabase=supabase_service,
+        llamaparse=llamaparse_service,
+        embed_llm=llm_embedding,
+    )
 
     tool_registry = providers.Singleton(
         build_tool_registry,
@@ -64,5 +81,6 @@ class Container(containers.DeclarativeContainer):
         media_llm=llm_media,
         quiz_llm=llm_quiz,
         flashcard_llm=llm_flashcard,
+        embed_llm=llm_embedding,
         supabase=supabase_service,
     )
