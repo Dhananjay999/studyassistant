@@ -9,6 +9,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUp, Loader2, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SlashCommandMenu } from "@/components/chat/SlashCommandMenu";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { filterSlashCommands, type SlashCommand } from "@/lib/slashCommands";
 import { isModifier } from "@/lib/platform";
 import { cn } from "@/lib/utils";
@@ -55,6 +56,14 @@ export const ChatComposer = forwardRef<
   const [activeIndex, setActiveIndex] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const isMobile = useIsMobile();
+  // Full prompt wraps to two lines on a narrow phone (and the second line gets
+  // clipped by the single-row height), so use a short one-line hint on mobile.
+  const placeholder = locked
+    ? lockedPlaceholder
+    : isMobile
+      ? "Ask anything…"
+      : "Ask anything, type / for commands, or attach notes…";
 
   const commands = filterSlashCommands(value);
   const menuOpen =
@@ -225,12 +234,8 @@ export const ChatComposer = forwardRef<
             }}
             onKeyDown={onKeyDown}
             disabled={locked}
-            placeholder={
-              locked
-                ? lockedPlaceholder
-                : "Ask anything, type / for commands, or attach notes…"
-            }
-            className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            placeholder={placeholder}
+            className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
           />
 
           <Button

@@ -8,12 +8,15 @@ import { buildSuggestedPrompts } from "@/lib/suggestedPrompts";
 export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   const reduce = useReducedMotion();
   const isMobile = useIsMobile();
-  const { data: profile } = useLearningProfile();
+  const { data: profile, isLoading } = useLearningProfile();
+  const count = isMobile ? 4 : 6;
 
   // Re-rolled per mount (opening a new chat) so combinations stay fresh.
+  // Building only once the profile has resolved keeps the set from flickering
+  // (generic → personalized) — while loading we show a skeleton instead.
   const prompts = useMemo(
-    () => buildSuggestedPrompts(profile, isMobile ? 4 : 6),
-    [profile, isMobile],
+    () => buildSuggestedPrompts(profile, count),
+    [profile, count],
   );
 
   return (
@@ -65,20 +68,32 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
       </motion.div>
 
       <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-center">
-        {prompts.map((p, i) => (
-          <motion.button
-            key={p.text}
-            type="button"
-            onClick={() => onPick(p.text)}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.18 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}
-            className="glass flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-transform hover:-translate-y-0.5 hover:shadow-glow"
-          >
-            <p.icon className="h-4 w-4 shrink-0 text-brand-1" />
-            {p.text}
-          </motion.button>
-        ))}
+        {isLoading
+          ? Array.from({ length: count }).map((_, i) => (
+              <div
+                key={i}
+                aria-hidden
+                style={{ width: isMobile ? "100%" : `${64 + ((i * 13) % 24)}%` }}
+                className="glass flex h-11 items-center gap-2 rounded-xl px-4 sm:w-auto sm:min-w-[13rem] sm:flex-1 sm:basis-[13rem]"
+              >
+                <span className="h-4 w-4 shrink-0 animate-pulse rounded bg-muted-foreground/25" />
+                <span className="h-3 flex-1 animate-pulse rounded bg-muted-foreground/20" />
+              </div>
+            ))
+          : prompts.map((p, i) => (
+              <motion.button
+                key={p.text}
+                type="button"
+                onClick={() => onPick(p.text)}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.18 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}
+                className="glass flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-transform hover:-translate-y-0.5 hover:shadow-glow"
+              >
+                <p.icon className="h-4 w-4 shrink-0 text-brand-1" />
+                {p.text}
+              </motion.button>
+            ))}
       </div>
     </div>
   );

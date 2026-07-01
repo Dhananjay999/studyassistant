@@ -5,7 +5,9 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Maximize,
   Maximize2,
+  Minimize,
   PanelLeft,
   X,
   ZoomIn,
@@ -22,7 +24,16 @@ interface PDFViewerProps {
   /** Page to jump to once the document loads (1-based), e.g. from a citation. */
   initialPage?: number;
   onClose: () => void;
+  /** True when the viewer currently fills the screen (vs docked beside chat). */
+  fullscreen?: boolean;
+  /** Toggle between docked and fullscreen; omit to hide the control (mobile). */
+  onToggleFullscreen?: () => void;
 }
+
+/**
+ * Fills its parent container; the parent decides whether that container is a
+ * docked side panel or a full-screen overlay.
+ */
 
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 4;
@@ -47,6 +58,8 @@ export default function PDFViewer({
   fileName,
   initialPage,
   onClose,
+  fullscreen = false,
+  onToggleFullscreen,
 }: PDFViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -163,7 +176,7 @@ export default function PDFViewer({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex flex-col bg-neutral-950"
+      className="flex h-full w-full flex-col bg-neutral-950"
     >
       {/* Header */}
       <div className="flex items-center gap-1 border-b border-white/10 px-2 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] sm:px-3">
@@ -213,6 +226,21 @@ export default function PDFViewer({
         >
           <Maximize2 className="h-4 w-4" />
         </Button>
+        {onToggleFullscreen && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden h-9 w-9 text-white lg:inline-flex"
+            onClick={onToggleFullscreen}
+            aria-label={fullscreen ? "Exit full screen" : "Expand to full screen"}
+          >
+            {fullscreen ? (
+              <Minimize className="h-4 w-4" />
+            ) : (
+              <Maximize className="h-4 w-4" />
+            )}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"

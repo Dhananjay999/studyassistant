@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Bookmark,
   FolderOpen,
+  GraduationCap,
   LogOut,
   Menu,
   Search,
@@ -44,7 +52,11 @@ import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { MobileNav } from "@/components/MobileNav";
 import { OnboardingFlow } from "@/components/learning/OnboardingFlow";
 import { useAuth } from "@/contexts/AuthContext";
-import { DocumentViewerProvider } from "@/contexts/DocumentViewerContext";
+import {
+  DocumentViewerContext,
+  useDocumentViewerController,
+} from "@/contexts/DocumentViewerContext";
+import { useIsDesktop } from "@/hooks/use-mobile";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
 import { useMediaProcessing } from "@/hooks/useMediaProcessing";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
@@ -77,6 +89,9 @@ import type {
   UploadProgress,
 } from "@/types";
 import { isMediaReady, PROCESSING_STAGES } from "@/types";
+import { cn } from "@/lib/utils";
+
+const PDFViewer = lazy(() => import("@/components/PDFViewer"));
 
 const uid = () => crypto.randomUUID();
 
@@ -112,6 +127,7 @@ export default function ChatPage() {
   const [thinkingHint, setThinkingHint] = useState<ThinkingHint | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   // Touch navigation: swipe right opens the nav drawer, swipe left opens the
   // files sheet. Touch-only, so desktop pointer use is unaffected.
@@ -177,11 +193,52 @@ export default function ChatPage() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("aeva_sidebar_collapsed") === "1",
   );
+  // The user's own collapse preference, kept separate from the automatic
+  // collapse we apply while a document is docked (so it can be restored).
+  const userCollapsedRef = useRef(collapsed);
   const toggleCollapse = () =>
     setCollapsed((c) => {
-      localStorage.setItem("aeva_sidebar_collapsed", c ? "0" : "1");
-      return !c;
+      const next = !c;
+      localStorage.setItem("aeva_sidebar_collapsed", next ? "1" : "0");
+      userCollapsedRef.current = next;
+      return next;
     });
+
+  // Document viewer: docked beside the chat on desktop, full-screen on mobile
+  // (or when the user expands it). State lives here so the layout can react —
+  // shrink the chat for the panel and auto-collapse the nav sidebar.
+  const docViewer = useDocumentViewerController();
+  const isDesktop = useIsDesktop();
+  const pdfOpen = !!docViewer.viewer;
+  const pdfDocked = pdfOpen && isDesktop && docViewer.mode === "docked";
+  const pdfFullscreen = pdfOpen && (!isDesktop || docViewer.mode === "fullscreen");
+
+  const [pdfWidth, setPdfWidth] = useState<number>(() => {
+    const saved = Number(sessionStorage.getItem("aeva_pdf_width"));
+    return saved >= 360 && saved <= 760 ? saved : 480;
+  });
+  const latestPdfWidth = useRef(pdfWidth);
+  const startPdfResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const onMove = (ev: PointerEvent) => {
+      const w = Math.min(760, Math.max(360, window.innerWidth - ev.clientX));
+      latestPdfWidth.current = w;
+      setPdfWidth(w);
+    };
+    const onUp = () => {
+      sessionStorage.setItem("aeva_pdf_width", String(latestPdfWidth.current));
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Auto-collapse the nav sidebar while a document is docked, freeing width for
+  // the chat + PDF; restore the user's preference once it's closed/expanded.
+  useEffect(() => {
+    setCollapsed(pdfDocked ? true : userCollapsedRef.current);
+  }, [pdfDocked]);
 
   const { start, stop, streaming } = useAssistantStream();
   const processing = useMediaProcessing();
@@ -720,6 +777,7 @@ export default function ChatPage() {
       onToggleCollapse={toggleCollapse}
       onNewChat={handleNewChat}
       onSearch={() => setPaletteOpen(true)}
+      onNavigate={mobile ? () => setSidebarOpen(false) : undefined}
       sessions={sessions}
       loading={sessionsQuery.isLoading}
       activeId={activeId}
@@ -731,7 +789,7 @@ export default function ChatPage() {
     />
   );
 
-  const mediaSidebar = (
+  const renderMediaSidebar = (section: "media" | "resources" | "both") => (
     <MediaSidebar
       items={media}
       uploads={uploads}
@@ -746,15 +804,25 @@ export default function ChatPage() {
       onUpload={handleUpload}
       onRetryUpload={handleRetryUpload}
       onDismissUpload={handleDismissUpload}
-      onOpenQuiz={openQuizById}
-      onOpenFlashcards={openFlashcards}
+      onOpenQuiz={(id) => {
+        setToolsOpen(false);
+        void openQuizById(id);
+      }}
+      onOpenFlashcards={(id) => {
+        setToolsOpen(false);
+        openFlashcards(id);
+      }}
+      section={section}
     />
   );
 
   return (
-    <DocumentViewerProvider>
+    <DocumentViewerContext.Provider value={docViewer.value}>
       <Seo title="StudyAssistant — Chat with Aeva" noindex path="/chat" />
-      <div className="flex h-dvh flex-col bg-background">
+      <div
+        className="flex h-dvh flex-col bg-background"
+        style={pdfDocked ? { paddingRight: pdfWidth } : undefined}
+      >
         {/* Top bar */}
         <header className="z-10 flex items-center gap-2 border-b border-border/50 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
           <Button
@@ -784,6 +852,21 @@ export default function ChatPage() {
             {media.length > 0 && (
               <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
                 {media.length}
+              </Badge>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 xl:hidden"
+            onClick={() => setToolsOpen(true)}
+            aria-label="Learning tools"
+          >
+            <GraduationCap className="h-4 w-4" />
+            <span className="hidden sm:inline">Tools</span>
+            {sessionQuizzes.length + sessionFlashcards.length > 0 && (
+              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
+                {sessionQuizzes.length + sessionFlashcards.length}
               </Badge>
             )}
           </Button>
@@ -957,9 +1040,13 @@ export default function ChatPage() {
             />
           </main>
 
-          {/* Right media sidebar (persistent on xl, drag-to-resize on desktop) */}
+          {/* Right media sidebar (persistent on xl, drag-to-resize on desktop).
+             Hidden while a document is docked so the PDF gets the room. */}
           <aside
-            className="relative hidden shrink-0 border-l border-border/50 p-3 xl:block"
+            className={cn(
+              "relative hidden shrink-0 border-l border-border/50 p-3",
+              !pdfDocked && "xl:block",
+            )}
             style={{ width: mediaWidth }}
           >
             {/* Drag handle on the inner edge; remembers width for the session. */}
@@ -970,14 +1057,23 @@ export default function ChatPage() {
               aria-label="Resize sidebar"
               className="absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-brand-1/30"
             />
-            {mediaSidebar}
+            {renderMediaSidebar("both")}
           </aside>
-          {/* Mobile/tablet: files open as a bottom sheet, not a side panel. */}
+          {/* Mobile/tablet: Media and Learning Tools are two separate sheets,
+             each with its own entry point in the header. */}
           <Drawer open={mediaOpen} onOpenChange={setMediaOpen}>
             <DrawerContent className="max-h-[85vh] pb-safe">
               <DrawerTitle className="sr-only">Your files</DrawerTitle>
               <div className="h-[70vh] overflow-hidden px-4 pb-2">
-                {mediaSidebar}
+                {renderMediaSidebar("media")}
+              </div>
+            </DrawerContent>
+          </Drawer>
+          <Drawer open={toolsOpen} onOpenChange={setToolsOpen}>
+            <DrawerContent className="max-h-[85vh] pb-safe">
+              <DrawerTitle className="sr-only">Learning tools</DrawerTitle>
+              <div className="h-[70vh] overflow-hidden px-4 pb-2">
+                {renderMediaSidebar("resources")}
               </div>
             </DrawerContent>
           </Drawer>
@@ -1008,6 +1104,44 @@ export default function ChatPage() {
           void refreshUser();
         }}
       />
-    </DocumentViewerProvider>
+
+      {/* Single PDF instance. Docked = a resizable right column beside the chat
+         (the outer div's padding reserves its space); fullscreen = a top overlay
+         that takes over. Toggling only changes this wrapper, so the document
+         never reloads. */}
+      {pdfOpen && (
+        <div
+          className={cn(
+            "fixed",
+            pdfFullscreen
+              ? "inset-0 z-50"
+              : "right-0 top-0 z-40 h-dvh border-l border-border/50",
+          )}
+          style={pdfFullscreen ? undefined : { width: pdfWidth }}
+        >
+          {pdfDocked && (
+            <div
+              onPointerDown={startPdfResize}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize document panel"
+              className="absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-brand-1/30"
+            />
+          )}
+          <Suspense fallback={null}>
+            <PDFViewer
+              url={docViewer.viewer!.url}
+              fileName={docViewer.viewer!.fileName}
+              initialPage={docViewer.viewer!.page}
+              onClose={docViewer.close}
+              fullscreen={pdfFullscreen}
+              onToggleFullscreen={
+                isDesktop ? docViewer.toggleFullscreen : undefined
+              }
+            />
+          </Suspense>
+        </div>
+      )}
+    </DocumentViewerContext.Provider>
   );
 }

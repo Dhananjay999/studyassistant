@@ -88,7 +88,7 @@ class AssistantRequestSchema(Schema):
                 custom_text=clar.get("custom_text"),
             )
         opts = data.get("quiz_options")
-        if opts and isinstance(opts, dict):
+        if isinstance(opts, dict):
             data["quiz_options"] = QuizOptions(
                 topic=opts.get("topic"),
                 question_count=opts.get("question_count"),
@@ -98,7 +98,7 @@ class AssistantRequestSchema(Schema):
                 additional_instructions=opts.get("additional_instructions"),
             )
         fc = data.get("flashcard_options")
-        if fc and isinstance(fc, dict):
+        if isinstance(fc, dict):
             data["flashcard_options"] = FlashcardOptions(
                 count=fc.get("count"),
             )

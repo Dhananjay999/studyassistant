@@ -48,6 +48,7 @@ export function MediaSidebar({
   onDismissUpload,
   onOpenQuiz,
   onOpenFlashcards,
+  section = "both",
 }: {
   items: MediaItem[];
   uploads: UploadProgress[];
@@ -67,6 +68,9 @@ export function MediaSidebar({
   onDismissUpload: (id: string) => void;
   onOpenQuiz: (quizId: string) => void;
   onOpenFlashcards: (setId: string) => void;
+  /** Which panel(s) to render. Desktop uses "both"; mobile splits them into two
+   *  separate bottom sheets ("media" and "resources"). */
+  section?: "media" | "resources" | "both";
 }) {
   const viewer = useDocumentViewer();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -84,6 +88,7 @@ export function MediaSidebar({
   return (
     <div className="flex h-full flex-col">
       {/* Top half: uploaded media the user can select as context. */}
+      {section !== "resources" && (
       <div className="flex min-h-0 flex-1 basis-0 flex-col">
       <div className="flex items-center justify-between gap-2 px-1 pb-3">
         <div>
@@ -264,9 +269,16 @@ export function MediaSidebar({
         </div>
       </ScrollArea>
       </div>
+      )}
 
       {/* Bottom half: learning resources generated from this session. */}
-      <div className="mt-2 flex min-h-0 flex-1 basis-0 flex-col border-t border-border/50 pt-3">
+      {section !== "media" && (
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 basis-0 flex-col",
+          section === "both" && "mt-2 border-t border-border/50 pt-3",
+        )}
+      >
         <div className="px-1 pb-3">
           <h3 className="font-display text-sm font-semibold">
             Learning resources
@@ -340,6 +352,7 @@ export function MediaSidebar({
           </div>
         </ScrollArea>
       </div>
+      )}
 
       {previewImage && (
         <div

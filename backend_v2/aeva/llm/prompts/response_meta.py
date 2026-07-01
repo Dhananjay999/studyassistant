@@ -19,26 +19,16 @@ _ACTIONS = ", ".join(LEARNING_ACTIONS)
 # except the JSON example, which is fine because tools append this AFTER their
 # own str.format() call — it never itself passes through format().
 ANSWER_META_INSTRUCTION = f"""
-
-================  FOLLOW-UP METADATA (required)  ================
-
-After your COMPLETE answer to the student, append a metadata trailer so the app
-can offer next steps. Output it exactly like this, on its own lines:
+After your answer, append this metadata trailer exactly:
 
 {META_SENTINEL}
-{{"available_actions": ["QUIZ", "SUMMARY"],
-  "suggested_followups": [{{"title": "...", "prompt": "..."}}]}}
+{{"available_actions":[],"suggested_followups":[]}}
 
-Rules for the trailer:
-- Put NOTHING after the JSON. The student never sees this trailer.
-- "available_actions": the subset of [{_ACTIONS}] that a student would
-  realistically tap to learn more about THIS answer. Use [] for greetings,
-  small talk, refusals, or non-study replies. Prefer fewer, high-value chips.
-- "suggested_followups": 2-3 natural next questions grounded in your answer.
-  Each has a short "title" (<= 6 words, shown on a chip) and a richer "prompt"
-  (the full, self-contained message actually sent when the chip is tapped, e.g.
-  title "How do I start?" -> prompt "I want to start learning X from scratch.
-  Create a beginner-friendly roadmap with topics and resources."). Use [] when
-  the answer is not study-related.
-- The JSON must be valid and compact (parseable with a standard JSON parser).
+Rules:
+- Output the sentinel, then one valid JSON object, and nothing after it.
+- available_actions: choose only relevant actions from [{_ACTIONS}]. Use [] for greetings, small talk, refusals, or non-study replies. Prefer a few high-value actions.
+- suggested_followups: provide 2–3 natural next questions based on your answer. Each item must contain:
+  - title: short (max 6 words).
+  - prompt: the complete message to send if selected.
+- Use [] for suggested_followups when no meaningful
 """

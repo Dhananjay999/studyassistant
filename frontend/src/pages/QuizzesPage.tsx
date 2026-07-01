@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Clock,
   HelpCircle,
@@ -6,11 +6,13 @@ import {
   ListChecks,
   Loader2,
   Play,
+  Search,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { GlassCard } from "@/components/common/GlassCard";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Seo } from "@/components/common/Seo";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
@@ -27,6 +29,18 @@ export default function QuizzesPage() {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<QuizInitialView>("take");
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  // Instant client-side filter by title or topic.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return quizzes;
+    return quizzes.filter(
+      (x) =>
+        x.title.toLowerCase().includes(q) ||
+        (x.topic ?? "").toLowerCase().includes(q),
+    );
+  }, [quizzes, query]);
 
   const openQuiz = async (id: string, initialView: QuizInitialView) => {
     setLoadingId(id);
@@ -55,16 +69,34 @@ export default function QuizzesPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {quizzes.map((q) => (
-              <QuizGridCard
-                key={q.id}
-                quiz={q}
-                loading={loadingId === q.quiz_id}
-                onOpen={(v) => openQuiz(q.quiz_id, v)}
+          <>
+            <div className="relative mb-4 max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search quizzes by title or topic…"
+                className="pl-9"
+                aria-label="Search quizzes"
               />
-            ))}
-          </div>
+            </div>
+            {filtered.length === 0 ? (
+              <p className="py-16 text-center text-sm text-muted-foreground">
+                No quizzes match “{query}”.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {filtered.map((q) => (
+                  <QuizGridCard
+                    key={q.id}
+                    quiz={q}
+                    loading={loadingId === q.quiz_id}
+                    onOpen={(v) => openQuiz(q.quiz_id, v)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

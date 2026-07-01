@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 _ALG = "HS256"
-# Fallback TTL (minutes) when ADMIN_TOKEN_EXPIRE_MINUTES is unset.
-_DEFAULT_TTL_MINUTES = 480
+# Fallback TTL (days) when ADMIN_TOKEN_EXPIRE_DAYS is unset.
+_DEFAULT_TTL_DAYS = 480
 
 
 def _config(key: str) -> str:
@@ -36,12 +36,12 @@ def _config(key: str) -> str:
 
 def _token_ttl() -> timedelta:
     """Admin JWT lifetime from config (env-driven, never hardcoded)."""
-    minutes = int(
+    days = int(
         current_app.config.get(
-            "ADMIN_TOKEN_EXPIRE_MINUTES", _DEFAULT_TTL_MINUTES
+            "ADMIN_TOKEN_EXPIRE_DAYS", _DEFAULT_TTL_DAYS
         )
     )
-    return timedelta(minutes=minutes)
+    return timedelta(days=days)
 
 
 def admin_enabled() -> bool:

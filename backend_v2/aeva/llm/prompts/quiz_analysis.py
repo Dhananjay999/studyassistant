@@ -8,23 +8,26 @@ by the feedback prompt).
 
 from aeva.llm.prompts.quiz_common import QUIZ_RESULT_CONTEXT
 
-QUIZ_ANALYSIS_PROMPT = (
-    "A student finished a quiz. Analyse their performance as Aeva.\n\n"
-    + QUIZ_RESULT_CONTEXT
-    + "\n\nWrite an encouraging, specific analysis grounded in the actual "
-    "questions:\n"
-    "- strengths: concepts the student clearly understands (what they got "
-    "right).\n"
-    "- weaknesses: concepts they struggled with (cite the questions they "
-    "missed).\n"
-    "- common_mistakes: recurring error patterns across the wrong answers.\n"
-    "- revise_topics: concrete topics/subtopics to revise next, most "
-    "important first.\n"
-    "- study_plan: an ordered, actionable step-by-step plan to close the "
-    "gaps.\n\n"
-    "Keep each item short and concrete. If the student got everything right, "
-    "say so and suggest a harder next step instead of inventing weaknesses.\n"
-)
+QUIZ_ANALYSIS_PROMPT = f"""Analyze the student's quiz performance as Aeva.
+
+{QUIZ_RESULT_CONTEXT}
+
+Return a concise, encouraging analysis based only on the quiz results.
+
+Include:
+- strengths: concepts the student understands well.
+- weaknesses: concepts they struggled with, referencing incorrect questions when relevant.
+- common_mistakes: recurring error patterns.
+- revise_topics: priority topics or subtopics to review.
+- study_plan: ordered, actionable next steps.
+
+Keep every item short, specific, and evidence-based.
+
+If all answers are correct:
+- Leave weaknesses, common_mistakes, and revise_topics empty.
+- Acknowledge the excellent performance.
+- Recommend a more challenging next step in study_plan.
+"""
 
 # Structured output for on-demand AI performance analysis.
 QUIZ_ANALYSIS_SCHEMA: dict = {

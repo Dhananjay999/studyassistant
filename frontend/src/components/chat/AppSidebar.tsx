@@ -69,6 +69,7 @@ export function AppSidebar({
   onToggleCollapse,
   onNewChat,
   onSearch,
+  onNavigate,
   sessions,
   loading = false,
   activeId,
@@ -81,6 +82,9 @@ export function AppSidebar({
   onToggleCollapse: () => void;
   onNewChat: () => void;
   onSearch: () => void;
+  /** Fired after any navigation/section change — used to close the mobile
+   *  drawer so tapping an item feels native (close, then navigate). */
+  onNavigate?: () => void;
   sessions: Session[];
   /** True on first load, before chat history has arrived. */
   loading?: boolean;
@@ -106,6 +110,22 @@ export function AppSidebar({
     } finally {
       setDeletingId(null);
     }
+  };
+
+  // Close the mobile drawer (if any) first, then navigate — native feel.
+  const go = (to: string) => {
+    onNavigate?.();
+    navigate(to);
+  };
+
+  const openSettingsPanel = () => {
+    onNavigate?.();
+    openSettings();
+  };
+
+  const runSearch = () => {
+    onNavigate?.();
+    onSearch();
   };
 
   return (
@@ -153,7 +173,7 @@ export function AppSidebar({
         {collapsed ? (
           <IconBtn
             label="Search"
-            onClick={onSearch}
+            onClick={runSearch}
             className="self-center"
           >
             <Search className="h-4 w-4" />
@@ -161,7 +181,7 @@ export function AppSidebar({
         ) : (
           <Button
             variant="ghost"
-            onClick={onSearch}
+            onClick={runSearch}
             className="h-10 w-full justify-start gap-2 rounded-xl text-muted-foreground"
           >
             <Search className="h-4 w-4 shrink-0" />
@@ -185,7 +205,7 @@ export function AppSidebar({
             <button
               key={item.to}
               type="button"
-              onClick={() => navigate(item.to)}
+              onClick={() => go(item.to)}
               className={cn(
                 "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
                 collapsed && "justify-center px-0",
@@ -281,7 +301,7 @@ export function AppSidebar({
             <TooltipTrigger asChild>
               <button
                 type="button"
-                onClick={() => openSettings()}
+                onClick={openSettingsPanel}
                 aria-label="Account & settings"
                 className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl transition-colors hover:bg-accent/60"
               >
@@ -298,7 +318,7 @@ export function AppSidebar({
         ) : (
           <button
             type="button"
-            onClick={() => openSettings()}
+            onClick={openSettingsPanel}
             className="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition-colors hover:bg-accent/60"
           >
             <Avatar className="h-8 w-8 shrink-0">

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import ReactMarkdown from "react-markdown";
 import {
   ArrowLeft,
   FileText,
@@ -21,6 +20,7 @@ import { Seo } from "@/components/common/Seo";
 import { GlassCard } from "@/components/common/GlassCard";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
+import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { getBookmark, getQuiz } from "@/lib/api";
 import { useCreateSession } from "@/hooks/api";
 import type { BookmarkType, ChatSeed, QuizContent } from "@/types";
@@ -154,9 +154,9 @@ export default function BookmarkDetailPage() {
             </div>
           ) : (
             <div className="learning-content prose prose-sm max-w-none dark:prose-invert">
-              <ReactMarkdown>
-                {bookmark.content || "_No content saved._"}
-              </ReactMarkdown>
+              <MarkdownContent
+                content={bookmark.content || "_No content saved._"}
+              />
             </div>
           )}
         </GlassCard>

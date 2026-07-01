@@ -82,9 +82,13 @@ class AssistantOrchestrator:
 
         # Quiz requested but not yet configured -> open the setup popover ONLY
         # when required fields are missing. If the message already carries the
-        # topic, count, and type, generate straight away.
+        # topic, count, and type, generate straight away. A forced/planned
+        # flashcard turn never diverts here — its injected source content may
+        # merely mention "quiz" without being a quiz request.
         if (
             ctx.quiz_options is None
+            and ctx.flashcard_options is None
+            and (plan.get("tool") or {}).get("name") != "flashcard_generator"
             and self._is_quiz_intent(plan, enriched_message)
             and not self._quiz_ready(plan, ctx)
         ):
@@ -137,8 +141,12 @@ class AssistantOrchestrator:
 
         # Quiz requested but not yet configured -> open the setup popover ONLY
         # when required fields are missing; otherwise fall through and generate.
+        # A forced/planned flashcard turn never diverts here — its injected
+        # source content may merely mention "quiz" without being a quiz request.
         if (
             ctx.quiz_options is None
+            and ctx.flashcard_options is None
+            and (plan.get("tool") or {}).get("name") != "flashcard_generator"
             and self._is_quiz_intent(plan, enriched_message)
             and not self._quiz_ready(plan, ctx)
         ):
@@ -265,8 +273,14 @@ class AssistantOrchestrator:
                     personalization,
                 )
 
+        # Deterministic outcome -> skip the planner LLM call entirely.
+        fast = self._fast_path_plan(ctx, enriched_message, history)
+        if fast is not None:
+            logger.info("Turn planned deterministically (no plan LLM call)")
+            return session, history, enriched_message, fast, personalization
+
         plan = self._plan_turn(
-            ctx, history, enriched_message, ctx.clarification, personalization
+            ctx, history, enriched_message, ctx.clarification
         )
         plan = self._refine_plan(plan, ctx, enriched_message, history)
         return session, history, enriched_message, plan, personalization
@@ -731,29 +745,59 @@ class AssistantOrchestrator:
             for m in recent
         ]
 
+    def _fast_path_plan(
+        self,
+        ctx: AssistantContext,
+        message: str,
+        history: list[dict[str, str]],
+    ) -> dict[str, Any] | None:
+        """Deterministic plan that makes the planner LLM call unnecessary.
+
+        For a no-media turn that is not a quiz/flashcard request (which needs
+        parameter extraction), the only sensible tool is ``web_search``. When
+        clarification is also provably unnecessary and no unresolved reference
+        forces one, the refined plan is exactly what the planner would resolve
+        to — a run_tool(web_search) — so we skip a full LLM call and return it
+        directly. Anything ambiguous (media attached, quiz/flashcard, a bare
+        "explain this", a long open-ended message) falls through to the planner.
+        """
+        text = message.lower()
+        needs_planner = (
+            # A clarification reply may carry tool-specific params.
+            ctx.clarification is not None
+            # Media: media_llm vs a quiz/flashcard fork or a which-file ask.
+            or bool(ctx.media_ids)
+            # Quiz/flashcard need natural-language parameter extraction.
+            or any(w in text for w in ("quiz", "practice test", "test me"))
+            or "flashcard" in text
+            or "flash card" in text
+            # A demonstrative with nothing to resolve it must be clarified.
+            or self._has_unresolved_reference(message, ctx, history)
+            # Genuinely open-ended -> let the planner decide clarify vs tool.
+            or not self._clarification_unnecessary(message, ctx, history)
+        )
+        if needs_planner:
+            return None
+        return self._fallback_tool_plan(ctx, message)
+
     def _plan_turn(
         self,
         ctx: AssistantContext,
         history: list[dict[str, str]],
         enriched_message: str,
         clarification: object | None,
-        personalization: str = "",
     ) -> dict[str, Any]:
-        """Ask LLM to clarify or pick a tool.
+        """Ask the LLM to clarify or pick a tool.
 
-        The personalization block rides the planner's system prompt too, so any
-        clarification question it writes is phrased in the user's language.
+        Runs a lean, token-minimal structured call: a one-line planner system
+        prompt (not the answer-facing ``SYSTEM_PROMPT``), a compact one-line-per
+        -tool list (the parameter rules live in the prompt, so shipping each
+        tool's full JSON schema is redundant), and no personalization block —
+        the planner emits JSON, never prose, so none of that changes its output.
         """
-        tools_desc = json.dumps(
-            [
-                {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters_schema,
-                }
-                for t in self.registry.list_definitions()
-            ],
-            indent=2,
+        tools_desc = "\n".join(
+            f"- {t.name}: {t.description}"
+            for t in self.registry.list_definitions()
         )
         media_hint = (
             f"User has selected media IDs: {ctx.media_ids}"
@@ -777,9 +821,7 @@ class AssistantOrchestrator:
             prompt,
             prompts.PLAN_TURN_SCHEMA,
             history=history,
-            system_prompt=prompts.personalize(
-                prompts.SYSTEM_PROMPT, personalization
-            ),
+            system_prompt=prompts.PLAN_SYSTEM_PROMPT,
         )
 
     @staticmethod

@@ -1,4 +1,4 @@
-import ReactMarkdown from "react-markdown";
+import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { Bot, ListChecks, Sparkles, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,9 +50,7 @@ export function BookmarkPreview({
             </p>
           )}
           <div className="learning-content prose prose-sm max-w-none dark:prose-invert prose-p:my-2">
-            <ReactMarkdown>
-              {bookmark.content || "_No content saved._"}
-            </ReactMarkdown>
+            <MarkdownContent content={bookmark.content || "_No content saved._"} />
           </div>
         </div>
       </div>

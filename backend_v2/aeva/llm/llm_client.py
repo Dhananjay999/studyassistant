@@ -13,7 +13,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
-from aeva.common.logging_config import preview
+from aeva.common.logging_config import log_full_llm_requests, preview
+from aeva.llm import prompts
 from aeva.llm.providers.base import LLMProvider
 from aeva.llm.providers.factory import create_provider
 
@@ -71,8 +72,6 @@ class LLMClient:
             len(in_text or ""),
             extra,
         )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("LLM %s prompt: %s", label, preview(in_text))
         start = time.perf_counter()
         try:
             yield
@@ -91,6 +90,49 @@ class LLMClient:
             (time.perf_counter() - start) * 1000,
         )
 
+    def _log_request(
+        self,
+        label: str,
+        user_message: str,
+        *,
+        system_prompt: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+        history: list[dict[str, str]] | None = None,
+        use_search: bool = False,
+        response_schema: dict[str, Any] | None = None,
+    ) -> None:
+        """Log the request the provider is about to send.
+
+        When ``LOG_LLM_REQUESTS`` is enabled the complete final prompt — the
+        resolved system prompt, every history turn, attachment metadata, the
+        user message, and any structured-output schema — is emitted uncapped at
+        INFO. Otherwise a length-capped preview is logged at DEBUG, matching the
+        rest of the logging config.
+        """
+        if not log_full_llm_requests():
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("LLM %s prompt: %s", label, preview(user_message))
+            return
+
+        lines = [
+            f"LLM {label} full request | model={self.model} "
+            f"provider={self._provider_name} search={use_search}",
+            f"── system prompt ──\n{system_prompt or prompts.SYSTEM_PROMPT}",
+        ]
+        for i, item in enumerate(history or []):
+            role = item.get("role", "?")
+            content = item.get("content", "")
+            lines.append(f"── history[{i}] {role} ──\n{content}")
+        for i, att in enumerate(attachments or []):
+            mime = att.get("mime_type", "?")
+            size = len(att.get("data", b"") or b"")
+            lines.append(f"── attachment[{i}] ──\nmime={mime} bytes={size}")
+        lines.append(f"── user message ──\n{user_message}")
+        if response_schema is not None:
+            schema_json = json.dumps(response_schema)
+            lines.append(f"── response schema ──\n{schema_json}")
+        logger.info("\n".join(lines))
+
     @property
     def last_sources(self) -> list[dict[str, str]]:
         """Grounding citations captured from the most recent call."""
@@ -108,6 +150,14 @@ class LLMClient:
         extra = (
             f" search={use_search} attach={len(attachments or [])}"
             f" hist={len(history or [])}"
+        )
+        self._log_request(
+            "generate",
+            user_message,
+            system_prompt=system_prompt,
+            attachments=attachments,
+            history=history,
+            use_search=use_search,
         )
         with self._timed("generate", user_message, extra):
             result = self._provider.generate(
@@ -132,6 +182,15 @@ class LLMClient:
         use_search: bool = False,
     ) -> dict[str, Any]:
         """Generate JSON matching the given schema."""
+        self._log_request(
+            "structured",
+            user_message,
+            system_prompt=system_prompt,
+            attachments=attachments,
+            history=history,
+            use_search=use_search,
+            response_schema=response_schema,
+        )
         with self._timed("structured", user_message, " (json)"):
             result = self._provider.generate_structured(
                 user_message,
@@ -161,8 +220,14 @@ class LLMClient:
             len(user_message or ""),
             use_search,
         )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("LLM stream prompt: %s", preview(user_message))
+        self._log_request(
+            "stream",
+            user_message,
+            system_prompt=system_prompt,
+            attachments=attachments,
+            history=history,
+            use_search=use_search,
+        )
         start = time.perf_counter()
 
         def _streamed() -> Generator[str, None, None]:

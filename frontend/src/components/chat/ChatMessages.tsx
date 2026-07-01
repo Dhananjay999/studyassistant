@@ -1,67 +1,17 @@
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import ReactMarkdown from "react-markdown";
-import { Bot, FileText, User } from "lucide-react";
+import { Bot, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { QuizCard } from "@/components/chat/QuizCard";
 import { FlashcardCard } from "@/components/chat/FlashcardCard";
+import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { SourceCards } from "@/components/chat/SourceCards";
 import { SuggestedActions } from "@/components/chat/SuggestedActions";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
-import { useDocumentViewer } from "@/contexts/DocumentViewerContext";
 import { cn } from "@/lib/utils";
 import { copyRich, markdownToPlainText } from "@/lib/clipboard";
-import {
-  citationUrlTransform,
-  parseCiteTarget,
-  preprocessCitations,
-} from "@/lib/citations";
 import type { ThinkingHint } from "@/lib/loadingMessages";
-import type {
-  Message,
-  QuizContent,
-  QuizOptions,
-  SourceInfo,
-  ToolUsed,
-} from "@/types";
-
-/** Compact, ChatGPT-style inline citation chip that opens the cited page. */
-function CitationChip({
-  name,
-  page,
-  label,
-  sources,
-}: {
-  name: string;
-  page?: number;
-  label: React.ReactNode;
-  sources?: SourceInfo[];
-}) {
-  const viewer = useDocumentViewer();
-  const lname = name.toLowerCase();
-  const match =
-    sources?.find(
-      (s) =>
-        s.document_name?.toLowerCase() === lname &&
-        (page == null || s.page_number == null || s.page_number === page),
-    ) ?? sources?.find((s) => s.document_name?.toLowerCase() === lname);
-  const mediaId = match?.media_id;
-
-  return (
-    <button
-      type="button"
-      disabled={!mediaId}
-      onClick={() =>
-        mediaId && viewer.openDocumentByMediaId(mediaId, page ?? undefined)
-      }
-      title={mediaId ? "Open the cited page" : undefined}
-      className="mx-0.5 inline-flex max-w-[16rem] items-center gap-1 rounded-md border border-brand-1/30 bg-brand-1/5 px-1.5 py-px align-baseline text-[0.72em] font-medium leading-tight text-brand-1 no-underline transition-colors hover:bg-brand-1/15 disabled:cursor-default disabled:opacity-70"
-    >
-      <FileText className="h-3 w-3 shrink-0" />
-      <span className="truncate">{label}</span>
-    </button>
-  );
-}
+import type { Message, QuizContent, QuizOptions, ToolUsed } from "@/types";
 
 const TOOL_LABEL: Record<ToolUsed, string> = {
   web_search: "Web",
@@ -130,13 +80,15 @@ export function ChatMessages({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
             className={cn(
-              "flex gap-3",
+              "flex gap-2 sm:gap-3",
               msg.role === "user" && "flex-row-reverse",
             )}
           >
+            {/* Avatar is hidden on phones so message content gets the full width;
+               role is still clear from alignment + colour. */}
             <span
               className={cn(
-                "grid h-8 w-8 shrink-0 place-items-center rounded-full",
+                "hidden h-8 w-8 shrink-0 place-items-center rounded-full sm:grid",
                 msg.role === "user"
                   ? "bg-primary text-primary-foreground"
                   : "bg-brand-gradient text-white",
@@ -177,31 +129,10 @@ export function ChatMessages({
                     }}
                     className="learning-content prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-pre:my-2"
                   >
-                    <ReactMarkdown
-                      urlTransform={citationUrlTransform}
-                      components={{
-                        a: ({ href, children }) => {
-                          const cite = href ? parseCiteTarget(href) : null;
-                          if (cite) {
-                            return (
-                              <CitationChip
-                                name={cite.name}
-                                page={cite.page}
-                                label={children}
-                                sources={msg.meta?.sources}
-                              />
-                            );
-                          }
-                          return (
-                            <a href={href} target="_blank" rel="noreferrer">
-                              {children}
-                            </a>
-                          );
-                        },
-                      }}
-                    >
-                      {preprocessCitations(msg.content)}
-                    </ReactMarkdown>
+                    <MarkdownContent
+                      content={msg.content}
+                      sources={msg.meta?.sources}
+                    />
                     {msg.streaming && (
                       <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-primary align-middle" />
                     )}

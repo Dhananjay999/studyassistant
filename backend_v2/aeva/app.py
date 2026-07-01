@@ -175,11 +175,11 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     )
 
     # Token / cookie / signed-URL lifetimes — configurable, never hardcoded.
-    # ADMIN_TOKEN_EXPIRE_MINUTES: TTL of the admin JWT the app mints (default
+    # ADMIN_TOKEN_EXPIRE_DAYS: TTL of the admin JWT the app mints (default
     # 8h). PKCE_COOKIE_MAX_AGE_SECONDS: how long the OAuth PKCE cookie lives.
     # MEDIA_SIGNED_URL_TTL_SECONDS: validity of storage signed URLs.
-    app.config["ADMIN_TOKEN_EXPIRE_MINUTES"] = int(
-        os.environ.get("ADMIN_TOKEN_EXPIRE_MINUTES", "480")
+    app.config["ADMIN_TOKEN_EXPIRE_DAYS"] = int(
+        os.environ.get("ADMIN_TOKEN_EXPIRE_DAYS", "30")
     )
     app.config["PKCE_COOKIE_MAX_AGE_SECONDS"] = int(
         os.environ.get("PKCE_COOKIE_MAX_AGE_SECONDS", "600")

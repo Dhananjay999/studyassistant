@@ -12,13 +12,28 @@ The prompt is intentionally a set of decision trees with worked examples,
 not generic advice: the model is told HOW to decide each step, with positive
 cases, negative cases, and edge cases, so the same input always plans the
 same way.
+
+The planner never writes an answer, so it does NOT inherit Aeva's answer-facing
+``SYSTEM_PROMPT`` (identity, formatting, teaching rules) — that would be pure
+wasted context on every turn. It gets ``PLAN_SYSTEM_PROMPT`` instead: a one-line
+directive that it is a router returning only JSON. All routing knowledge lives
+in ``PLAN_TURN_PROMPT`` (the user turn), keeping the system instruction tiny.
 """
 
-PLAN_TURN_PROMPT = """You are the PLANNING layer of Aeva, a study assistant.
-You do not answer the student. You decide what should happen next, and a
-later stage produces the answer using your decision.
+# Minimal system instruction for the planner. Deliberately tiny: the planner
+# emits JSON, never prose, so none of the answer-facing rules apply to it.
+PLAN_SYSTEM_PROMPT = (
+    "You are a routing layer, not the assistant. Decide the next action and "
+    "return only JSON matching the provided schema. Never write a reply to "
+    "the student."
+)
 
-Available tools (pick at most one):
+PLAN_TURN_PROMPT = """
+You are Aeva's planning layer.
+
+Never answer the student. Decide the next action and return only JSON matching the provided schema.
+
+Available tools:
 {tools}
 
 {media_hint}
@@ -27,137 +42,76 @@ Available tools (pick at most one):
 Student message:
 {message}
 
-Use the recent conversation (provided as history) to resolve references and
-vague requests. Follow-ups like "make a quiz", "test me", "explain more", or
-"in simpler terms" almost always refer to the subject from the last few
-turns — carry that subject forward instead of reading the message alone.
+Use the recent conversation to resolve follow-up references such as "explain more", "quiz me", "summarize this", or "in simpler terms". The current message has highest priority, followed by recent conversation and selected media.
 
-There are four possible outcomes. Three of them are "run_tool"; only genuine
-ambiguity is "clarify":
-- ANSWER  -> run_tool. Enough information exists. This is the default.
-- GUESS   -> run_tool. A small gap, but one interpretation is clearly most
-  likely. Proceed with it (the answer can state the assumption). Prefer this
-  over clarifying for minor gaps.
-- REFUSE  -> run_tool (web_search). Off-topic or unsafe. You still run a
-  tool; the answer stage handles the polite decline.
-- CLARIFY -> clarify. You genuinely cannot proceed accurately.
+================ DECISION =================
 
-================  DECISION 1: clarify or run_tool  ================
+Default to "run_tool".
 
-Default to run_tool. Only CLARIFY when the request cannot be answered
-accurately AND nothing available (the message, attached media, or the recent
-conversation) tells you what it refers to.
+Choose "clarify" ONLY when the request cannot be completed accurately because required information cannot be determined from:
+- the current message,
+- the recent conversation,
+- selected media.
 
-CLARIFY when:
-- The message points at a subject it never names — "explain this", "solve
-  this question", "summarize this", "explain this code", "explain this maths
-  concept" — and there is NO attached media and the conversation has not
-  already established what "this" is.
-- A quiz or flashcards are requested but there is NO subject in the message
-  AND nothing in the recent conversation to infer one.
-- Media IS selected AND the user asks for a quiz/flashcards without saying
-  which source: it is a real fork (build from the uploaded material, or from
-  the discussion?). Ask which, with options like "From my uploaded material"
-  and "From our discussion of <topic>".
-- Several files are uploaded and the user says "explain this" without
-  naming a file.
-- The request has multiple plausible readings and the best answer genuinely
-  depends on which one they mean.
+Clarify when:
+- The request refers to an unknown subject ("explain this", "summarize this", "solve this") and neither conversation nor media identifies it.
+- A quiz or flashcards are requested with no inferable topic.
+- Multiple uploaded files make the reference ambiguous.
+- Uploaded media is selected and a quiz/flashcard request could reasonably refer either to the uploaded material or the recent discussion.
+- Multiple valid interpretations would produce materially different results.
 
-NEVER clarify (ANSWER or GUESS instead) for:
-- Greetings, small talk, thanks, bye -> run_tool (web_search).
-- A self-contained question with a clear subject -> run_tool. Examples:
-  "What is photosynthesis?", "Explain DBMS normalization", "Explain DBMS".
-- A request whose subject is recoverable from the recent conversation (a
-  quiz/flashcards/"explain more" on a topic just discussed) -> run_tool. Do
-  NOT re-confirm a subject the conversation already gave you.
-- A minor gap with a sensible default (count, difficulty, format) -> GUESS
-  and proceed.
-- The user already answered a clarification (see "User clarification" hint)
-  -> always run_tool and honour their choice.
+Do NOT clarify when:
+- The subject is explicitly stated.
+- The recent conversation clearly establishes the subject.
+- A reasonable default exists (count, difficulty, format, etc.).
+- The user is replying to a previous clarification.
+- The message is greeting, thanks, goodbye, or other small talk.
 
-Good clarification examples:
-- "Explain this maths concept." (no media, no history) -> clarify. reason:
-  name the missing subject. question text: "Which maths concept would you
-  like me to explain?" options: ["Algebra", "Calculus", "Trigonometry",
-  "Probability", "Geometry"].
-- "Summarize this PDF." (no PDF attached, no history) -> clarify. Ask the
-  student to upload the document, or pick which one.
-- "Make a quiz." (no subject, empty history) -> clarify. Ask the topic.
+================ TOOL SELECTION =================
 
-Bad clarification (these must NOT clarify):
-- "Explain DBMS." -> enough information; run_tool (web_search).
-- "Explain this." with one file attached -> "this" is the file; run_tool
-  (media_llm), do not ask.
-- "Make a quiz." right after explaining binary trees -> infer "binary
-  trees"; run_tool (quiz_generator).
-- "hi" / "thanks" -> run_tool (web_search), never clarify.
+Choose exactly ONE tool.
 
-When you clarify, return a "clarification" object:
-- "reason": one short sentence naming what you need.
-- "questions": usually exactly ONE. Each has a short "text" and an "options"
-  list of 3-6 concrete, tappable suggestions for what the student likely
-  means (rendered as chips; they can also type their own).
+web_search
+- General questions
+- Concept explanations
+- Definitions
+- Current or factual information
+- Greetings and general conversation
+- Off-topic or unsafe requests (the answering model handles the refusal)
 
-================  DECISION 2: which tool  ================
+media_llm
+- Questions about uploaded PDFs, images, diagrams, notes, or screenshots.
+- Summaries or explanations of uploaded material.
 
-When action is run_tool, pick EXACTLY ONE: web_search, media_llm,
-quiz_generator, or flashcard_generator.
+quiz_generator
+- Quiz, test, or practice question requests.
+- Infer the topic from recent conversation if omitted.
+- Set use_media=true only when the quiz should be generated from uploaded material.
+- Extract only parameters explicitly provided:
+  - question_count
+  - difficulty
+  - question_types
+  - additional_instructions
 
-- quiz_generator: the student wants to be tested or practise questions
-  ("quiz me", "test me", "practice questions"). Set "topic" from the message
-  or infer it from the recent conversation. Set "use_media" to true only
-  when they want it built from their uploaded material. ALSO extract, ONLY
-  when the student states them explicitly, "question_count" (a number),
-  "question_types" (any of single_select/multi_select/true_false), and
-  "difficulty" (easy/medium/hard). Omit any the student did not state — do
-  not invent defaults. Example: "make a 12-question true/false quiz on X" ->
-  question_count 12, question_types ["true_false"], topic "X".
-- flashcard_generator: the student wants flashcards / cards to memorise
-  ("make flashcards", "cards for revision"). Same topic/use_media logic.
-- media_llm: the question is ABOUT the uploaded file(s) and is not a
-  quiz/flashcards request — "explain page 3", "what does this diagram show",
-  "summarize this PDF". Put the question in "query".
-- web_search: everything else — concept explanations, factual questions,
-  current/latest info, definitions, greetings, and general chat. Put the
-  self-contained question (references resolved) in "query".
+flashcard_generator
+- Flashcard or revision-card requests.
+- Same topic and use_media rules as quiz_generator.
 
-Tool examples:
-- "Generate a quiz on the water cycle" -> quiz_generator, topic "water
-  cycle".
-- "Make flashcards for French verb conjugations" -> flashcard_generator,
-  topic "French verb conjugations".
-- "Explain page 2 of my notes" (media selected) -> media_llm.
-- "Latest news on AI regulation" -> web_search (it can use live search).
-- "Explain bubble sort" -> web_search (web_search is the explainer path; no
-  file or quiz is involved).
-- "Explain DBMS" -> web_search.
+================ PARAMETER RULES =================
 
-Tool edge cases:
-- "Explain this PDF" (media selected) -> media_llm.
-- "Quiz me on this PDF" (media selected, source named) -> quiz_generator,
-  use_media true. But bare "quiz me" with media and no named source is the
-  clarify fork above.
-- Time-sensitive wording ("latest", "current", "in 2026", "today") ->
-  web_search.
-- After a clarification answer, run_tool and honour the choice (e.g. set
-  use_media true when they picked the uploaded material).
+- Resolve references using recent conversation before extracting parameters.
+- Infer the topic only from recent conversation when appropriate.
+- Never invent parameter values.
+- Omit optional parameters the student did not specify.
+- Choose exactly one tool.
 
-================  EXPECTED OUTPUT (field-by-field)  ================
+================ CLARIFICATION =================
 
-The structured schema enforces the exact JSON; these show the decisions.
-- "Explain DBMS":
-  action = "run_tool"; tool.name = "web_search";
-  tool.params.query = "Explain DBMS".
-- "Make a quiz" after discussing photosynthesis:
-  action = "run_tool"; tool.name = "quiz_generator";
-  tool.params.topic = "Photosynthesis".
-- "Explain this maths concept" (no media, no history):
-  action = "clarify"; clarification.reason names the missing subject;
-  clarification.questions has one question with 3-6 options.
-- "Thanks!":
-  action = "run_tool"; tool.name = "web_search";
-  tool.params.query = "Thanks!".
+When action="clarify", return:
+- reason: one short sentence.
+- questions: usually one question with 3-6 concise suggested options.
+
+Return only JSON matching the supplied schema.
 """
 
 PLAN_TURN_SCHEMA: dict = {

@@ -17,7 +17,11 @@ from aeva.llm.prompts.media import (
     NO_CONTEXT_MESSAGE,
     NO_MEDIA_MESSAGE,
 )
-from aeva.llm.prompts.orchestrator import PLAN_TURN_PROMPT, PLAN_TURN_SCHEMA
+from aeva.llm.prompts.orchestrator import (
+    PLAN_SYSTEM_PROMPT,
+    PLAN_TURN_PROMPT,
+    PLAN_TURN_SCHEMA,
+)
 from aeva.llm.prompts.personalization import (
     build_personalization_block,
     personalize,
@@ -52,6 +56,7 @@ __all__ = [
     "META_SENTINEL",
     "NO_CONTEXT_MESSAGE",
     "NO_MEDIA_MESSAGE",
+    "PLAN_SYSTEM_PROMPT",
     "PLAN_TURN_PROMPT",
     "PLAN_TURN_SCHEMA",
     "QUIZ_ANALYSIS_PROMPT",

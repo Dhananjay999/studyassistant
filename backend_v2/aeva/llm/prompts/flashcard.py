@@ -5,34 +5,24 @@ any provider must return JSON matching this shape so the response structure
 stays stable across models/vendors.
 """
 
-FLASHCARD_GENERATION_PROMPT = """Create study flashcards as Aeva.
+FLASHCARD_GENERATION_PROMPT = """
+Create study flashcards as Aeva.
 
 Topic: {topic}
-Number of cards: {count}
+Card count: {count}
 Recent context: {context}
 
-SOURCE OF TRUTH (priority order)
-1. If study material (PDF/image) is attached, base the cards on that
-   material.
-2. Otherwise use the Topic above.
-3. If the Topic is vague (e.g. just "make flashcards"), infer the real
-   subject from the recent context.
+Use the attached study material if provided; otherwise generate the cards from the topic. If the topic is vague, infer it from the recent context.
 
-WRITE GOOD CARDS
-- One idea per card. The FRONT is a single question, term, or prompt; the
-  BACK is the precise answer or explanation.
-- Keep the front short and unambiguous — it should have exactly one clear
-  answer, not invite an essay.
-- Put a short, concrete EXAMPLE on the back only when it aids recall;
-  otherwise leave example empty.
-- Cover the key facts, definitions, and relationships of the topic; do not
-  pad with near-duplicate cards.
-- Use exam-ready, student-friendly language; keep terms, formulas, and code
-  in their standard form.
-
-Good card: front "What does ACID stand for in databases?" / back
-"Atomicity, Consistency, Isolation, Durability".
-Bad card: front "Tell me everything about ACID" — too broad for one card.
+Requirements:
+- Generate exactly {count} flashcards.
+- Each card covers one concept only.
+- Front: a short question, term, or prompt with one clear answer.
+- Back: a concise answer or explanation.
+- Include an example only when it improves understanding; otherwise leave it empty.
+- Cover the most important concepts without creating duplicate or overlapping cards.
+- Use clear, exam-ready language.
+- Keep formulas, code, technical terms, and proper nouns unchanged.
 """
 
 # Structured output for flashcard generation.

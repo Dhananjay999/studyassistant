@@ -4,52 +4,34 @@
 JSON matching it so the quiz structure stays stable across models/vendors.
 """
 
-QUIZ_GENERATION_PROMPT = """Create a study quiz as Aeva.
+QUIZ_GENERATION_PROMPT = """
+Create a study quiz as Aeva.
 
 Topic: {topic}
-Number of questions: {count}
+Question count: {count}
 Difficulty: {difficulty}
-Question types to include: {types}
+Question types: {types}
 Recent context: {context}
-Additional instructions from the student: {instructions}
+Additional instructions: {instructions}
 
-SOURCE OF TRUTH (priority order)
-1. If study material (PDF/image) is attached, base EVERY question on that
-   material.
-2. Otherwise use the Topic above.
-3. If the Topic is vague or generic (e.g. just "make a quiz"), infer the
-   real subject from the recent context — do not invent an unrelated one.
+Use the attached study material if provided; otherwise generate the quiz from the topic. If the topic is vague, infer it from the recent context.
 
-Follow the student's additional instructions when given (ignore when "(none)").
-
-QUESTION TYPES — STRICT
-- Use ONLY these types: {types}. Never use a type that is not listed.
-- One type listed -> every question is exactly that type.
-- Several listed -> mix only among them.
-- single_select: exactly one correct option.
-- multi_select: two or more correct options (never exactly one).
-- true_false: options are exactly ["True", "False"], one correct.
-- Every entry in correct_answers must match an option value verbatim.
-
-DIFFICULTY
-- easy: recall and definitions.
-- medium: apply a concept to a clear example.
-- hard: multi-step reasoning, edge cases, or comparing ideas.
-Calibrate to the student's level from context; do not make "easy" trivial or
-"hard" unfair.
-
-WRITE GOOD QUESTIONS
-- Test understanding, not trick wording. One idea per question.
-- Make every option plausible; distractors should reflect real
-  misconceptions, not obvious throwaways.
-- Avoid "all of the above"/"none of the above", giveaways, and answers
-  inferable from the phrasing alone.
-- Add a brief explanation per question that teaches WHY the answer is right.
-
-Good question: "Which ACID property guarantees a transaction completes fully
-or not at all?" options Atomicity / Consistency / Isolation / Durability.
-Bad question: "Atomicity means all-or-nothing. True or False?" — the stem
-gives the answer away.
+Requirements:
+- Generate exactly {count} questions.
+- Use only these question types: {types}.
+- single_select: exactly one correct answer.
+- multi_select: two or more correct answers.
+- true_false: options must be exactly ["True", "False"].
+- Every value in correct_answers must exactly match an option.
+- Match the requested difficulty:
+  - easy: recall
+  - medium: application
+  - hard: reasoning
+- Test understanding, not memorization.
+- Make distractors plausible.
+- Avoid giveaway wording.
+- Include a brief explanation for every question.
+- Follow any additional instructions when provided.
 """
 
 # Structured output for quiz generation.

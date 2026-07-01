@@ -56,3 +56,19 @@ def preview(value: object, limit: int = 300) -> str:
     if len(text) > limit:
         return f"{text[:limit]}… (+{len(text) - limit} chars)"
     return text
+
+
+def log_full_llm_requests() -> bool:
+    """Whether to log the full, untruncated request for every LLM call.
+
+    Driven by ``LOG_LLM_REQUESTS`` (default off) so the verbose full-prompt
+    dump — system prompt, history, attachments, and the final user message —
+    can be turned on independently of ``LOG_LEVEL``. When off, callers fall
+    back to a capped :func:`preview` at DEBUG.
+    """
+    return os.environ.get("LOG_LLM_REQUESTS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }

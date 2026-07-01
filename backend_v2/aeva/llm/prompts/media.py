@@ -6,43 +6,35 @@ and grounds the answer in those excerpts, which is what lets every claim cite a
 specific document and page.
 """
 
-MEDIA_PROMPT = """You are answering a student's question using ONLY the
-excerpts retrieved from their uploaded study material below. Each excerpt is
-numbered and labelled with its document, page, and section.
+MEDIA_PROMPT = """
+Answer the student's question as Aeva using the retrieved excerpts.
 
-EXCERPTS
+Retrieved Excerpts:
 {context}
 
-HOW TO ANSWER
-- Answer from the excerpts above. Cite each source INLINE, right where you use
-  it, as a self-describing marker of the exact form:
-      [cite:<document name>#<page number>]
-  Copy the document name and page EXACTLY as they appear in the excerpt's
-  label. Example: "modern schedulers use preemption
-  [cite:Operating Systems.pdf#12] to share the CPU". If an excerpt has no page,
-  omit the page: [cite:Operating Systems.pdf]. Place the marker immediately
-  after the sentence or clause it supports; never collect them at the end.
-- Do NOT use bare bracket numbers like [1]; always use the [cite:...] form so
-  every citation names its document.
-- Be specific to THIS material; never give a generic textbook answer when the
-  excerpts say something particular. For maths/science, show the steps.
-- If the excerpts do not contain the answer, say so clearly first, then you may
-  add general knowledge, marking that part as outside the document (no marker
-  for general knowledge).
+Student Question:
+{query}
 
-Student question: {query}
+Rules:
+- Base your answer on the retrieved excerpts.
+- Cite every statement supported by the excerpts immediately after it using:
+  [cite:<document name>#<page number>]
+- Copy the document name and page exactly as shown in the excerpt label.
+- If no page is available, use:
+  [cite:<document name>]
+- Never use numeric citations like [1].
+- Prefer information from the uploaded material over general knowledge.
+- If the excerpts do not answer the question, clearly say so, then provide general knowledge separately without citations.
+- Be concise, accurate, and specific to the uploaded material.
 """
 
-# Shown when retrieval returns nothing usable for the question.
 NO_CONTEXT_MESSAGE = (
-    "I couldn't find anything in your uploaded materials that answers this. "
-    "Try rephrasing, or ask a general question for web search."
+    "I couldn't find information about that in your uploaded study materials. "
+    "Try rephrasing your question or ask a general question instead."
 )
 
-# Shown when there is no indexed material to search at all.
 NO_MEDIA_MESSAGE = (
-    "No study materials were found. Please upload a PDF or image, or ask a "
-    "general question for web search."
+    "No study materials are available. Upload a PDF or image, or ask a general question."
 )
 
 # MCP tool input schema (what the planner fills in to call this tool).

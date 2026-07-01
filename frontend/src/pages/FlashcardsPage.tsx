@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { GraduationCap, Layers } from "lucide-react";
+import { useMemo, useState } from "react";
+import { GraduationCap, Layers, Search } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { GlassCard } from "@/components/common/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Seo } from "@/components/common/Seo";
 import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
@@ -15,6 +16,19 @@ export default function FlashcardsPage() {
   const { data: sets = [], isLoading } = useFlashcardSets();
   const [activeSet, setActiveSet] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  // Instant client-side filter by title or topic. Deep card-content search is
+  // available from the global command palette (Cmd/Ctrl+F).
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sets;
+    return sets.filter(
+      (s) =>
+        s.title.toLowerCase().includes(q) ||
+        (s.topic ?? "").toLowerCase().includes(q),
+    );
+  }, [sets, query]);
 
   const study = (id: string) => {
     setActiveSet(id);
@@ -37,12 +51,28 @@ export default function FlashcardsPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {sets.map((s) => {
-              const pct = s.card_count
-                ? Math.round((s.studied / s.card_count) * 100)
-                : 0;
-              return (
+          <>
+            <div className="relative mb-4 max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search flashcards by title or topic…"
+                className="pl-9"
+                aria-label="Search flashcards"
+              />
+            </div>
+            {filtered.length === 0 ? (
+              <p className="py-16 text-center text-sm text-muted-foreground">
+                No flashcard sets match “{query}”.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {filtered.map((s) => {
+                  const pct = s.card_count
+                    ? Math.round((s.studied / s.card_count) * 100)
+                    : 0;
+                  return (
                 <GlassCard
                   key={s.id}
                   className="flex flex-col p-4 transition-shadow hover:shadow-glow"
@@ -80,7 +110,9 @@ export default function FlashcardsPage() {
                 </GlassCard>
               );
             })}
-          </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
