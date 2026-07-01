@@ -1,0 +1,43 @@
+{
+  "name": "StudyAssistant — AI Study Buddy",
+  "short_name": "StudyAssistant",
+  "description": "A complete AI learning system for students: chat with your PDFs, search the web, and auto-generate quizzes and flashcards.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b0b13",
+  "theme_color": "#7c3aed",
+  "categories": ["education", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48 64x64 128x128 256x256",
+      "type": "image/x-icon"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/og-image.svg",
+      "sizes": "1200x630",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "StudyAssistant chat with quiz and flashcard generation"
+    }
+  ]
+}

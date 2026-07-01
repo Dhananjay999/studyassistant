@@ -9,7 +9,7 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   const reduce = useReducedMotion();
   const isMobile = useIsMobile();
   const { data: profile, isLoading } = useLearningProfile();
-  const count = isMobile ? 4 : 6;
+  const count = isMobile ? 3 : 4;
 
   // Re-rolled per mount (opening a new chat) so combinations stay fresh.
   // Building only once the profile has resolved keeps the set from flickering

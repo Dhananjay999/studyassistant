@@ -25,6 +25,11 @@ const QuizzesPage = lazy(() => import("@/pages/QuizzesPage"));
 const FlashcardsPage = lazy(() => import("@/pages/FlashcardsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
+// Public, indexable marketing/legal pages (kept out of the landing's initial JS).
+const FeaturesPage = lazy(() => import("@/pages/FeaturesPage"));
+const AboutPage = lazy(() => import("@/pages/AboutPage"));
+const PrivacyPage = lazy(() => import("@/pages/PrivacyPage"));
+const TermsPage = lazy(() => import("@/pages/TermsPage"));
 // Hidden Super Admin panel. The path is an unguessable secret AND the panel
 // has its own server-verified auth — the URL is never trusted on its own.
 const AdminApp = lazy(() => import("@/pages/admin/AdminApp"));
@@ -57,6 +62,10 @@ export default function App() {
                     <Suspense fallback={<RouteFallback />}>
                       <Routes>
                     <Route path="/" element={<HomeRoute />} />
+                    <Route path="/features" element={<FeaturesPage />} />
+                    <Route path="/about" element={<AboutPage />} />
+                    <Route path="/privacy" element={<PrivacyPage />} />
+                    <Route path="/terms" element={<TermsPage />} />
                     <Route path="/auth/callback" element={<AuthCallback />} />
                     <Route
                       path="/chat"

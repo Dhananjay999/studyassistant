@@ -4,17 +4,31 @@ import { Navbar } from "@/components/landing/Navbar";
 import { Hero } from "@/components/landing/Hero";
 import { Features } from "@/components/landing/Features";
 import { HowItWorks } from "@/components/landing/HowItWorks";
-import { Faq } from "@/components/landing/Faq";
+import { Faq, FAQS } from "@/components/landing/Faq";
 import { CtaBand } from "@/components/landing/CtaBand";
 import { Footer } from "@/components/landing/Footer";
+import {
+  PAGES,
+  faqSchema,
+  organizationSchema,
+  softwareApplicationSchema,
+  websiteSchema,
+} from "@/lib/seo";
 
 export default function LandingPage() {
   return (
     <>
       <Seo
-        title="StudyAssistant — a complete AI learning system, not just a chatbot"
-        description="StudyAssistant (meet Aeva) is a complete AI learning system for students: chat with web search and your PDFs, auto-generate flashcards and quizzes, get AI performance analysis, and save everything with bookmarks and global search. Free to start."
-        path="/"
+        title={PAGES.home.title}
+        description={PAGES.home.description}
+        keywords={PAGES.home.keywords}
+        path={PAGES.home.path}
+        jsonLd={[
+          organizationSchema(),
+          websiteSchema(),
+          softwareApplicationSchema(),
+          faqSchema(FAQS),
+        ]}
       />
       <IntroLoader onDone={() => undefined} />
       <div className="relative min-h-dvh bg-background">

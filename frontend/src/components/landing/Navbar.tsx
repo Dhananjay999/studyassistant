@@ -7,9 +7,9 @@ import { BrandLogo } from "@/components/common/BrandLogo";
 import { GoogleButton } from "@/components/landing/GoogleButton";
 
 const LINKS = [
-  { href: "#features", label: "Features" },
-  { href: "#how", label: "How it works" },
-  { href: "#faq", label: "FAQ" },
+  { href: "/#features", label: "Features" },
+  { href: "/#how", label: "How it works" },
+  { href: "/#faq", label: "FAQ" },
 ];
 
 export function Navbar() {
@@ -18,7 +18,7 @@ export function Navbar() {
     <header className="fixed inset-x-0 top-0 z-50">
       <div className="container mt-3">
         <nav className="glass flex items-center justify-between rounded-2xl px-4 py-2.5">
-          <a href="#top" aria-label="Aeva home">
+          <a href="/" aria-label="StudyAssistant home">
             <BrandLogo />
           </a>
 

@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/accordion";
 import { Reveal } from "@/components/common/Reveal";
 
-const FAQS = [
+export const FAQS = [
   {
     q: "Is Aeva free to use?",
     a: "Yes — sign in with Google and start chatting, uploading notes, and generating quizzes and flashcards right away.",
