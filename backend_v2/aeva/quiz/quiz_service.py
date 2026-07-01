@@ -31,9 +31,13 @@ class QuizService:
         return self._repo or QuizRepository()
 
     @property
-    def llm(self) -> LLMClient:
-        """Lazy LLM client."""
-        return self._llm or LLMClient(config_key="LLM_QUIZ_MODEL")
+    def analysis_llm(self) -> LLMClient:
+        """Lazy LLM client for quiz performance analysis.
+
+        Uses the dedicated ``LLM_QUIZ_ANALYSIS_MODEL`` / ``_PROVIDER`` config so
+        analysis can run on a different model (or vendor) from quiz generation.
+        """
+        return self._llm or LLMClient(config_key="LLM_QUIZ_ANALYSIS_MODEL")
 
     @property
     def supabase(self) -> SupabaseService:
@@ -147,7 +151,7 @@ class QuizService:
             answers=json.dumps(answers, indent=2),
             evaluation=json.dumps(evaluation, indent=2),
         )
-        return self.llm.generate_structured(
+        return self.analysis_llm.generate_structured(
             prompt,
             prompts.QUIZ_ANALYSIS_SCHEMA,
             system_prompt=system_prompt,

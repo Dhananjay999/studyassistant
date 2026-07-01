@@ -1,6 +1,7 @@
 import { FileText, FolderOpen, ImageIcon } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { GlassCard } from "@/components/common/GlassCard";
+import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { Seo } from "@/components/common/Seo";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { useMedia } from "@/hooks/api";
@@ -12,13 +13,15 @@ function prettySize(bytes: number) {
 }
 
 export default function FilesPage() {
-  const { data: media = [] } = useMedia();
+  const { data: media = [], isLoading } = useMedia();
 
   return (
     <AppShell title="Files">
       <Seo title="Files — Aeva" noindex path="/files" />
       <div className="p-4">
-        {media.length === 0 ? (
+        {isLoading && media.length === 0 ? (
+          <CardGridSkeleton />
+        ) : media.length === 0 ? (
           <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-20 text-center">
             <FolderOpen className="mb-3 h-8 w-8 text-muted-foreground" />
             <p className="font-medium">No files yet</p>

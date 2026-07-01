@@ -109,8 +109,12 @@ class MediaProcessor:
         self, user_id: str, media_id: str
     ) -> Generator[Event, None, None]:
         """Run the pipeline, yielding progress and persisting each stage."""
+        logger.info(
+            "Media processing start | media=%s | user=%s", media_id, user_id
+        )
         record = self.supabase.get_media(media_id, user_id)
         if not record:
+            logger.warning("Media processing: file not found | %s", media_id)
             yield self._error_event("File not found.", recoverable=False)
             return
 
@@ -190,13 +194,16 @@ class MediaProcessor:
         media_id = record["id"]
 
         yield self._event("parsing", 12, "Parsing document…")
+        logger.info("Stage: parsing | media=%s", media_id)
         job_id = yield from self._parse(user_id, record)
 
         yield self._event("extracting", 45, "Extracting tables and text…")
+        logger.info("Stage: extracting | media=%s | job=%s", media_id, job_id)
         doc = self.llamaparse.fetch_result(job_id)
         self._persist_artifacts(user_id, record, doc)
 
         yield self._event("chunking", 65, "Creating semantic chunks…")
+        logger.info("Stage: chunking | media=%s", media_id)
         chunks = chunk_parsed_document(
             doc,
             target_tokens=current_app.config["RAG_CHUNK_TOKENS"],
@@ -205,8 +212,12 @@ class MediaProcessor:
         if not chunks:
             msg = "No readable text was found in this document."
             raise MediaProcessingError(msg)
+        logger.info("Chunked | media=%s | %d chunks", media_id, len(chunks))
 
         yield self._event("embedding", 82, "Generating embeddings…")
+        logger.info(
+            "Stage: embedding | media=%s | %d chunks", media_id, len(chunks)
+        )
         vectors = self.embed_llm.embed(
             [c.content for c in chunks],
             task_type="RETRIEVAL_DOCUMENT",
@@ -214,6 +225,7 @@ class MediaProcessor:
         )
 
         yield self._event("indexing", 93, "Building knowledge index…")
+        logger.info("Stage: indexing | media=%s", media_id)
         self._index(user_id, media_id, chunks, vectors)
         yield self._event("indexing", 98, "Almost ready…")
 
@@ -224,6 +236,12 @@ class MediaProcessor:
             chunk_count=len(chunks),
             processing_error=None,
             processed_at=datetime.now(tz=UTC).isoformat(),
+        )
+        logger.info(
+            "Media processing done | media=%s | %d chunks, %d pages",
+            media_id,
+            len(chunks),
+            doc.page_count,
         )
         yield self._event("ready", 100, "Document is ready!")
 

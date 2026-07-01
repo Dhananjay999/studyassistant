@@ -106,6 +106,7 @@ class FlashcardRepository:
             {
                 "id": s["id"],
                 "set_id": s["id"],
+                "session_id": s.get("session_id"),
                 "title": s["title"],
                 "topic": s["topic"],
                 "source_type": s["source_type"],

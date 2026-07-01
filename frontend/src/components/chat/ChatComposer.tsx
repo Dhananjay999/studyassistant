@@ -26,6 +26,10 @@ export const ChatComposer = forwardRef<
     onUpload: (files: FileList) => void;
     onQuizCommand?: () => void;
     disabled?: boolean;
+    /** Hard lock (e.g. a pending clarification): blocks typing + sending. */
+    locked?: boolean;
+    /** Placeholder shown while locked. */
+    lockedPlaceholder?: string;
     uploading?: boolean;
     /** Number of files currently selected for context (0 = hide indicator). */
     selectedCount?: number;
@@ -38,6 +42,8 @@ export const ChatComposer = forwardRef<
     onUpload,
     onQuizCommand,
     disabled,
+    locked = false,
+    lockedPlaceholder = "Answer the question above to continue…",
     uploading,
     selectedCount = 0,
     onOpenFiles,
@@ -89,7 +95,7 @@ export const ChatComposer = forwardRef<
 
   const send = () => {
     const text = value.trim();
-    if (!text || disabled) return;
+    if (!text || disabled || locked) return;
     onSend(text);
     setValue("");
     setShowMenu(false);
@@ -196,7 +202,7 @@ export const ChatComposer = forwardRef<
             variant="ghost"
             size="icon"
             className="h-9 w-9 shrink-0 rounded-xl"
-            disabled={uploading}
+            disabled={uploading || locked}
             onClick={() => fileRef.current?.click()}
             aria-label="Attach files"
           >
@@ -218,15 +224,20 @@ export const ChatComposer = forwardRef<
               grow();
             }}
             onKeyDown={onKeyDown}
-            placeholder="Ask anything, type / for commands, or attach notes…"
-            className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+            disabled={locked}
+            placeholder={
+              locked
+                ? lockedPlaceholder
+                : "Ask anything, type / for commands, or attach notes…"
+            }
+            className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
           />
 
           <Button
             type="button"
             size="icon"
             className="h-9 w-9 shrink-0 rounded-xl"
-            disabled={disabled || !value.trim()}
+            disabled={disabled || locked || !value.trim()}
             onClick={send}
             aria-label="Send"
           >

@@ -9,10 +9,13 @@ export function ClarificationPanel({
   data,
   busy,
   onSubmit,
+  onCancel,
 }: {
   data: ClarificationData;
   busy?: boolean;
   onSubmit: (answer: ClarificationAnswer) => void;
+  /** Abandon the clarification entirely (drops the pending request). */
+  onCancel: () => void;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [custom, setCustom] = useState("");
@@ -124,6 +127,15 @@ export function ClarificationPanel({
           onClick={() => onSubmit({ action: "skip" })}
         >
           Skip
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={onCancel}
+          className="text-muted-foreground"
+        >
+          Cancel
         </Button>
       </div>
     </div>

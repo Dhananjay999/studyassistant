@@ -55,10 +55,12 @@ import {
   useCreateSession,
   useDeleteSession,
   useDeleteMedia,
+  useFlashcardSets,
   useMedia,
+  useQuizzes,
   useSessions,
 } from "@/hooks/api";
-import { getMessages, uploadFileWithProgress } from "@/lib/api";
+import { getMessages, getQuiz, uploadFileWithProgress } from "@/lib/api";
 import { compressFiles } from "@/utils/compress";
 import type {
   Bookmark as BookmarkData,
@@ -129,6 +131,44 @@ export default function ChatPage() {
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
   const deleteMedia = useDeleteMedia();
 
+  // Session workspace: quizzes & flashcards generated in THIS chat, shown in
+  // the sidebar's learning-resources section.
+  const { data: allQuizzes = [], isLoading: quizzesLoading } = useQuizzes();
+  const { data: allFlashcards = [], isLoading: flashcardsLoading } =
+    useFlashcardSets();
+  const sessionQuizzes = activeId
+    ? allQuizzes.filter((q) => q.session_id === activeId)
+    : [];
+  const sessionFlashcards = activeId
+    ? allFlashcards.filter((f) => f.session_id === activeId)
+    : [];
+  const resourcesLoading = quizzesLoading || flashcardsLoading;
+
+  // Desktop-only resizable media sidebar; width remembered for the session.
+  const [mediaWidth, setMediaWidth] = useState<number>(() => {
+    const saved = Number(sessionStorage.getItem("aeva_media_width"));
+    return saved >= 240 && saved <= 560 ? saved : 288; // 288px = w-72
+  });
+  const latestMediaWidth = useRef(mediaWidth);
+  const startMediaResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const onMove = (ev: PointerEvent) => {
+      const w = Math.min(560, Math.max(240, window.innerWidth - ev.clientX));
+      latestMediaWidth.current = w;
+      setMediaWidth(w);
+    };
+    const onUp = () => {
+      sessionStorage.setItem(
+        "aeva_media_width",
+        String(latestMediaWidth.current),
+      );
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [seedBanner, setSeedBanner] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -184,17 +224,17 @@ export default function ChatPage() {
     loadedSession.current = activeId;
     setPendingClar(null);
     setPendingQuiz(null);
+    // Switching to a DIFFERENT existing conversation drops the media
+    // selection (that chat has its own context). Sending a message — which
+    // lazily creates a session and pre-sets loadedSession — does NOT reach
+    // here, so a user's selection survives across their questions.
+    setSelected(new Set());
     setMessages([]);
     setHistoryLoading(true);
     getMessages(activeId)
       .then(setMessages)
       .catch(() => toast.error("Failed to load chat"))
       .finally(() => setHistoryLoading(false));
-  }, [activeId]);
-
-  /* --- selection is ephemeral; cleared whenever the chat changes --- */
-  useEffect(() => {
-    setSelected(new Set());
   }, [activeId]);
 
   const upsertStreaming = (delta: string) =>
@@ -232,23 +272,8 @@ export default function ChatPage() {
     ) => {
       if (streaming) return;
 
-      // Lazily create the session on the first message — empty "New chat"
-      // screens never persist a session until the user actually asks.
-      let sid = activeId;
-      if (!sid) {
-        try {
-          const s = await createSession.mutateAsync({});
-          sid = s.id;
-          newChatRef.current = false;
-          loadedSession.current = sid;
-          setSearchParams({ sessionId: sid });
-        } catch {
-          toast.error("Couldn't start a new chat");
-          return;
-        }
-      }
-
       const streamId = `stream-${uid()}`;
+      const userMsgId = uid();
       streamIdRef.current = streamId;
       setThinkingHint(
         opts?.flashcardOptions
@@ -280,9 +305,13 @@ export default function ChatPage() {
         setSeedBanner(null);
       }
 
+      // Render the user's message + a streaming placeholder IMMEDIATELY, so the
+      // loader appears the instant Send is clicked — even before the session
+      // exists. On a brand-new chat the session is created just below; the user
+      // never sees a blank waiting state.
       setMessages((prev) => [
         ...prev,
-        { id: uid(), role: "user", content: display, createdAt: new Date() },
+        { id: userMsgId, role: "user", content: display, createdAt: new Date() },
         {
           id: streamId,
           role: "assistant",
@@ -291,6 +320,27 @@ export default function ChatPage() {
           streaming: true,
         },
       ]);
+
+      // Lazily create the session on the first message — empty "New chat"
+      // screens never persist a session until the user actually asks.
+      let sid = activeId;
+      if (!sid) {
+        try {
+          const s = await createSession.mutateAsync({});
+          sid = s.id;
+          newChatRef.current = false;
+          loadedSession.current = sid;
+          setSearchParams({ sessionId: sid });
+        } catch {
+          // Roll back the optimistic messages we rendered above.
+          setMessages((prev) =>
+            prev.filter((m) => m.id !== userMsgId && m.id !== streamId),
+          );
+          setThinkingHint(undefined);
+          toast.error("Couldn't start a new chat");
+          return;
+        }
+      }
 
       start(
         {
@@ -332,6 +382,8 @@ export default function ChatPage() {
                         available_actions: content.available_actions as
                           | string[]
                           | undefined,
+                        suggested_followups:
+                          content.suggested_followups as Message["meta"]["suggested_followups"],
                         response_type: content.response_type as
                           | string
                           | undefined,
@@ -341,6 +393,9 @@ export default function ChatPage() {
               ),
             );
             sessionsQuery.refetch();
+            // Surface a freshly generated resource in the sidebar workspace.
+            if (quiz) qc.invalidateQueries({ queryKey: qk.quizzes });
+            if (flashcards) qc.invalidateQueries({ queryKey: qk.flashcards });
             // Auto-open the study panel right after a set is generated.
             if (flashcards?.set_id) {
               setActiveFlashcards(flashcards.set_id);
@@ -359,6 +414,12 @@ export default function ChatPage() {
             setPendingQuiz({
               topic: (data.topic as string) || "",
               mediaAvailable: Boolean(data.media_available),
+              questionCount: (data.question_count as number | null) ?? null,
+              questionTypes:
+                (data.question_types as PendingQuizSetup["questionTypes"]) ??
+                null,
+              difficulty:
+                (data.difficulty as PendingQuizSetup["difficulty"]) ?? null,
             });
           },
           onError: (msg) => {
@@ -453,6 +514,16 @@ export default function ChatPage() {
   const openFlashcards = (setId: string) => {
     setActiveFlashcards(setId);
     setFlashcardsOpen(true);
+  };
+
+  // Sidebar quizzes come as list items; fetch the full quiz before opening.
+  const openQuizById = async (quizId: string) => {
+    try {
+      const quiz = await getQuiz(quizId);
+      openQuiz(quiz);
+    } catch {
+      toast.error("Couldn't open that quiz");
+    }
   };
 
   // Preview actions create the session lazily, then seed the new chat.
@@ -650,6 +721,7 @@ export default function ChatPage() {
       onNewChat={handleNewChat}
       onSearch={() => setPaletteOpen(true)}
       sessions={sessions}
+      loading={sessionsQuery.isLoading}
       activeId={activeId}
       onSelectSession={(id) => {
         setSearchParams({ sessionId: id });
@@ -665,11 +737,17 @@ export default function ChatPage() {
       uploads={uploads}
       selected={selected}
       activeSessionId={activeId}
+      mediaLoading={mediaQuery.isLoading}
+      quizzes={sessionQuizzes}
+      flashcardSets={sessionFlashcards}
+      resourcesLoading={resourcesLoading}
       onToggle={toggleMedia}
       onDelete={(id) => deleteMedia.mutateAsync(id)}
       onUpload={handleUpload}
       onRetryUpload={handleRetryUpload}
       onDismissUpload={handleDismissUpload}
+      onOpenQuiz={openQuizById}
+      onOpenFlashcards={openFlashcards}
     />
   );
 
@@ -788,6 +866,9 @@ export default function ChatPage() {
                   onAction={(message, sourceContent) =>
                     send(message, { sourceContent, displayText: message })
                   }
+                  onFollowup={(prompt, title) =>
+                    send(prompt, { displayText: title })
+                  }
                   onGenerateQuiz={handleGenerateQuiz}
                   onCreateFlashcards={handleCreateFlashcards}
                   onOpenQuiz={openQuiz}
@@ -802,6 +883,7 @@ export default function ChatPage() {
                   data={pendingClar.data}
                   busy={streaming}
                   onSubmit={handleClarify}
+                  onCancel={() => setPendingClar(null)}
                 />
               </div>
             )}
@@ -813,6 +895,9 @@ export default function ChatPage() {
                   </p>
                   <QuizSetupForm
                     initialTopic={pendingQuiz.topic}
+                    initialCount={pendingQuiz.questionCount}
+                    initialTypes={pendingQuiz.questionTypes}
+                    initialDifficulty={pendingQuiz.difficulty}
                     mediaAvailable={pendingQuiz.mediaAvailable}
                     busy={streaming}
                     onGenerate={(opts) =>
@@ -865,14 +950,26 @@ export default function ChatPage() {
               onUpload={handleUpload}
               onQuizCommand={openQuizSetup}
               disabled={streaming}
+              locked={!!pendingClar}
               uploading={uploads.some((u) => u.status === "uploading")}
               selectedCount={selected.size}
               onOpenFiles={() => setMediaOpen(true)}
             />
           </main>
 
-          {/* Right media sidebar (persistent on xl) */}
-          <aside className="hidden w-72 shrink-0 border-l border-border/50 p-3 xl:block">
+          {/* Right media sidebar (persistent on xl, drag-to-resize on desktop) */}
+          <aside
+            className="relative hidden shrink-0 border-l border-border/50 p-3 xl:block"
+            style={{ width: mediaWidth }}
+          >
+            {/* Drag handle on the inner edge; remembers width for the session. */}
+            <div
+              onPointerDown={startMediaResize}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+              className="absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-brand-1/30"
+            />
             {mediaSidebar}
           </aside>
           {/* Mobile/tablet: files open as a bottom sheet, not a side panel. */}

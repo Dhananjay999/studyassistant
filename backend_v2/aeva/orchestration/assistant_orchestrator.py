@@ -80,10 +80,13 @@ class AssistantOrchestrator:
             self._setup_and_plan(ctx)
         )
 
-        # Quiz requested but not yet configured -> ask the client to open the
-        # setup popover instead of generating with defaults.
-        if ctx.quiz_options is None and self._is_quiz_intent(
-            plan, enriched_message
+        # Quiz requested but not yet configured -> open the setup popover ONLY
+        # when required fields are missing. If the message already carries the
+        # topic, count, and type, generate straight away.
+        if (
+            ctx.quiz_options is None
+            and self._is_quiz_intent(plan, enriched_message)
+            and not self._quiz_ready(plan, ctx)
         ):
             return self._quiz_setup_result(plan, ctx)
 
@@ -96,7 +99,10 @@ class AssistantOrchestrator:
         )
 
         result = self.registry.execute(tool_name, tool_ctx, tool_params)
-        self._attach_actions(tool_name, result, plan)
+        answer, meta = self._split_answer_meta(result.get("answer", ""))
+        if answer:
+            result["answer"] = answer
+        self._attach_actions(tool_name, result, meta=meta)
         display_text = self._format_display(tool_name, result)
         msg = self._persist_answer(
             ctx, session, tool_name, result, display_text
@@ -114,50 +120,80 @@ class AssistantOrchestrator:
         self, ctx: AssistantContext
     ) -> Generator[str, None, None]:
         """Execute one assistant turn, streaming the answer as SSE frames."""
+        logger.info(
+            "Assistant turn (stream) | session=%s | media=%d | msg=%r",
+            ctx.session_id,
+            len(ctx.media_ids or []),
+            (ctx.message or "")[:80],
+        )
         session, history, enriched_message, plan, personalization = (
             self._setup_and_plan(ctx)
         )
+        logger.info(
+            "Turn planned | action=%s | tool=%s",
+            plan.get("action"),
+            (plan.get("tool") or {}).get("name"),
+        )
 
-        # Quiz requested but not yet configured -> open the setup popover.
-        if ctx.quiz_options is None and self._is_quiz_intent(
-            plan, enriched_message
+        # Quiz requested but not yet configured -> open the setup popover ONLY
+        # when required fields are missing; otherwise fall through and generate.
+        if (
+            ctx.quiz_options is None
+            and self._is_quiz_intent(plan, enriched_message)
+            and not self._quiz_ready(plan, ctx)
         ):
+            logger.info("Turn → quiz setup popover (missing quiz fields)")
             yield self._quiz_setup_frame(plan, ctx)
             return
 
         if plan.get("action") == "clarify":
+            logger.info("Turn → clarification requested")
             clar = self._handle_clarification(ctx, plan, enriched_message)
             yield self._clarification_frame(clar)
             return
 
         tool_name, tool_params = self._resolve_tool(plan)
+        logger.info("Turn → running tool: %s", tool_name)
         tool_ctx = self._build_tool_ctx(
             ctx, enriched_message, history, personalization
         )
         tool = self.registry.get(tool_name)
 
-        full_text = ""
         result: dict[str, Any] = {}
+        meta: dict[str, Any] | None = None
         if tool.can_stream():
-            gen = tool.execute_stream(tool_ctx, tool_params)
+            # Stream only the answer; the follow-up metadata trailer the model
+            # appends is held back here and parsed (no second LLM call).
+            stream = self._stream_answer(
+                tool.execute_stream(tool_ctx, tool_params)
+            )
+            raw = ""
             try:
                 while True:
-                    chunk = next(gen)
-                    full_text += chunk
-                    yield LLMClient.format_sse_chunk(chunk)
+                    yield LLMClient.format_sse_chunk(next(stream))
             except StopIteration as stop:
-                result = stop.value or {}
-            display_text = full_text or self._format_display(
-                tool_name, result
-            )
+                raw, result = stop.value if stop.value else ("", {})
+            if not isinstance(result, dict):
+                result = {}
+            answer, meta = self._split_answer_meta(raw)
+            result["answer"] = answer
+            display_text = answer or self._format_display(tool_name, result)
         else:
             result = self.registry.execute(tool_name, tool_ctx, tool_params)
             display_text = self._format_display(tool_name, result)
             yield LLMClient.format_sse_chunk(display_text)
 
-        # Static, no-LLM tags ride only this final frame.
-        self._attach_actions(tool_name, result, plan, tool)
+        # Follow-up chips ride the finished answer's metadata trailer.
+        self._attach_actions(tool_name, result, tool, meta)
         self._persist_answer(ctx, session, tool_name, result, display_text)
+        logger.info(
+            "Turn complete | tool=%s | answer=%dchars | actions=%s | "
+            "followups=%d",
+            tool_name,
+            len(display_text or ""),
+            result.get("available_actions"),
+            len(result.get("suggested_followups") or []),
+        )
         yield LLMClient.format_sse_chunk(
             "",
             done=True,
@@ -277,11 +313,12 @@ class AssistantOrchestrator:
         enriched_message: str,
         history: list[dict[str, str]],
     ) -> dict[str, Any]:
-        """Apply the over-clarification guard and the small-talk backstop.
+        """Apply the over-clarification guard.
 
         A "clarify" plan is downgraded to a tool only when clarification is
         genuinely unnecessary AND the message has no unresolved reference that
-        forces it. Small talk always drops to no learning actions.
+        forces it. Follow-up chips are no longer decided here — they are derived
+        from the finished answer in ``_attach_actions``.
         """
         if (
             plan.get("action") == "clarify"
@@ -298,10 +335,6 @@ class AssistantOrchestrator:
             )
             plan = self._fallback_tool_plan(ctx, enriched_message)
 
-        if plan.get("action") == "run_tool" and self._is_smalltalk(
-            enriched_message
-        ):
-            plan["available_actions"] = []
         return plan
 
     @staticmethod
@@ -314,37 +347,114 @@ class AssistantOrchestrator:
         self,
         tool_name: str,
         result: dict[str, Any],
-        plan: dict[str, Any],
         tool: BaseTool | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> None:
-        """Stamp the response_type + available_actions onto the result.
+        """Stamp response_type, available_actions, and suggested_followups.
 
-        ``response_type`` is the tool's static category. The action set is the
-        tool's fixed set when it has one (a generated quiz always offers
-        ``OPEN_QUIZ``); otherwise it is the planner's per-response choice, which
-        is what keeps a greeting from offering the full learning toolkit. Both
-        travel only in the final ``done`` SSE frame's ``content``.
+        ``response_type`` is the tool's static category. Generator tools
+        (quiz/flashcard) own a fixed action — a produced quiz always offers
+        ``OPEN_QUIZ`` — so those ride verbatim. For a text answer the follow-up
+        chips come from ``meta``: the metadata trailer the answer model appended
+        in the SAME call (see ``_split_answer_meta``), so the chips are grounded
+        in the actual answer at no extra LLM cost. All of it travels only in the
+        final ``done`` SSE frame's ``content``.
         """
         if not isinstance(result, dict):
             return
         tool = tool or self.registry.get(tool_name)
         result["response_type"] = tool.response_type
-        result["available_actions"] = self._resolve_actions(tool, plan)
+        if tool.available_actions:
+            result["available_actions"] = list(tool.available_actions)
+            result.setdefault("suggested_followups", [])
+            return
+        meta = meta or {"available_actions": [], "suggested_followups": []}
+        result["available_actions"] = meta.get("available_actions", [])
+        result["suggested_followups"] = meta.get("suggested_followups", [])
+
+    def _stream_answer(
+        self, gen: Generator[str, None, dict[str, Any]]
+    ) -> Generator[str, None, tuple[str, dict[str, Any]]]:
+        """Yield only the answer text, holding back the metadata trailer.
+
+        The answer model appends ``META_SENTINEL`` + JSON after its reply. This
+        streams the answer chunks but buffers a short tail so the sentinel is
+        never leaked to the client, even when it straddles two chunks. Returns
+        ``(raw_text, tool_result)`` — raw_text is the full model output
+        including the trailer, for the caller to split.
+        """
+        sentinel = prompts.META_SENTINEL
+        hold = len(sentinel)
+        raw = ""
+        emitted = 0
+        stopped = False
+        result: dict[str, Any] = {}
+        try:
+            while True:
+                raw += next(gen)
+                if stopped:
+                    continue
+                idx = raw.find(sentinel)
+                if idx != -1:
+                    if idx > emitted:
+                        yield raw[emitted:idx]
+                    emitted = idx
+                    stopped = True
+                else:
+                    safe = len(raw) - (hold - 1)
+                    if safe > emitted:
+                        yield raw[emitted:safe]
+                        emitted = safe
+        except StopIteration as stop:
+            result = stop.value or {}
+        if not stopped and emitted < len(raw):
+            yield raw[emitted:]
+        return raw, result
+
+    def _split_answer_meta(
+        self, text: str
+    ) -> tuple[str, dict[str, Any]]:
+        """Split full model output into (visible answer, parsed metadata)."""
+        empty: dict[str, Any] = {
+            "available_actions": [],
+            "suggested_followups": [],
+        }
+        idx = text.find(prompts.META_SENTINEL)
+        if idx == -1:
+            return text, empty
+        answer = text[:idx].rstrip()
+        tail = text[idx + len(prompts.META_SENTINEL):]
+        return answer, self._parse_meta(tail)
 
     @staticmethod
-    def _resolve_actions(tool: BaseTool, plan: dict[str, Any]) -> list[str]:
-        """Pick the action set for a response: tool-fixed, planned, or default.
-
-        A non-empty ``tool.available_actions`` is intrinsic and wins. Otherwise
-        the planner's ``available_actions`` is honoured verbatim (including an
-        empty list for greetings). The default only applies when the planner was
-        skipped entirely (e.g. a resolved file-choice running media_llm).
-        """
-        if tool.available_actions:
-            return tool.available_actions
-        if "available_actions" in plan:
-            return list(plan["available_actions"])
-        return list(LEARNING_ACTIONS)
+    def _parse_meta(tail: str) -> dict[str, Any]:
+        """Parse the JSON metadata trailer, tolerating minor formatting."""
+        empty: dict[str, Any] = {
+            "available_actions": [],
+            "suggested_followups": [],
+        }
+        try:
+            start = tail.index("{")
+            end = tail.rindex("}") + 1
+            data = json.loads(tail[start:end])
+        except ValueError:
+            return empty
+        if not isinstance(data, dict):
+            return empty
+        actions = [
+            a
+            for a in (data.get("available_actions") or [])
+            if a in LEARNING_ACTIONS
+        ]
+        followups = [
+            {"title": f.get("title", ""), "prompt": f.get("prompt", "")}
+            for f in (data.get("suggested_followups") or [])
+            if isinstance(f, dict) and f.get("title") and f.get("prompt")
+        ]
+        return {
+            "available_actions": actions,
+            "suggested_followups": followups,
+        }
 
     def _selected_media(
         self, ctx: AssistantContext
@@ -514,6 +624,8 @@ class AssistantOrchestrator:
             params["question_types"] = opts.question_types
         if opts.use_media is not None:
             params["use_media"] = opts.use_media
+        if opts.additional_instructions:
+            params["additional_instructions"] = opts.additional_instructions
         return params
 
     @staticmethod
@@ -524,14 +636,44 @@ class AssistantOrchestrator:
         text = message.lower()
         return any(w in text for w in ("quiz", "practice test", "test me"))
 
+    @staticmethod
+    def _quiz_ready(plan: dict[str, Any], ctx: AssistantContext) -> bool:
+        """Whether every required quiz field is already known from context.
+
+        When the planner has extracted a topic (or the user pointed at their
+        uploaded material), a question count, and at least one question type,
+        the form adds nothing — we generate directly. Difficulty is optional
+        (defaults to medium), so it is not required.
+        """
+        if (plan.get("tool") or {}).get("name") != "quiz_generator":
+            return False
+        params = (plan.get("tool") or {}).get("params") or {}
+        has_topic = bool(params.get("topic")) or (
+            bool(params.get("use_media")) and bool(ctx.media_ids)
+        )
+        has_count = params.get("question_count") is not None
+        has_types = bool(params.get("question_types"))
+        ready = has_topic and has_count and has_types
+        if ready:
+            logger.info("Quiz fields complete → generating without the form")
+        return ready
+
     def _quiz_setup_data(
         self, plan: dict[str, Any], ctx: AssistantContext
     ) -> dict[str, Any]:
-        """Payload telling the client to open the quiz-setup popover."""
+        """Payload to open the quiz-setup popover, pre-filled with what we know.
+
+        Every field the planner already detected (topic, count, types,
+        difficulty) is sent so the form opens populated — the user only fills
+        the genuinely missing pieces rather than re-entering everything.
+        """
         tool_params = (plan.get("tool") or {}).get("params") or {}
         return {
             "status": "quiz_setup",
             "topic": tool_params.get("topic") or "",
+            "question_count": tool_params.get("question_count"),
+            "question_types": tool_params.get("question_types"),
+            "difficulty": tool_params.get("difficulty"),
             "media_available": bool(ctx.media_ids),
         }
 
@@ -639,11 +781,6 @@ class AssistantOrchestrator:
                 prompts.SYSTEM_PROMPT, personalization
             ),
         )
-
-    @staticmethod
-    def _is_smalltalk(message: str) -> bool:
-        """Whether a message is a bare greeting/acknowledgement."""
-        return message.strip().lower().rstrip("!.?") in _SMALLTALK
 
     @staticmethod
     def _has_unresolved_reference(

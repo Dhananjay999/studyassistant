@@ -27,7 +27,19 @@ export const qk = {
   flashcardSet: (id: string) => ["flashcards", id] as const,
   search: (q: string) => ["search", q] as const,
   learningProfile: ["learning-profile"] as const,
+  config: ["config"] as const,
 };
+
+/* --------------------------------- config --------------------------------- */
+
+export function useAppConfig() {
+  return useQuery({
+    queryKey: qk.config,
+    queryFn: api.getAppConfig,
+    // Runtime limits rarely change; cache for the whole session.
+    staleTime: Infinity,
+  });
+}
 
 /* -------------------------------- sessions -------------------------------- */
 

@@ -2,10 +2,11 @@
 
 import logging
 import os
+import time
 from typing import Any
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 from flask_smorest import Api
 
@@ -15,6 +16,7 @@ from aeva.auth.auth_controller import blueprint as auth_bp
 from aeva.bookmark.bookmark_controller import blueprint as bookmark_bp
 from aeva.chat.chat_controller import blueprint as chat_bp
 from aeva.common.errors import CustomError
+from aeva.common.logging_config import preview, setup_logging
 from aeva.containers import Container
 from aeva.delay.delay_controller import blueprint as delay_bp
 from aeva.flashcard.flashcard_controller import blueprint as flashcard_bp
@@ -29,7 +31,7 @@ from aeva.session.session_controller import blueprint as session_bp
 logger = logging.getLogger(__name__)
 
 
-def load_env_vars(app: Flask) -> None:
+def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     """Load environment variables into app config."""
     load_dotenv()
 
@@ -83,6 +85,11 @@ def load_env_vars(app: Flask) -> None:
     app.config["LLM_QUIZ_MODEL"] = os.environ.get(
         "LLM_QUIZ_MODEL", default_model
     )
+    # Quiz performance analysis (POST /quiz/<id>/analyze) can use its own model;
+    # falls back to the quiz model, then to the default.
+    app.config["LLM_QUIZ_ANALYSIS_MODEL"] = os.environ.get(
+        "LLM_QUIZ_ANALYSIS_MODEL", app.config["LLM_QUIZ_MODEL"]
+    )
     app.config["LLM_FLASHCARD_MODEL"] = os.environ.get(
         "LLM_FLASHCARD_MODEL", default_model
     )
@@ -106,6 +113,10 @@ def load_env_vars(app: Flask) -> None:
     )
     app.config["LLM_QUIZ_PROVIDER"] = os.environ.get(
         "LLM_QUIZ_PROVIDER", default_provider
+    )
+    # Provider for quiz analysis; falls back to the quiz provider.
+    app.config["LLM_QUIZ_ANALYSIS_PROVIDER"] = os.environ.get(
+        "LLM_QUIZ_ANALYSIS_PROVIDER", app.config["LLM_QUIZ_PROVIDER"]
     )
     app.config["LLM_FLASHCARD_PROVIDER"] = os.environ.get(
         "LLM_FLASHCARD_PROVIDER", default_provider
@@ -163,6 +174,20 @@ def load_env_vars(app: Flask) -> None:
         os.environ.get("COOKIE_SECURE", "false").lower() == "true"
     )
 
+    # Token / cookie / signed-URL lifetimes — configurable, never hardcoded.
+    # ADMIN_TOKEN_EXPIRE_MINUTES: TTL of the admin JWT the app mints (default
+    # 8h). PKCE_COOKIE_MAX_AGE_SECONDS: how long the OAuth PKCE cookie lives.
+    # MEDIA_SIGNED_URL_TTL_SECONDS: validity of storage signed URLs.
+    app.config["ADMIN_TOKEN_EXPIRE_MINUTES"] = int(
+        os.environ.get("ADMIN_TOKEN_EXPIRE_MINUTES", "480")
+    )
+    app.config["PKCE_COOKIE_MAX_AGE_SECONDS"] = int(
+        os.environ.get("PKCE_COOKIE_MAX_AGE_SECONDS", "600")
+    )
+    app.config["MEDIA_SIGNED_URL_TTL_SECONDS"] = int(
+        os.environ.get("MEDIA_SIGNED_URL_TTL_SECONDS", "3600")
+    )
+
     # Super Admin panel (optional). When any of these is unset the admin
     # panel stays disabled and its auth fails closed — existing deployments
     # are unaffected. Never hardcode these; they live only in the env.
@@ -181,10 +206,55 @@ def load_env_vars(app: Flask) -> None:
             raise KeyError(msg)
 
 
+# Paths too noisy to log on every hit (health probes, API docs, favicon).
+_QUIET_PATHS = ("/health", "/docs", "/openapi", "/favicon")
+
+
+def _register_request_logging(app: Flask) -> None:
+    """Log every request in/out with status + duration (bodies at DEBUG)."""
+
+    @app.before_request
+    def _log_start() -> None:
+        g.req_started_at = time.perf_counter()
+        if request.path.startswith(_QUIET_PATHS):
+            return
+        logger.info("→ %s %s", request.method, request.path)
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        if request.args:
+            logger.debug("  query: %s", preview(dict(request.args)))
+        ctype = request.content_type or ""
+        if ctype.startswith("application/json"):
+            logger.debug("  body: %s", preview(request.get_json(silent=True)))
+        elif "multipart/form-data" in ctype:
+            logger.debug(
+                "  body: <multipart upload, %s bytes>",
+                request.content_length or 0,
+            )
+
+    @app.after_request
+    def _log_end(response: Any) -> Any:
+        if request.path.startswith(_QUIET_PATHS):
+            return response
+        start = getattr(g, "_req_start", None)
+        took = f"{(time.perf_counter() - start) * 1000:.0f}ms" if start else "?"
+        logger.info(
+            "← %s %s → %s (%s)",
+            request.method,
+            request.path,
+            response.status_code,
+            took,
+        )
+        return response
+
+
 def create_app() -> Flask:
     """Create and configure the Flask application."""
+    load_dotenv()
+    setup_logging()
     app = Flask(__name__)
     load_env_vars(app)
+    logger.info("Aeva backend starting up")
 
     app.config["API_TITLE"] = "Aeva Study Assistant"
     app.config["API_VERSION"] = "v2"
@@ -229,9 +299,19 @@ def create_app() -> Flask:
     api.register_blueprint(admin_bp)
     api.register_blueprint(delay_bp)
 
+    _register_request_logging(app)
+
     @app.errorhandler(CustomError)
     def handle_custom_error(error: CustomError) -> tuple[Any, int]:
         """Handle domain errors."""
+        logger.warning(
+            "Domain error on %s %s | code=%s status=%s | %s",
+            request.method,
+            request.path,
+            error.code,
+            error.status,
+            error.message,
+        )
         return jsonify({
             "msg": error.message,
             "code": error.code,
@@ -240,7 +320,9 @@ def create_app() -> Flask:
     @app.errorhandler(Exception)
     def handle_generic_error(error: Exception) -> tuple[Any, int]:
         """Handle unexpected errors."""
-        logger.exception("Unhandled error")
+        logger.exception(
+            "Unhandled error on %s %s", request.method, request.path
+        )
         return jsonify({
             "msg": "Internal server error",
             "code": "INTERNAL_ERROR",
@@ -250,5 +332,10 @@ def create_app() -> Flask:
     def health() -> dict[str, str]:
         """Health check endpoint."""
         return {"status": "ok", "version": "2.0.0"}
+
+    @app.route("/config")
+    def public_config() -> dict[str, Any]:
+        """Public, non-secret runtime config the frontend needs (limits)."""
+        return {"max_quiz_questions": app.config["QUIZ_MAX_QUESTIONS"]}
 
     return app

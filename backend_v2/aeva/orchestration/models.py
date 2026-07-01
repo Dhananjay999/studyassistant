@@ -31,6 +31,8 @@ class QuizOptions:
     difficulty: str | None = None
     question_types: list[str] | None = None
     use_media: bool | None = None
+    # Free-text extra guidance the user typed in the form; passed to the tool.
+    additional_instructions: str | None = None
 
 
 @dataclass

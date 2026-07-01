@@ -1,11 +1,12 @@
 """Orchestrator contract: plan-a-turn prompt and structured-output schema.
 
 The orchestrator is the FIRST stage of the pipeline. In one structured call
-it makes three decisions: (1) clarify or run a tool, (2) which tool, and
-(3) which follow-up learning actions actually help for this answer. It does
-NOT write the answer itself — the tool it picks does. ``PLAN_TURN_SCHEMA`` is
-the provider-independent shape of that decision; any provider must return
-JSON matching it.
+it makes two decisions: (1) clarify or run a tool, and (2) which tool. It does
+NOT write the answer itself — the tool it picks does — and it does NOT decide
+the follow-up learning chips: those are derived later from the answer that was
+actually produced (see ``response_meta``). ``PLAN_TURN_SCHEMA`` is the
+provider-independent shape of that decision; any provider must return JSON
+matching it.
 
 The prompt is intentionally a set of decision trees with worked examples,
 not generic advice: the model is told HOW to decide each step, with positive
@@ -97,7 +98,6 @@ When you clarify, return a "clarification" object:
 - "questions": usually exactly ONE. Each has a short "text" and an "options"
   list of 3-6 concrete, tappable suggestions for what the student likely
   means (rendered as chips; they can also type their own).
-- Set "available_actions" to [] — no learning chips until they answer.
 
 ================  DECISION 2: which tool  ================
 
@@ -107,7 +107,12 @@ quiz_generator, or flashcard_generator.
 - quiz_generator: the student wants to be tested or practise questions
   ("quiz me", "test me", "practice questions"). Set "topic" from the message
   or infer it from the recent conversation. Set "use_media" to true only
-  when they want it built from their uploaded material.
+  when they want it built from their uploaded material. ALSO extract, ONLY
+  when the student states them explicitly, "question_count" (a number),
+  "question_types" (any of single_select/multi_select/true_false), and
+  "difficulty" (easy/medium/hard). Omit any the student did not state — do
+  not invent defaults. Example: "make a 12-question true/false quiz on X" ->
+  question_count 12, question_types ["true_false"], topic "X".
 - flashcard_generator: the student wants flashcards / cards to memorise
   ("make flashcards", "cards for revision"). Same topic/use_media logic.
 - media_llm: the question is ABOUT the uploaded file(s) and is not a
@@ -138,61 +143,21 @@ Tool edge cases:
 - After a clarification answer, run_tool and honour the choice (e.g. set
   use_media true when they picked the uploaded material).
 
-================  DECISION 3: available_actions  ================
-
-"available_actions" are the follow-up learning chips the UI offers under
-THIS answer. They apply to web_search and media_llm answers. (For
-quiz_generator and flashcard_generator the tool supplies its own open-card
-action, so set available_actions to [] when you pick those.)
-
-THE VALUE TEST: for each candidate action ask "would a student realistically
-tap this to learn more about THIS specific answer?" If not, leave it out.
-Returning fewer, high-value chips is better than padding the list.
-
-Choose any subset of: QUIZ, FLASHCARDS, SIMPLIFY, DETAIL, SUMMARY,
-STUDY_PLAN, ANALYZE.
-
-By scenario:
-- Greeting, small talk, thanks, acknowledgement -> [].
-- A clarifying question -> [].
-- A refusal or any non-study / off-topic reply -> [].
-- A non-study image answer (selfie, meme, random photo) -> [].
-- A brief factual lookup with little to study ("capital of France") -> []
-  or at most one chip.
-- A substantive explanation of a concept -> a focused set, usually QUIZ,
-  FLASHCARDS, SUMMARY, DETAIL. Add SIMPLIFY when the answer was dense, and
-  STUDY_PLAN or ANALYZE only for a large, rich topic worth planning.
-- A summary you produced -> QUIZ, FLASHCARDS, DETAIL (offer depth, not
-  another summary).
-
-Action examples (positive and negative):
-- "Hi" -> [].
-- "Explain binary trees" -> ["QUIZ", "FLASHCARDS", "SUMMARY", "DETAIL"].
-- "What's the capital of France?" -> [].
-- "Explain page 2 of my PDF" (a real explanation) -> ["QUIZ", "FLASHCARDS",
-  "SUMMARY"].
-- A clarifying question you asked -> [].
-- "Can you order me a pizza?" (refused) -> [].
-
-Prefer fewer actions. Return an empty array rather than padding.
-
 ================  EXPECTED OUTPUT (field-by-field)  ================
 
 The structured schema enforces the exact JSON; these show the decisions.
 - "Explain DBMS":
   action = "run_tool"; tool.name = "web_search";
-  tool.params.query = "Explain DBMS"; available_actions =
-  ["QUIZ", "FLASHCARDS", "SUMMARY", "DETAIL"].
+  tool.params.query = "Explain DBMS".
 - "Make a quiz" after discussing photosynthesis:
   action = "run_tool"; tool.name = "quiz_generator";
-  tool.params.topic = "Photosynthesis"; available_actions = [].
+  tool.params.topic = "Photosynthesis".
 - "Explain this maths concept" (no media, no history):
   action = "clarify"; clarification.reason names the missing subject;
-  clarification.questions has one question with 3-6 options;
-  available_actions = [].
+  clarification.questions has one question with 3-6 options.
 - "Thanks!":
   action = "run_tool"; tool.name = "web_search";
-  tool.params.query = "Thanks!"; available_actions = [].
+  tool.params.query = "Thanks!".
 """
 
 PLAN_TURN_SCHEMA: dict = {
@@ -205,26 +170,6 @@ PLAN_TURN_SCHEMA: dict = {
                 "unrecoverable; otherwise run_tool."
             ),
             "enum": ["clarify", "run_tool"],
-        },
-        "available_actions": {
-            "type": "array",
-            "description": (
-                "Follow-up learning chips that pass the value test for this "
-                "answer. [] for greetings, small talk, refusals, "
-                "clarifications, and quiz/flashcard generations."
-            ),
-            "items": {
-                "type": "string",
-                "enum": [
-                    "QUIZ",
-                    "FLASHCARDS",
-                    "SIMPLIFY",
-                    "DETAIL",
-                    "SUMMARY",
-                    "STUDY_PLAN",
-                    "ANALYZE",
-                ],
-            },
         },
         "clarification": {
             "type": "object",
@@ -278,5 +223,5 @@ PLAN_TURN_SCHEMA: dict = {
             "required": ["name", "params"],
         },
     },
-    "required": ["action", "available_actions"],
+    "required": ["action"],
 }

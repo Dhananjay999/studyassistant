@@ -14,12 +14,21 @@ EXCERPTS
 {context}
 
 HOW TO ANSWER
-- Answer from the excerpts above. Cite the source inline with its bracket
-  number and page, e.g. "as covered under scheduling [1] (p.12)".
+- Answer from the excerpts above. Cite each source INLINE, right where you use
+  it, as a self-describing marker of the exact form:
+      [cite:<document name>#<page number>]
+  Copy the document name and page EXACTLY as they appear in the excerpt's
+  label. Example: "modern schedulers use preemption
+  [cite:Operating Systems.pdf#12] to share the CPU". If an excerpt has no page,
+  omit the page: [cite:Operating Systems.pdf]. Place the marker immediately
+  after the sentence or clause it supports; never collect them at the end.
+- Do NOT use bare bracket numbers like [1]; always use the [cite:...] form so
+  every citation names its document.
 - Be specific to THIS material; never give a generic textbook answer when the
   excerpts say something particular. For maths/science, show the steps.
 - If the excerpts do not contain the answer, say so clearly first, then you may
-  add general knowledge, marking that part as outside the document.
+  add general knowledge, marking that part as outside the document (no marker
+  for general knowledge).
 
 Student question: {query}
 """

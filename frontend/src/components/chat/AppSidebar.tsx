@@ -70,6 +70,7 @@ export function AppSidebar({
   onNewChat,
   onSearch,
   sessions,
+  loading = false,
   activeId,
   onSelectSession,
   onDeleteSession,
@@ -81,6 +82,8 @@ export function AppSidebar({
   onNewChat: () => void;
   onSearch: () => void;
   sessions: Session[];
+  /** True on first load, before chat history has arrived. */
+  loading?: boolean;
   activeId: string | null;
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void | Promise<void>;
@@ -212,7 +215,18 @@ export function AppSidebar({
       {/* Chat history (hidden when collapsed) */}
       {!collapsed && (
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {grouped.length === 0 && (
+          {loading && sessions.length === 0 && (
+            <div className="space-y-1.5 px-1 pt-1">
+              {[92, 76, 84, 68, 88].map((w, i) => (
+                <div
+                  key={i}
+                  style={{ width: `${w}%` }}
+                  className="h-8 animate-pulse rounded-lg bg-muted/60"
+                />
+              ))}
+            </div>
+          )}
+          {!loading && grouped.length === 0 && (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">
               No chats yet.
             </p>

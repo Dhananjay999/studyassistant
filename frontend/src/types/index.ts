@@ -174,6 +174,8 @@ export interface QuizOptions {
   difficulty?: Difficulty;
   question_types?: QuestionType[];
   use_media?: boolean;
+  /** Free-text extra guidance typed in the form; passed to the quiz tool. */
+  additional_instructions?: string;
 }
 
 export interface MessageMeta {
@@ -188,7 +190,15 @@ export interface MessageMeta {
   flashcards?: FlashcardContent;
   /** Backend-driven follow-up action keys for this response (response-aware). */
   available_actions?: string[];
+  /** AI-generated next questions: display title + richer hidden prompt. */
+  suggested_followups?: SuggestedFollowup[];
   response_type?: string;
+}
+
+/** One AI-suggested follow-up: `title` is shown, `prompt` is what gets sent. */
+export interface SuggestedFollowup {
+  title: string;
+  prompt: string;
 }
 
 export interface Message {
@@ -320,10 +330,19 @@ export interface PendingClarification {
   data: ClarificationData;
 }
 
-// Pending quiz-setup surfaced as the setup popover.
+// Pending quiz-setup surfaced as the setup popover. Carries whatever the
+// backend already detected so the form opens pre-filled.
 export interface PendingQuizSetup {
   topic: string;
   mediaAvailable: boolean;
+  questionCount?: number | null;
+  questionTypes?: QuestionType[] | null;
+  difficulty?: Difficulty | null;
+}
+
+// Public, non-secret runtime config from GET /config.
+export interface AppConfig {
+  max_quiz_questions: number;
 }
 
 /* ------------------------------- flashcards ------------------------------- */
@@ -374,6 +393,7 @@ export interface FlashcardSetDetail {
 export interface FlashcardListItem {
   id: string;
   set_id: string;
+  session_id: string | null;
   title: string;
   topic: string;
   source_type: FlashcardSource;

@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -11,51 +11,74 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAppConfig } from "@/hooks/api";
 import { cn } from "@/lib/utils";
 import type { Difficulty, QuestionType, QuizOptions } from "@/types";
 
 const TYPE_OPTIONS: { value: QuestionType; label: string }[] = [
-  { value: "single_select", label: "Single choice" },
-  { value: "multi_select", label: "Multiple choice" },
+  { value: "single_select", label: "Single select" },
+  { value: "multi_select", label: "Multiple select" },
   { value: "true_false", label: "True / False" },
 ];
+const ALL_TYPES: QuestionType[] = TYPE_OPTIONS.map((t) => t.value);
+const DEFAULT_MAX = 25;
 
 export function QuizSetupForm({
   initialTopic = "",
+  initialCount,
+  initialTypes,
+  initialDifficulty,
   mediaAvailable = false,
   busy = false,
   onGenerate,
   className,
 }: {
   initialTopic?: string;
+  initialCount?: number | null;
+  initialTypes?: QuestionType[] | null;
+  initialDifficulty?: Difficulty | null;
   mediaAvailable?: boolean;
   busy?: boolean;
   onGenerate: (options: QuizOptions) => void;
   className?: string;
 }) {
+  const { data: config } = useAppConfig();
+  const maxQuestions = config?.max_quiz_questions ?? DEFAULT_MAX;
+
   const [topic, setTopic] = useState(initialTopic);
-  const [count, setCount] = useState("5");
-  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
-  const [types, setTypes] = useState<QuestionType[]>([
-    "single_select",
-    "multi_select",
-    "true_false",
-  ]);
+  const [count, setCount] = useState(String(initialCount ?? 5));
+  const [difficulty, setDifficulty] = useState<Difficulty>(
+    initialDifficulty ?? "medium",
+  );
+  // Prefill detected types; default to Mixed (all) when none were specified.
+  const [types, setTypes] = useState<QuestionType[]>(
+    initialTypes && initialTypes.length > 0 ? initialTypes : ALL_TYPES,
+  );
+  const [instructions, setInstructions] = useState("");
   const [useMedia, setUseMedia] = useState(false);
+
+  const isMixed = ALL_TYPES.every((t) => types.includes(t));
+  const countNum = Number(count);
+  const countValid =
+    Number.isInteger(countNum) && countNum >= 1 && countNum <= maxQuestions;
 
   const toggleType = (t: QuestionType) =>
     setTypes((prev) =>
       prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
     );
+  const selectMixed = () => setTypes(ALL_TYPES);
 
-  const submit = () =>
+  const submit = () => {
+    if (!countValid || types.length === 0) return;
     onGenerate({
       topic: topic.trim() || undefined,
-      question_count: Number(count),
+      question_count: countNum,
       difficulty,
       question_types: types,
       use_media: mediaAvailable ? useMedia : undefined,
+      additional_instructions: instructions.trim() || undefined,
     });
+  };
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -72,18 +95,23 @@ export function QuizSetupForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs">Questions</Label>
-          <Select value={count} onValueChange={setCount}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {["3", "5", "8", "10"].map((n) => (
-                <SelectItem key={n} value={n}>
-                  {n}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={maxQuestions}
+            value={count}
+            onChange={(e) => setCount(e.target.value)}
+            className={cn("h-9", !countValid && "border-destructive")}
+          />
+          <p
+            className={cn(
+              "text-[10px]",
+              countValid ? "text-muted-foreground" : "text-destructive",
+            )}
+          >
+            1–{maxQuestions} questions
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Difficulty</Label>
@@ -105,20 +133,49 @@ export function QuizSetupForm({
 
       <div className="space-y-2">
         <Label className="text-xs">Question types</Label>
-        <div className="flex flex-col gap-2">
-          {TYPE_OPTIONS.map((t) => (
-            <label
-              key={t.value}
-              className="flex cursor-pointer items-center gap-2 text-sm"
-            >
-              <Checkbox
-                checked={types.includes(t.value)}
-                onCheckedChange={() => toggleType(t.value)}
-              />
-              {t.label}
-            </label>
-          ))}
+        <div className="flex flex-wrap gap-2">
+          {TYPE_OPTIONS.map((t) => {
+            const active = types.includes(t.value);
+            return (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => toggleType(t.value)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                  active
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-muted",
+                )}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={selectMixed}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+              isMixed
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:bg-muted",
+            )}
+          >
+            Mixed
+          </button>
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Additional instructions</Label>
+        <Textarea
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          placeholder="Optional instructions…"
+          rows={2}
+          className="resize-none text-sm"
+        />
       </div>
 
       {mediaAvailable && (
@@ -155,7 +212,7 @@ export function QuizSetupForm({
 
       <Button
         onClick={submit}
-        disabled={busy || types.length === 0}
+        disabled={busy || types.length === 0 || !countValid}
         className="w-full gap-2"
       >
         <Sparkles className="h-4 w-4" />

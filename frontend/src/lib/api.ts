@@ -3,6 +3,7 @@
 
 import type {
   APIEnvelope,
+  AppConfig,
   AssistantRequest,
   Bookmark,
   BookmarkCollection,
@@ -59,6 +60,7 @@ export const ENDPOINTS = {
   FLASHCARD_STUDY: (id: string) => `/flashcards/${id}/study`,
   LEARNING_PROFILE: "/learning-profile/",
   LEARNING_PROFILE_SKIP: "/learning-profile/skip",
+  CONFIG: "/config",
 } as const;
 
 type TokenGetter = () => string | null;
@@ -101,6 +103,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 function unwrap<T>(path: string, options?: RequestInit): Promise<T> {
   return request<APIEnvelope<T>>(path, options).then((r) => r.data);
 }
+
+/* --------------------------------- config --------------------------------- */
+
+// Public endpoint; returns a raw (non-enveloped) object.
+export const getAppConfig = () =>
+  request<AppConfig>(ENDPOINTS.CONFIG);
 
 /* ---------------------------------- auth ---------------------------------- */
 

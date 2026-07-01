@@ -120,12 +120,14 @@ class QuizGeneratorTool(BaseTool):
                 # an earlier topic (e.g. "what is DBMS") doesn't bias it.
                 history = None
 
+        instructions = params.get("additional_instructions") or "(none)"
         prompt = prompts.QUIZ_GENERATION_PROMPT.format(
             topic=topic,
             count=count,
             difficulty=difficulty,
             types=", ".join(types),
             context=ctx.enriched_message,
+            instructions=instructions,
         )
         quiz_data = self.llm.generate_structured(
             prompt,

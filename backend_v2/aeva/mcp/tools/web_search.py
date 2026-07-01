@@ -44,7 +44,10 @@ class WebSearchTool(BaseTool):
     def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
         """Run web search grounded generation."""
         query = params.get("query") or ctx.enriched_message
-        prompt = prompts.WEB_SEARCH_PROMPT.format(query=query)
+        prompt = (
+            prompts.WEB_SEARCH_PROMPT.format(query=query)
+            + prompts.ANSWER_META_INSTRUCTION
+        )
         answer = self.llm.generate(
             prompt,
             system_prompt=prompts.personalize(
@@ -70,7 +73,10 @@ class WebSearchTool(BaseTool):
         """Stream the grounded answer, returning answer + sources at the end."""
         llm = self.llm
         query = params.get("query") or ctx.enriched_message
-        prompt = prompts.WEB_SEARCH_PROMPT.format(query=query)
+        prompt = (
+            prompts.WEB_SEARCH_PROMPT.format(query=query)
+            + prompts.ANSWER_META_INSTRUCTION
+        )
         answer = ""
         for chunk in llm.generate_stream(
             prompt,

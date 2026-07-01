@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Seo } from "@/components/common/Seo";
+import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { AppShell } from "@/components/AppShell";
 import { cn } from "@/lib/utils";
 import {
@@ -77,7 +78,7 @@ const TYPE_FILTERS: Array<BookmarkType | "all"> = [
 
 export default function BookmarksPage() {
   const navigate = useNavigate();
-  const { data: bookmarks = [] } = useBookmarks();
+  const { data: bookmarks = [], isLoading: bookmarksLoading } = useBookmarks();
   const { data: collections = [] } = useCollections();
   const createCollection = useCreateCollection();
   const renameCollection = useRenameCollection();
@@ -378,7 +379,9 @@ export default function BookmarksPage() {
               ))}
             </div>
 
-            {filtered.length === 0 ? (
+            {bookmarksLoading && bookmarks.length === 0 ? (
+              <CardGridSkeleton />
+            ) : filtered.length === 0 ? (
               <EmptyBookmarks hasAny={bookmarks.length > 0} />
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">

@@ -80,7 +80,7 @@ def login_google() -> Response:
     response.set_cookie(
         PKCE_COOKIE,
         verifier,
-        max_age=600,
+        max_age=current_app.config["PKCE_COOKIE_MAX_AGE_SECONDS"],
         httponly=True,
         secure=current_app.config["COOKIE_SECURE"],
         samesite="Lax",

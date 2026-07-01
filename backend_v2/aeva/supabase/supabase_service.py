@@ -63,6 +63,7 @@ class SupabaseService:
         """Exchange an OAuth auth code for a session (PKCE)."""
         base = current_app.config["SUPABASE_URL"]
         key = current_app.config["SUPABASE_SERVICE_ROLE_KEY"]
+        logger.info("Auth: exchanging OAuth code for a session (PKCE)")
         response = requests.post(
             f"{base}/auth/v1/token?grant_type=pkce",
             headers={"apikey": key, "Content-Type": "application/json"},
@@ -70,12 +71,14 @@ class SupabaseService:
             timeout=15,
         )
         response.raise_for_status()
+        logger.debug("Auth: code exchange succeeded")
         return response.json()
 
     def refresh_session(self, refresh_token: str) -> dict[str, Any]:
         """Refresh a session using a refresh token."""
         base = current_app.config["SUPABASE_URL"]
         key = current_app.config["SUPABASE_SERVICE_ROLE_KEY"]
+        logger.info("Auth: refreshing session with refresh token")
         response = requests.post(
             f"{base}/auth/v1/token?grant_type=refresh_token",
             headers={"apikey": key, "Content-Type": "application/json"},
@@ -378,12 +381,14 @@ class SupabaseService:
         """Bulk-insert per-page metadata rows."""
         if not rows:
             return
+        logger.info("DB insert media_pages | %d rows", len(rows))
         self.client.table("media_pages").insert(rows).execute()
 
     def insert_media_chunks(self, rows: list[dict[str, Any]]) -> None:
         """Bulk-insert chunk rows, serializing embeddings for pgvector."""
         if not rows:
             return
+        logger.info("DB insert media_chunks | %d rows", len(rows))
         payload = [
             {**row, "embedding": _vec_to_str(row["embedding"])}
             for row in rows
@@ -392,6 +397,7 @@ class SupabaseService:
 
     def delete_media_chunks(self, media_id: str, user_id: str) -> None:
         """Drop a document's chunks and pages (for reprocess/cleanup)."""
+        logger.info("DB delete chunks+pages | media=%s", media_id)
         self.client.table("media_chunks").delete().eq(
             "media_id", media_id
         ).eq("user_id", user_id).execute()
@@ -407,6 +413,11 @@ class SupabaseService:
         top_k: int = 8,
     ) -> list[dict[str, Any]]:
         """Cosine-similarity search over a user's chunks (optional subset)."""
+        logger.info(
+            "DB match_chunks (vector search) | top_k=%d | media_ids=%s",
+            top_k,
+            len(media_ids) if media_ids else "all",
+        )
         result = self.client.rpc(
             "match_media_chunks",
             {
@@ -416,7 +427,9 @@ class SupabaseService:
                 "match_count": top_k,
             },
         ).execute()
-        return result.data or []
+        rows = result.data or []
+        logger.info("DB match_chunks ← %d chunks", len(rows))
+        return rows
 
     # --- Storage ---
 
@@ -428,6 +441,12 @@ class SupabaseService:
     ) -> str:
         """Upload file to Supabase Storage."""
         bucket = current_app.config["SUPABASE_STORAGE_BUCKET"]
+        logger.info(
+            "Storage upload | %s | %d bytes (%s)",
+            storage_path,
+            len(file_bytes),
+            content_type,
+        )
         self.client.storage.from_(bucket).upload(
             storage_path,
             file_bytes,
@@ -438,19 +457,24 @@ class SupabaseService:
     def download_file(self, storage_path: str) -> bytes:
         """Download file from Supabase Storage."""
         bucket = current_app.config["SUPABASE_STORAGE_BUCKET"]
+        logger.info("Storage download | %s", storage_path)
         return self.client.storage.from_(bucket).download(storage_path)
 
     def delete_storage_file(self, storage_path: str) -> None:
         """Delete file from Supabase Storage."""
         bucket = current_app.config["SUPABASE_STORAGE_BUCKET"]
+        logger.info("Storage delete | %s", storage_path)
         self.client.storage.from_(bucket).remove([storage_path])
 
     def get_signed_url(
-        self, storage_path: str, expires_in: int = 3600
+        self, storage_path: str, expires_in: int | None = None
     ) -> str:
-        """Get signed URL for a storage file."""
+        """Get signed URL for a storage file (TTL from config unless given)."""
         bucket = current_app.config["SUPABASE_STORAGE_BUCKET"]
+        ttl = expires_in or current_app.config.get(
+            "MEDIA_SIGNED_URL_TTL_SECONDS", 3600
+        )
         result = self.client.storage.from_(bucket).create_signed_url(
-            storage_path, expires_in
+            storage_path, ttl
         )
         return result.get("signedURL", result.get("signedUrl", ""))

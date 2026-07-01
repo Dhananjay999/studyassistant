@@ -105,6 +105,12 @@ class LlamaParseService:
         mime_type: str,
     ) -> str:
         """Upload a file, create a parse job, and return its job id."""
+        logger.info(
+            "LlamaParse submit | file=%s | %d bytes | tier=%s",
+            file_name,
+            len(file_bytes),
+            self._tier,
+        )
         file_obj = self.client.files.create(
             file=(file_name, file_bytes, mime_type),
             purpose="parse",
@@ -117,19 +123,30 @@ class LlamaParseService:
         if not job.id:
             msg = "LlamaParse create returned no job id"
             raise ValueError(msg)
+        logger.info("LlamaParse job created | job=%s", job.id)
         return str(job.id)
 
     def poll(self, job_id: str) -> str:
         """Return the current job status (PENDING/RUNNING/COMPLETED/...)."""
         job = self.client.parsing.get(job_id).job
-        return str(job.status or "UNKNOWN").upper()
+        status = str(job.status or "UNKNOWN").upper()
+        logger.debug("LlamaParse poll | job=%s | status=%s", job_id, status)
+        return status
 
     def fetch_result(self, job_id: str) -> ParsedDocument:
         """Fetch the completed result expanded with text, markdown, items."""
+        logger.info("LlamaParse fetch result | job=%s", job_id)
         result = self.client.parsing.get(
             job_id, expand=list(_RESULT_EXPAND)
         )
-        return self._normalize(result)
+        doc = self._normalize(result)
+        logger.info(
+            "LlamaParse parsed | job=%s | %d pages | %d chars",
+            job_id,
+            doc.page_count,
+            len(doc.text),
+        )
+        return doc
 
     @staticmethod
     def _normalize(result: Any) -> ParsedDocument:

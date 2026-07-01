@@ -120,7 +120,11 @@ class MediaLLMTool(BaseTool):
             label = f"{name}, p.{page}" if page else name
             if section:
                 label += f', "{section}"'
-            context_lines.append(f"[{index}] ({label})\n{row['content']}")
+            # Hand the model the exact inline marker to copy for this excerpt.
+            marker = f"[cite:{name}#{page}]" if page else f"[cite:{name}]"
+            context_lines.append(
+                f"[{index}] ({label}) — cite as {marker}\n{row['content']}"
+            )
             sources.append({
                 "document_name": name,
                 "media_id": row["media_id"],
@@ -165,7 +169,8 @@ class MediaLLMTool(BaseTool):
                 "media_count": len(ready),
             }
         answer = self.llm.generate(
-            prompts.MEDIA_PROMPT.format(query=query, context=context),
+            prompts.MEDIA_PROMPT.format(query=query, context=context)
+            + prompts.ANSWER_META_INSTRUCTION,
             system_prompt=prompts.personalize(
                 prompts.SYSTEM_PROMPT, ctx.personalization
             ),
@@ -188,7 +193,8 @@ class MediaLLMTool(BaseTool):
         if not attachments:
             return {"answer": prompts.NO_MEDIA_MESSAGE, "media_count": 0}
         answer = self.llm.generate(
-            prompts.MEDIA_PROMPT.format(query=query, context="(none)"),
+            prompts.MEDIA_PROMPT.format(query=query, context="(none)")
+            + prompts.ANSWER_META_INSTRUCTION,
             system_prompt=prompts.personalize(
                 prompts.SYSTEM_PROMPT, ctx.personalization
             ),
@@ -222,7 +228,10 @@ class MediaLLMTool(BaseTool):
             if not attachments:
                 yield prompts.NO_MEDIA_MESSAGE
                 return {"answer": prompts.NO_MEDIA_MESSAGE, "media_count": 0}
-            prompt = prompts.MEDIA_PROMPT.format(query=query, context="(none)")
+            prompt = (
+                prompts.MEDIA_PROMPT.format(query=query, context="(none)")
+                + prompts.ANSWER_META_INSTRUCTION
+            )
             answer = ""
             for chunk in llm.generate_stream(
                 prompt,
@@ -244,7 +253,10 @@ class MediaLLMTool(BaseTool):
                 "sources": [],
                 "media_count": len(ready),
             }
-        prompt = prompts.MEDIA_PROMPT.format(query=query, context=context)
+        prompt = (
+            prompts.MEDIA_PROMPT.format(query=query, context=context)
+            + prompts.ANSWER_META_INSTRUCTION
+        )
         answer = ""
         for chunk in llm.generate_stream(
             prompt,

@@ -52,6 +52,7 @@ class QuizOptionsSchema(Schema):
     )
     question_types = fields.List(fields.Str(), load_default=None)
     use_media = fields.Bool(load_default=None)
+    additional_instructions = fields.Str(load_default=None)
 
 
 class FlashcardOptionsSchema(Schema):
@@ -94,6 +95,7 @@ class AssistantRequestSchema(Schema):
                 difficulty=opts.get("difficulty"),
                 question_types=opts.get("question_types"),
                 use_media=opts.get("use_media"),
+                additional_instructions=opts.get("additional_instructions"),
             )
         fc = data.get("flashcard_options")
         if fc and isinstance(fc, dict):

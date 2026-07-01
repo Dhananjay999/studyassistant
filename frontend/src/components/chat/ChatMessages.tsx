@@ -1,17 +1,67 @@
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
-import { Bot, User } from "lucide-react";
+import { Bot, FileText, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { QuizCard } from "@/components/chat/QuizCard";
 import { FlashcardCard } from "@/components/chat/FlashcardCard";
 import { SourceCards } from "@/components/chat/SourceCards";
 import { SuggestedActions } from "@/components/chat/SuggestedActions";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
+import { useDocumentViewer } from "@/contexts/DocumentViewerContext";
 import { cn } from "@/lib/utils";
 import { copyRich, markdownToPlainText } from "@/lib/clipboard";
+import {
+  citationUrlTransform,
+  parseCiteTarget,
+  preprocessCitations,
+} from "@/lib/citations";
 import type { ThinkingHint } from "@/lib/loadingMessages";
-import type { Message, QuizContent, QuizOptions, ToolUsed } from "@/types";
+import type {
+  Message,
+  QuizContent,
+  QuizOptions,
+  SourceInfo,
+  ToolUsed,
+} from "@/types";
+
+/** Compact, ChatGPT-style inline citation chip that opens the cited page. */
+function CitationChip({
+  name,
+  page,
+  label,
+  sources,
+}: {
+  name: string;
+  page?: number;
+  label: React.ReactNode;
+  sources?: SourceInfo[];
+}) {
+  const viewer = useDocumentViewer();
+  const lname = name.toLowerCase();
+  const match =
+    sources?.find(
+      (s) =>
+        s.document_name?.toLowerCase() === lname &&
+        (page == null || s.page_number == null || s.page_number === page),
+    ) ?? sources?.find((s) => s.document_name?.toLowerCase() === lname);
+  const mediaId = match?.media_id;
+
+  return (
+    <button
+      type="button"
+      disabled={!mediaId}
+      onClick={() =>
+        mediaId && viewer.openDocumentByMediaId(mediaId, page ?? undefined)
+      }
+      title={mediaId ? "Open the cited page" : undefined}
+      className="mx-0.5 inline-flex max-w-[16rem] items-center gap-1 rounded-md border border-brand-1/30 bg-brand-1/5 px-1.5 py-px align-baseline text-[0.72em] font-medium leading-tight text-brand-1 no-underline transition-colors hover:bg-brand-1/15 disabled:cursor-default disabled:opacity-70"
+    >
+      <FileText className="h-3 w-3 shrink-0" />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
 
 const TOOL_LABEL: Record<ToolUsed, string> = {
   web_search: "Web",
@@ -25,6 +75,7 @@ export function ChatMessages({
   quizBusy,
   thinkingHint,
   onAction,
+  onFollowup,
   onGenerateQuiz,
   onCreateFlashcards,
   onOpenQuiz,
@@ -35,6 +86,7 @@ export function ChatMessages({
   quizBusy: boolean;
   thinkingHint?: ThinkingHint;
   onAction: (message: string, sourceContent: string) => void;
+  onFollowup: (prompt: string, title: string) => void;
   onGenerateQuiz: (
     topic: string,
     options: QuizOptions,
@@ -57,6 +109,12 @@ export function ChatMessages({
     const text = el?.innerText?.trim() || markdownToPlainText(fallback);
     return copyRich({ html: el?.innerHTML, text });
   };
+
+  // Follow-up / action chips belong only on the newest answer; older cards
+  // keep just Bookmark + Copy so the conversation stays focused.
+  const lastAssistantId = messages
+    .filter((m) => m.role === "assistant")
+    .at(-1)?.id;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6">
@@ -119,7 +177,31 @@ export function ChatMessages({
                     }}
                     className="learning-content prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-pre:my-2"
                   >
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      urlTransform={citationUrlTransform}
+                      components={{
+                        a: ({ href, children }) => {
+                          const cite = href ? parseCiteTarget(href) : null;
+                          if (cite) {
+                            return (
+                              <CitationChip
+                                name={cite.name}
+                                page={cite.page}
+                                label={children}
+                                sources={msg.meta?.sources}
+                              />
+                            );
+                          }
+                          return (
+                            <a href={href} target="_blank" rel="noreferrer">
+                              {children}
+                            </a>
+                          );
+                        },
+                      }}
+                    >
+                      {preprocessCitations(msg.content)}
+                    </ReactMarkdown>
                     {msg.streaming && (
                       <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-primary align-middle" />
                     )}
@@ -156,11 +238,14 @@ export function ChatMessages({
                 !msg.meta?.flashcards && (
                   <SuggestedActions
                     availableActions={msg.meta?.available_actions}
+                    suggestedFollowups={msg.meta?.suggested_followups}
+                    showSuggestions={msg.id === lastAssistantId}
                     busy={quizBusy}
                     topic={topic}
                     mediaAvailable={mediaAvailable}
                     quizBusy={quizBusy}
                     onAction={(message) => onAction(message, msg.content)}
+                    onFollowup={onFollowup}
                     onGenerateQuiz={(opts) =>
                       onGenerateQuiz(topic, opts, msg.content)
                     }

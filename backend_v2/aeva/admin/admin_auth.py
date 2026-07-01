@@ -25,12 +25,23 @@ logger = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 _ALG = "HS256"
-_TTL = timedelta(hours=8)
+# Fallback TTL (minutes) when ADMIN_TOKEN_EXPIRE_MINUTES is unset.
+_DEFAULT_TTL_MINUTES = 480
 
 
 def _config(key: str) -> str:
     """Read an admin config value as a string ('' when unset)."""
     return str(current_app.config.get(key) or "")
+
+
+def _token_ttl() -> timedelta:
+    """Admin JWT lifetime from config (env-driven, never hardcoded)."""
+    minutes = int(
+        current_app.config.get(
+            "ADMIN_TOKEN_EXPIRE_MINUTES", _DEFAULT_TTL_MINUTES
+        )
+    )
+    return timedelta(minutes=minutes)
 
 
 def admin_enabled() -> bool:
@@ -54,7 +65,7 @@ def verify_credentials(username: str, password: str) -> bool:
 def issue_token(username: str) -> dict[str, Any]:
     """Issue a signed, expiring admin JWT for the given username."""
     now = datetime.now(tz=UTC)
-    expires = now + _TTL
+    expires = now + _token_ttl()
     payload = {
         "sub": username,
         "role": "admin",

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Check, Copy, Loader2 } from "lucide-react";
+import { ArrowUpRight, Check, Copy, Loader2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,11 @@ import { QuizSetupPopover } from "@/components/chat/QuizSetupPopover";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { PRIMARY_ACTIONS, type PrimaryAction } from "@/lib/suggestedActions";
 import { cn } from "@/lib/utils";
-import type { CreateBookmarkInput, QuizOptions } from "@/types";
+import type {
+  CreateBookmarkInput,
+  QuizOptions,
+  SuggestedFollowup,
+} from "@/types";
 
 // Border-only "premium AI action" chip (Linear / Raycast / Gemini feel).
 const HIGHLIGHT_CHIP = cn(
@@ -51,24 +55,34 @@ const chip = {
 
 export function SuggestedActions({
   availableActions,
+  suggestedFollowups,
+  showSuggestions = true,
   busy,
   topic,
   mediaAvailable,
   quizBusy,
   bookmarkItem,
   onAction,
+  onFollowup,
   onGenerateQuiz,
   onCreateFlashcards,
   onCopy,
 }: {
   /** Action keys the backend says apply to this response (undefined = all). */
   availableActions?: string[];
+  /** AI-generated next questions (display title + hidden richer prompt). */
+  suggestedFollowups?: SuggestedFollowup[];
+  /** Show action + follow-up chips (only the latest answer); older cards keep
+   * just Bookmark + Copy. */
+  showSuggestions?: boolean;
   busy: boolean;
   topic: string;
   mediaAvailable: boolean;
   quizBusy: boolean;
   bookmarkItem: CreateBookmarkInput;
   onAction: (message: string) => void;
+  /** Send a follow-up: the hidden `prompt` is sent, `title` is displayed. */
+  onFollowup: (prompt: string, title: string) => void;
   onGenerateQuiz: (options: QuizOptions) => void;
   onCreateFlashcards: () => void;
   onCopy: () => Promise<boolean>;
@@ -111,7 +125,7 @@ export function SuggestedActions({
 
   return (
     <div className="mt-3">
-      {visibleActions.length > 0 && (
+      {showSuggestions && visibleActions.length > 0 && (
       <motion.div
         variants={container}
         initial="hidden"
@@ -198,6 +212,38 @@ export function SuggestedActions({
           );
         })}
       </motion.div>
+      )}
+
+      {/* AI-generated follow-up questions — tap sends the richer hidden prompt */}
+      {showSuggestions && suggestedFollowups && suggestedFollowups.length > 0 && (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="mt-2.5 flex flex-col gap-1.5"
+        >
+          {suggestedFollowups.map((f, i) => (
+            <motion.button
+              key={`${f.title}-${i}`}
+              type="button"
+              variants={chip}
+              whileHover={{ x: 2 }}
+              whileTap={{ scale: 0.99 }}
+              disabled={busy}
+              onClick={() => !busy && onFollowup(f.prompt, f.title)}
+              className={cn(
+                "group inline-flex w-full items-center justify-between gap-2",
+                "rounded-xl border border-border/60 bg-muted/30 px-3 py-2",
+                "text-left text-xs font-medium text-foreground/90",
+                "transition-colors hover:border-brand-1/50 hover:bg-accent",
+                "disabled:opacity-60",
+              )}
+            >
+              <span className="min-w-0 truncate">{f.title}</span>
+              <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-brand-1" />
+            </motion.button>
+          ))}
+        </motion.div>
       )}
 
       {/* Secondary utility actions — icons that expand to labels on hover */}

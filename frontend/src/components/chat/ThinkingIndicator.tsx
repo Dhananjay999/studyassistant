@@ -6,10 +6,76 @@ import {
   type ThinkingHint,
 } from "@/lib/loadingMessages";
 
+const shimmerBar =
+  "motion-loop animate-shimmer rounded-full bg-gradient-to-r " +
+  "from-muted via-muted/30 to-muted bg-[length:200%_100%]";
+
+/** Standard chat answer skeleton: a few shimmering text lines. */
+function TextSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[92, 78, 64].map((w) => (
+        <div
+          key={w}
+          style={{ width: `${w}%` }}
+          className={`h-3 ${shimmerBar}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Quiz skeleton: a question line plus a stack of option rows. */
+function QuizSkeleton() {
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+      <div className={`mb-3 h-3.5 w-3/4 ${shimmerBar}`} />
+      <div className="space-y-2">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="flex items-center gap-2 rounded-lg border border-border/40 px-2.5 py-2"
+          >
+            <div className={`h-3.5 w-3.5 rounded-full ${shimmerBar}`} />
+            <div
+              style={{ width: `${70 - i * 8}%` }}
+              className={`h-3 ${shimmerBar}`}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Flashcard skeleton: a small deck of card previews. */
+function FlashcardSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-2.5">
+      {[0, 1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="flex h-20 flex-col justify-between rounded-xl border border-border/50 bg-muted/20 p-2.5"
+        >
+          <div className={`h-3 w-2/3 ${shimmerBar}`} />
+          <div className={`h-2.5 w-1/2 ${shimmerBar}`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LoadingSkeleton({ hint }: { hint?: ThinkingHint }) {
+  if (hint === "quiz") return <QuizSkeleton />;
+  if (hint === "flashcard") return <FlashcardSkeleton />;
+  return <TextSkeleton />;
+}
+
 /**
  * Gemini-style "thinking" state. Messages advance on a *progressive* cadence
- * (0s → 2s → 5s → 8s → 12s) rather than rapid switching, so longer waits feel
- * intentional. Paired with shimmering skeleton lines.
+ * rather than rapid switching, so longer waits feel intentional. The skeleton
+ * shape below the status line matches the task being generated (chat, quiz, or
+ * flashcards).
  */
 export function ThinkingIndicator({ hint }: { hint?: ThinkingHint }) {
   const steps = THINKING_PROGRESSIONS[hint ?? "thinking"];
@@ -46,15 +112,7 @@ export function ThinkingIndicator({ hint }: { hint?: ThinkingHint }) {
           </AnimatePresence>
         </span>
       </span>
-      <div className="space-y-2">
-        {[92, 78, 64].map((w) => (
-          <div
-            key={w}
-            style={{ width: `${w}%` }}
-            className="motion-loop h-3 animate-shimmer rounded-full bg-gradient-to-r from-muted via-muted/30 to-muted bg-[length:200%_100%]"
-          />
-        ))}
-      </div>
+      <LoadingSkeleton hint={hint} />
     </div>
   );
 }

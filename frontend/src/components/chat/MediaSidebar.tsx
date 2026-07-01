@@ -2,7 +2,9 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   FileText,
+  HelpCircle,
   ImageIcon,
+  Layers,
   Loader2,
   Trash2,
   Upload,
@@ -11,13 +13,16 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { useDocumentViewer } from "@/contexts/DocumentViewerContext";
 import { cn } from "@/lib/utils";
 import { MediaProcessingCard } from "@/components/chat/MediaProcessingCard";
 import {
   isMediaReady,
+  type FlashcardListItem,
   type MediaItem,
+  type QuizListItem,
   type UploadProgress,
 } from "@/types";
 
@@ -32,21 +37,36 @@ export function MediaSidebar({
   uploads,
   selected,
   activeSessionId,
+  mediaLoading,
+  quizzes,
+  flashcardSets,
+  resourcesLoading,
   onToggle,
   onDelete,
   onUpload,
   onRetryUpload,
   onDismissUpload,
+  onOpenQuiz,
+  onOpenFlashcards,
 }: {
   items: MediaItem[];
   uploads: UploadProgress[];
   selected: Set<string>;
   activeSessionId: string | null;
+  /** True on first load, before the media list has arrived. */
+  mediaLoading: boolean;
+  /** Quizzes generated in the current chat session. */
+  quizzes: QuizListItem[];
+  /** Flashcard sets generated in the current chat session. */
+  flashcardSets: FlashcardListItem[];
+  resourcesLoading: boolean;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void | Promise<void>;
   onUpload: (files: FileList) => void;
   onRetryUpload: (id: string) => void;
   onDismissUpload: (id: string) => void;
+  onOpenQuiz: (quizId: string) => void;
+  onOpenFlashcards: (setId: string) => void;
 }) {
   const viewer = useDocumentViewer();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -63,9 +83,11 @@ export function MediaSidebar({
 
   return (
     <div className="flex h-full flex-col">
+      {/* Top half: uploaded media the user can select as context. */}
+      <div className="flex min-h-0 flex-1 basis-0 flex-col">
       <div className="flex items-center justify-between gap-2 px-1 pb-3">
         <div>
-          <h3 className="font-display text-sm font-semibold">Your materials</h3>
+          <h3 className="font-display text-sm font-semibold">Uploaded media</h3>
           {items.length > 0 && (
             <p className="text-[11px] text-muted-foreground">
               {selected.size > 0
@@ -114,7 +136,25 @@ export function MediaSidebar({
             ))}
           </AnimatePresence>
 
-          {items.length === 0 && uploads.length === 0 && (
+          {mediaLoading && items.length === 0 && uploads.length === 0 && (
+            <>
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 rounded-xl border border-border/60 p-2"
+                >
+                  <Skeleton className="h-4 w-4 rounded" />
+                  <Skeleton className="h-9 w-9 rounded-lg" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-2.5 w-1/3" />
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {!mediaLoading && items.length === 0 && uploads.length === 0 && (
             <p className="px-1 py-6 text-center text-xs text-muted-foreground">
               No files yet. Upload PDFs or images to ask questions from them.
             </p>
@@ -223,6 +263,83 @@ export function MediaSidebar({
           })}
         </div>
       </ScrollArea>
+      </div>
+
+      {/* Bottom half: learning resources generated from this session. */}
+      <div className="mt-2 flex min-h-0 flex-1 basis-0 flex-col border-t border-border/50 pt-3">
+        <div className="px-1 pb-3">
+          <h3 className="font-display text-sm font-semibold">
+            Learning resources
+          </h3>
+          <p className="text-[11px] text-muted-foreground">
+            Quizzes &amp; flashcards from this session
+          </p>
+        </div>
+        <ScrollArea className="flex-1">
+          <div className="flex flex-col gap-2 pr-1">
+            {resourcesLoading ? (
+              [0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 rounded-xl border border-border/60 p-2"
+                >
+                  <Skeleton className="h-8 w-8 rounded-lg" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-2.5 w-1/3" />
+                  </div>
+                </div>
+              ))
+            ) : quizzes.length === 0 && flashcardSets.length === 0 ? (
+              <p className="px-1 py-6 text-center text-xs text-muted-foreground">
+                No quizzes or flashcards yet. Create some from a chat answer and
+                they'll appear here.
+              </p>
+            ) : (
+              <>
+                {quizzes.map((q) => (
+                  <button
+                    key={q.quiz_id}
+                    type="button"
+                    onClick={() => onOpenQuiz(q.quiz_id)}
+                    className="flex items-center gap-2 rounded-xl border border-border/60 p-2 text-left transition-colors hover:border-brand-1/50 hover:bg-muted/50"
+                  >
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-1/10 text-brand-1">
+                      <HelpCircle className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium">{q.title}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {q.question_count}{" "}
+                        {q.question_count === 1 ? "question" : "questions"}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+                {flashcardSets.map((f) => (
+                  <button
+                    key={f.set_id}
+                    type="button"
+                    onClick={() => onOpenFlashcards(f.set_id)}
+                    className="flex items-center gap-2 rounded-xl border border-border/60 p-2 text-left transition-colors hover:border-brand-1/50 hover:bg-muted/50"
+                  >
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-2/10 text-brand-2">
+                      <Layers className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium">{f.title}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {f.card_count}{" "}
+                        {f.card_count === 1 ? "card" : "cards"}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
 
       {previewImage && (
         <div
