@@ -27,6 +27,7 @@ export const qk = {
   flashcardSet: (id: string) => ["flashcards", id] as const,
   search: (q: string) => ["search", q] as const,
   learningProfile: ["learning-profile"] as const,
+  analytics: ["analytics"] as const,
   config: ["config"] as const,
 };
 
@@ -55,7 +56,14 @@ export function useCreateSession() {
       mode?: "media" | "web_search";
       mediaIds?: string[];
     }) => api.createSession(v.title, v.mode, v.mediaIds),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.sessions }),
+    // The POST already returns the full session row, so optimistically prepend
+    // it to the cached list instead of firing a second GET /sessions. The
+    // sidebar updates instantly and no redundant network request is made.
+    onSuccess: (created) => {
+      qc.setQueryData<Session[]>(qk.sessions, (cur) =>
+        cur ? [created, ...cur.filter((s) => s.id !== created.id)] : [created],
+      );
+    },
   });
 }
 
@@ -275,6 +283,11 @@ export function useLearningProfile() {
   return useQuery({
     queryKey: qk.learningProfile,
     queryFn: api.getLearningProfile,
+    // The profile rarely changes; fetch it once and reuse from cache for the
+    // whole session. It is refreshed only when the user saves/skips (which
+    // invalidate this key) or explicitly refetches — never on every new chat.
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
 }
 
@@ -287,6 +300,20 @@ export function useSaveLearningProfile() {
       qc.invalidateQueries({ queryKey: qk.learningProfile }),
   });
 }
+
+/* -------------------------------- analytics ------------------------------- */
+
+export function useAnalytics() {
+  return useQuery({
+    queryKey: qk.analytics,
+    queryFn: api.getAnalytics,
+    // Aggregates shift slowly; a short stale window avoids refetching on every
+    // navigation back to the dashboard.
+    staleTime: 2 * 60_000,
+  });
+}
+
+/* ------------------------ learning profile mutations ---------------------- */
 
 export function useSkipPersonalization() {
   const qc = useQueryClient();

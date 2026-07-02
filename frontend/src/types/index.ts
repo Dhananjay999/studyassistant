@@ -30,6 +30,11 @@ export interface LearningProfile {
   explanation_style: string | null;
   favorite_subjects: string[];
   learning_goal: string | null;
+  // How Aeva should behave — the persona/tone, communication style, and any
+  // free-form long-term instructions the student provides.
+  ai_personality: string | null;
+  communication_style: string | null;
+  custom_instructions: string | null;
   personalization_status: PersonalizationStatus;
   personalization_updated_at: string | null;
 }
@@ -41,6 +46,9 @@ export interface LearningProfileInput {
   explanation_style?: string | null;
   favorite_subjects?: string[];
   learning_goal?: string | null;
+  ai_personality?: string | null;
+  communication_style?: string | null;
+  custom_instructions?: string | null;
 }
 
 export interface Session {
@@ -454,12 +462,48 @@ export interface QuizListItem {
   topic: string;
   session_id: string;
   created_at: string;
+  // "easy" | "medium" | "hard" — persisted at generation time.
+  difficulty: string | null;
   question_count: number;
   // Best-attempt summary (null when the quiz has never been attempted).
   attempt_count: number;
   best_score: number | null;
   best_correct: number | null;
   last_attempt_at: string | null;
+}
+
+/* -------------------------------- analytics ------------------------------- */
+
+export interface AnalyticsOverview {
+  overview: {
+    total_study_minutes: number;
+    total_questions_asked: number;
+    total_ai_responses: number;
+    uploaded_documents: number;
+    quizzes_created: number;
+    flashcards_created: number;
+    total_chats: number;
+    total_bookmarks: number;
+  };
+  quiz_analytics: {
+    attempts: number;
+    quizzes_attempted: number;
+    average_score: number;
+    best_score: number;
+    accuracy: number;
+    trend: Array<{ date: string; score: number }>;
+  };
+  activity: Array<{ date: string; questions: number; quizzes: number }>;
+  streak: number;
+  subjects: Array<{ subject: string; count: number }>;
+  achievements: Array<{
+    key: string;
+    icon: string;
+    title: string;
+    unlocked: boolean;
+    progress: number;
+    target: number;
+  }>;
 }
 
 /* --------------------------------- search --------------------------------- */

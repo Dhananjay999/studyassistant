@@ -10,6 +10,8 @@ import {
   MessageSquare,
   PanelLeft,
   PanelLeftClose,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Settings,
@@ -25,6 +27,7 @@ import {
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
+import { usePinnedSessions } from "@/hooks/usePinnedSessions";
 import { cn } from "@/lib/utils";
 import { formatShortcut } from "@/lib/platform";
 import type { Session } from "@/types";
@@ -96,9 +99,16 @@ export function AppSidebar({
   const location = useLocation();
   const { user } = useAuth();
   const { open: openSettings } = useSettings();
-  const grouped = groupSessions(sessions);
+  const { pinnedIds, isPinned, togglePin } = usePinnedSessions();
   const onChats = location.pathname === "/chat";
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Pinned sessions float to the top in most-recently-pinned order; everything
+  // else falls through to the normal recency grouping.
+  const pinned = pinnedIds
+    .map((id) => sessions.find((s) => s.id === id))
+    .filter((s): s is Session => Boolean(s));
+  const grouped = groupSessions(sessions.filter((s) => !isPinned(s.id)));
 
   const accountName = user?.full_name || "Student";
   const accountInitial = user?.full_name?.[0] || user?.email?.[0] || "?";
@@ -126,6 +136,65 @@ export function AppSidebar({
   const runSearch = () => {
     onNavigate?.();
     onSearch();
+  };
+
+  const renderRow = (s: Session) => {
+    const pinnedRow = isPinned(s.id);
+    return (
+      <div
+        key={s.id}
+        className={cn(
+          "group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors",
+          activeId === s.id && onChats
+            ? "bg-primary/10 text-primary"
+            : "hover:bg-accent/50",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => onSelectSession(s.id)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          {pinnedRow ? (
+            <Pin className="h-3.5 w-3.5 shrink-0 fill-current text-brand-1" />
+          ) : (
+            <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
+          )}
+          <span className="truncate">{s.title}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => togglePin(s.id)}
+          className={cn(
+            "shrink-0 text-muted-foreground transition-opacity hover:text-brand-1",
+            pinnedRow
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100",
+          )}
+          aria-label={pinnedRow ? "Unpin chat" : "Pin chat"}
+          title={pinnedRow ? "Unpin chat" : "Pin chat"}
+        >
+          {pinnedRow ? (
+            <PinOff className="h-3.5 w-3.5" />
+          ) : (
+            <Pin className="h-3.5 w-3.5" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => handleDelete(s.id)}
+          disabled={deletingId === s.id}
+          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-100"
+          aria-label="Delete chat"
+        >
+          {deletingId === s.id ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -246,49 +315,26 @@ export function AppSidebar({
               ))}
             </div>
           )}
-          {!loading && grouped.length === 0 && (
+          {!loading && grouped.length === 0 && pinned.length === 0 && (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">
               No chats yet.
             </p>
+          )}
+          {pinned.length > 0 && (
+            <div className="mb-2">
+              <p className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <Pin className="h-3 w-3 fill-current text-brand-1" />
+                Pinned
+              </p>
+              {pinned.map(renderRow)}
+            </div>
           )}
           {grouped.map(([label, list]) => (
             <div key={label} className="mb-2">
               <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 {label}
               </p>
-              {list.map((s) => (
-                <div
-                  key={s.id}
-                  className={cn(
-                    "group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors",
-                    activeId === s.id && onChats
-                      ? "bg-primary/10 text-primary"
-                      : "hover:bg-accent/50",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onSelectSession(s.id)}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                    <span className="truncate">{s.title}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(s.id)}
-                    disabled={deletingId === s.id}
-                    className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-100"
-                    aria-label="Delete chat"
-                  >
-                    {deletingId === s.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </div>
-              ))}
+              {list.map(renderRow)}
             </div>
           ))}
         </div>

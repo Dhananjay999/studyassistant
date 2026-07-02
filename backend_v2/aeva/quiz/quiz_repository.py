@@ -31,6 +31,9 @@ class QuizRepository:
                 "session_id": session_id,
                 "title": quiz_data.get("title", "Quiz"),
                 "topic": quiz_data.get("topic", ""),
+                # Persisted so the quizzes list can show difficulty without
+                # re-opening each quiz. Defaults to "medium" for older rows.
+                "difficulty": quiz_data.get("difficulty") or "medium",
             })
             .execute()
         )
@@ -98,6 +101,7 @@ class QuizRepository:
                 "topic": q["topic"],
                 "session_id": q["session_id"],
                 "created_at": q["created_at"],
+                "difficulty": q.get("difficulty") or "medium",
                 "question_count": counts.get(q["id"], 0),
                 **summaries.get(q["id"], self._empty_summary()),
             }

@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react";
 import {
+  BarChart3,
   Clock,
+  Gauge,
   HelpCircle,
   History,
   ListChecks,
   Loader2,
   Play,
+  Repeat,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
@@ -20,7 +24,12 @@ import type { QuizInitialView } from "@/components/chat/QuizDrawer";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { useQuizzes } from "@/hooks/api";
 import { getQuiz } from "@/lib/api";
-import { relativeDay } from "@/lib/quizFormat";
+import {
+  difficultyMeta,
+  estimatedMinutes,
+  relativeDay,
+} from "@/lib/quizFormat";
+import { cn } from "@/lib/utils";
 import type { QuizContent, QuizListItem } from "@/types";
 
 export default function QuizzesPage() {
@@ -110,6 +119,29 @@ export default function QuizzesPage() {
   );
 }
 
+/** One compact metric cell used in the quiz card's stat row. */
+function Metric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof HelpCircle;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex flex-col items-center rounded-lg bg-muted/40 px-2 py-2 text-center">
+      <Icon className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
+      <span className="font-display text-sm font-bold leading-none tabular-nums">
+        {value}
+      </span>
+      <span className="mt-1 text-[10px] leading-none text-muted-foreground">
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function QuizGridCard({
   quiz: q,
   loading,
@@ -121,71 +153,110 @@ function QuizGridCard({
 }) {
   const attempted = q.attempt_count > 0 && q.best_score !== null;
   const pct = Math.round(q.best_score ?? 0);
+  const diff = difficultyMeta(q.difficulty);
+  const minutes = estimatedMinutes(q.question_count, q.difficulty);
 
   return (
-    <GlassCard className="flex flex-col p-4 transition-shadow hover:shadow-glow">
+    <GlassCard className="flex h-full flex-col p-4 transition-shadow hover:shadow-glow">
+      {/* Header: title + difficulty badge + bookmark */}
       <div className="flex items-start justify-between gap-2">
-        <h3 className="line-clamp-2 font-display text-base font-bold">
-          {q.title}
-        </h3>
-        <BookmarkButton
-          item={{
-            item_type: "quiz",
-            item_ref: q.quiz_id,
-            title: q.title,
-            content: q.topic || q.title,
-            metadata: { quiz_id: q.quiz_id, topic: q.topic },
-          }}
-        />
-      </div>
-      {q.topic && (
-        <p className="mt-1 truncate text-xs text-muted-foreground">{q.topic}</p>
-      )}
-
-      <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <HelpCircle className="h-3.5 w-3.5" /> {q.question_count} Qs
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Clock className="h-3.5 w-3.5" />
-          {new Date(q.created_at).toLocaleDateString()}
-        </span>
-        <span className="ml-auto font-medium">
-          {attempted
-            ? `Attempted ${q.attempt_count} time${q.attempt_count === 1 ? "" : "s"}`
-            : "Not attempted"}
-        </span>
-      </div>
-
-      {attempted ? (
-        <div className="mt-3 rounded-xl border border-border/50 bg-card/40 p-3">
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Best score
-              </p>
-              <p className="font-display text-lg font-bold tabular-nums">
-                {q.best_correct ?? "—"}
-                <span className="text-sm text-muted-foreground">
-                  {" "}
-                  / {q.question_count}
-                </span>
-              </p>
-            </div>
-            <p className="font-display text-2xl font-extrabold tabular-nums text-brand-1">
-              {pct}%
-            </p>
-          </div>
-          <Progress value={pct} className="mt-2 h-1.5" />
-          {q.last_attempt_at && (
-            <p className="mt-2 text-[10px] text-muted-foreground">
-              Last attempt {relativeDay(q.last_attempt_at)}
+        <div className="min-w-0">
+          <h3 className="line-clamp-2 font-display text-base font-bold">
+            {q.title}
+          </h3>
+          {q.topic && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {q.topic}
             </p>
           )}
         </div>
-      ) : null}
+        <div className="flex shrink-0 items-center gap-1">
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+              diff.className,
+            )}
+          >
+            {diff.label}
+          </span>
+          <BookmarkButton
+            item={{
+              item_type: "quiz",
+              item_ref: q.quiz_id,
+              title: q.title,
+              content: q.topic || q.title,
+              metadata: { quiz_id: q.quiz_id, topic: q.topic },
+            }}
+          />
+        </div>
+      </div>
 
-      <div className="mt-4 flex gap-2">
+      {/* Status badge — keeps both states the same vertical rhythm */}
+      <div className="mt-3">
+        {attempted ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand-1/10 px-2.5 py-1 text-[11px] font-medium text-brand-1">
+            <Sparkles className="h-3 w-3" />
+            Attempted {q.attempt_count}×
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+            Not Attempted
+          </span>
+        )}
+      </div>
+
+      {/* Metric row — differs by state but keeps identical layout/height */}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {attempted ? (
+          <>
+            <Metric
+              icon={BarChart3}
+              label="Score"
+              value={`${q.best_correct ?? 0}/${q.question_count}`}
+            />
+            <Metric icon={Gauge} label="Best" value={`${pct}%`} />
+            <Metric
+              icon={Repeat}
+              label="Attempts"
+              value={String(q.attempt_count)}
+            />
+          </>
+        ) : (
+          <>
+            <Metric
+              icon={HelpCircle}
+              label="Questions"
+              value={String(q.question_count)}
+            />
+            <Metric icon={Gauge} label="Level" value={diff.label} />
+            <Metric icon={Clock} label="Est. time" value={`${minutes}m`} />
+          </>
+        )}
+      </div>
+
+      {/* Progress + last-attempt for attempted; est-time footnote otherwise.
+         Both reserve one line so card heights stay aligned across the grid. */}
+      {attempted ? (
+        <div className="mt-3">
+          <Progress value={pct} className="h-1.5" />
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            {q.last_attempt_at
+              ? `Last attempt ${relativeDay(q.last_attempt_at)}`
+              : " "}
+          </p>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <div className="h-1.5 rounded-full bg-muted/50" />
+          <p className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Clock className="h-3 w-3" />~{minutes} min · {q.question_count}{" "}
+            questions
+          </p>
+        </div>
+      )}
+
+      {/* Actions pinned to the bottom so every card ends at the same line */}
+      <div className="mt-auto flex gap-2 pt-4">
         <Button
           onClick={() => onOpen("take")}
           disabled={loading}
@@ -196,7 +267,7 @@ function QuizGridCard({
           ) : (
             <Play className="h-4 w-4" />
           )}
-          Open Quiz
+          {attempted ? "Retake" : "Start Quiz"}
         </Button>
         <Button
           onClick={() => onOpen("attempts")}

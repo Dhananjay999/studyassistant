@@ -14,12 +14,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ChipSelect } from "@/components/learning/ChipSelect";
 import { SettingsField } from "@/components/settings/primitives";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useLearningProfile, useSaveLearningProfile } from "@/hooks/api";
+import { cn } from "@/lib/utils";
 import {
+  AI_PERSONALITIES,
+  COMMUNICATION_STYLES,
+  CUSTOM_INSTRUCTION_EXAMPLES,
   EDUCATION_LEVELS,
   EXPLANATION_STYLES,
   FAVORITE_SUBJECTS,
@@ -27,6 +32,8 @@ import {
   PREFERRED_LANGUAGES,
 } from "@/lib/learningProfile";
 import type { LearningProfile, LearningProfileInput } from "@/types";
+
+const CUSTOM_MAX = 1000;
 
 const OTHER = "Other";
 
@@ -37,6 +44,9 @@ interface Draft {
   style: string;
   subjects: string[];
   goal: string;
+  personality: string;
+  commStyle: string;
+  instructions: string;
 }
 
 const EMPTY: Draft = {
@@ -46,6 +56,9 @@ const EMPTY: Draft = {
   style: "",
   subjects: [],
   goal: "",
+  personality: "",
+  commStyle: "",
+  instructions: "",
 };
 
 /** Seed editable draft state from a saved profile row. */
@@ -60,6 +73,9 @@ function toDraft(profile: LearningProfile | undefined): Draft {
     style: profile.explanation_style ?? "",
     subjects: profile.favorite_subjects ?? [],
     goal: profile.learning_goal ?? "",
+    personality: profile.ai_personality ?? "",
+    commStyle: profile.communication_style ?? "",
+    instructions: profile.custom_instructions ?? "",
   };
 }
 
@@ -72,6 +88,9 @@ function toInput(draft: Draft): LearningProfileInput {
     explanation_style: draft.style || null,
     favorite_subjects: draft.subjects,
     learning_goal: draft.goal || null,
+    ai_personality: draft.personality || null,
+    communication_style: draft.commStyle || null,
+    custom_instructions: draft.instructions.trim() || null,
   };
 }
 
@@ -82,6 +101,9 @@ function hasAnyValue(input: LearningProfileInput): boolean {
       input.preferred_language ||
       input.explanation_style ||
       input.learning_goal ||
+      input.ai_personality ||
+      input.communication_style ||
+      input.custom_instructions ||
       (input.favorite_subjects && input.favorite_subjects.length > 0),
   );
 }
@@ -255,6 +277,95 @@ export function LearningProfileSection() {
             />
           </SettingsField>
 
+          <div className="space-y-6 rounded-2xl border border-border/60 bg-card/30 p-4">
+            <div>
+              <h4 className="text-sm font-semibold">
+                How should Aeva interact with you?
+              </h4>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Controls Aeva's overall tone and teaching style.
+              </p>
+            </div>
+
+            <SettingsField title="Personality">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {AI_PERSONALITIES.map((p) => {
+                  const active = draft.personality === p.value;
+                  return (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => single("personality", p.value)}
+                      className={cn(
+                        "flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors",
+                        active
+                          ? "border-brand-1 bg-brand-1/5"
+                          : "border-border/60 hover:bg-accent/40",
+                      )}
+                    >
+                      <span className="text-lg leading-none">{p.emoji}</span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">
+                          {p.value}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {p.blurb}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </SettingsField>
+
+            <SettingsField title="Communication Style">
+              <ChipSelect
+                options={COMMUNICATION_STYLES}
+                selected={[draft.commStyle]}
+                onToggle={(o) => single("commStyle", o)}
+              />
+            </SettingsField>
+
+            <SettingsField
+              title="Custom AI Instructions"
+              hint="Long-term preferences applied to future chats unless a request overrides them."
+            >
+              <Textarea
+                value={draft.instructions}
+                maxLength={CUSTOM_MAX}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, instructions: e.target.value }))
+                }
+                placeholder="Tell Aeva how you'd like it to help you…"
+                className="min-h-[96px] resize-y"
+              />
+              <div className="mt-2 flex items-start justify-between gap-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {CUSTOM_INSTRUCTION_EXAMPLES.map((ex) => (
+                    <button
+                      key={ex}
+                      type="button"
+                      onClick={() =>
+                        setDraft((d) => ({
+                          ...d,
+                          instructions: d.instructions.trim()
+                            ? `${d.instructions.trim()} ${ex}`
+                            : ex,
+                        }))
+                      }
+                      className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent/50"
+                    >
+                      + {ex}
+                    </button>
+                  ))}
+                </div>
+                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                  {draft.instructions.length}/{CUSTOM_MAX}
+                </span>
+              </div>
+            </SettingsField>
+          </div>
+
           <div className="flex items-center justify-end gap-2 border-t border-border/50 pt-4">
             <Button variant="ghost" onClick={cancelEdit} disabled={busy}>
               Cancel
@@ -307,6 +418,9 @@ const SUMMARY_FIELDS: ReadonlyArray<{
   { label: "Explanation Style", get: (p) => p.explanation_style ?? "" },
   { label: "Favorite Subjects", get: (p) => p.favorite_subjects.join(", ") },
   { label: "Learning Goal", get: (p) => p.learning_goal ?? "" },
+  { label: "Personality", get: (p) => p.ai_personality ?? "" },
+  { label: "Communication Style", get: (p) => p.communication_style ?? "" },
+  { label: "Custom Instructions", get: (p) => p.custom_instructions ?? "" },
 ];
 
 function ProfileSummary({

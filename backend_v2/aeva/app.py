@@ -11,6 +11,7 @@ from flask_cors import CORS
 from flask_smorest import Api
 
 from aeva.admin.admin_controller import blueprint as admin_bp
+from aeva.analytics.analytics_controller import blueprint as analytics_bp
 from aeva.assistant.assistant_controller import blueprint as assistant_bp
 from aeva.auth.auth_controller import blueprint as auth_bp
 from aeva.bookmark.bookmark_controller import blueprint as bookmark_bp
@@ -296,6 +297,7 @@ def create_app() -> Flask:
     api.register_blueprint(search_bp)
     api.register_blueprint(flashcard_bp)
     api.register_blueprint(learning_profile_bp)
+    api.register_blueprint(analytics_bp)
     api.register_blueprint(admin_bp)
     api.register_blueprint(delay_bp)
 

@@ -52,3 +52,33 @@ export const LEARNING_GOALS = [
   "Skill Learning",
   "Personal Interest",
 ] as const;
+
+/**
+ * How Aeva should interact — the persona/teaching stance. The emoji + blurb
+ * are shown in the settings picker; the bare label is what gets persisted and
+ * sent to the model.
+ */
+export const AI_PERSONALITIES = [
+  { value: "Teacher", emoji: "👨‍🏫", blurb: "Structured, academic, explanatory." },
+  { value: "Mentor", emoji: "🧑‍🏫", blurb: "Guides with advice and encouragement." },
+  { value: "Study Buddy", emoji: "🤝", blurb: "Friendly and collaborative." },
+  { value: "Interview Coach", emoji: "💼", blurb: "Focuses on interview prep." },
+  { value: "Exam Coach", emoji: "🎯", blurb: "Exam-oriented, revision-first." },
+  { value: "Technical Expert", emoji: "💻", blurb: "In-depth, technical, precise." },
+] as const;
+
+/** Preferred answer shape / communication style. */
+export const COMMUNICATION_STYLES = [
+  "Short & Direct",
+  "Step-by-Step",
+  "Example-Based",
+  "Detailed",
+] as const;
+
+/** Example prompts shown under the custom-instructions field. */
+export const CUSTOM_INSTRUCTION_EXAMPLES = [
+  "Always explain with real-life examples.",
+  "Correct my mistakes before answering.",
+  "Assume I'm a beginner unless I say otherwise.",
+  "Keep answers concise.",
+] as const;

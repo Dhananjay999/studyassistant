@@ -2,6 +2,7 @@
 // All endpoints return the { msg, data } envelope; helpers unwrap `data`.
 
 import type {
+  AnalyticsOverview,
   APIEnvelope,
   AppConfig,
   AssistantRequest,
@@ -60,6 +61,7 @@ export const ENDPOINTS = {
   FLASHCARD_STUDY: (id: string) => `/flashcards/${id}/study`,
   LEARNING_PROFILE: "/learning-profile/",
   LEARNING_PROFILE_SKIP: "/learning-profile/skip",
+  ANALYTICS_OVERVIEW: "/analytics/overview",
   CONFIG: "/config",
 } as const;
 
@@ -395,6 +397,11 @@ export const skipPersonalization = () =>
   unwrap<LearningProfile>(ENDPOINTS.LEARNING_PROFILE_SKIP, {
     method: "POST",
   });
+
+/* -------------------------------- analytics ------------------------------- */
+
+export const getAnalytics = () =>
+  unwrap<AnalyticsOverview>(ENDPOINTS.ANALYTICS_OVERVIEW);
 
 /* --------------------------------- search --------------------------------- */
 

@@ -138,6 +138,9 @@ class QuizGeneratorTool(BaseTool):
             history=history,
             attachments=attachments,
         )
+        # Carry the requested difficulty onto the persisted quiz row so the
+        # quizzes list can surface it (the LLM output itself omits it).
+        quiz_data["difficulty"] = difficulty
         quiz = self.quiz_repo.create(
             user_id=ctx.user_id,
             session_id=ctx.session_id,

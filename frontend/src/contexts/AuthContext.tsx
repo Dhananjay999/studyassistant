@@ -10,10 +10,13 @@ import {
 import {
   API_BASE_URL,
   ENDPOINTS,
+  getLearningProfile,
   getMe,
   refreshSession,
   setTokenGetter,
 } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
+import { qk } from "@/hooks/api";
 import type { User } from "@/types";
 
 interface AuthContextValue {
@@ -102,6 +105,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUser = useCallback(async () => {
     setUser(await getMe());
+    // Warm the learning profile once at app init so the first chat (and any
+    // personalization-aware UI) reads it from cache instead of re-fetching.
+    // Fire-and-forget: it must never block or fail user load.
+    queryClient
+      .prefetchQuery({
+        queryKey: qk.learningProfile,
+        queryFn: getLearningProfile,
+        staleTime: Infinity,
+      })
+      .catch(() => {
+        /* non-critical */
+      });
   }, []);
 
   // Re-fetch the current user (e.g. after onboarding changes the profile),

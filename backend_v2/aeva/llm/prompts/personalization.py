@@ -14,6 +14,8 @@ from typing import Any
 # leads because it is the highest-priority directive.
 _FIELDS: list[tuple[str, str]] = [
     ("preferred_language", "Preferred Language"),
+    ("ai_personality", "Assistant Persona"),
+    ("communication_style", "Communication Style"),
     ("education_level", "Education Level"),
     ("explanation_style", "Preferred Explanation Style"),
     ("learning_goal", "Learning Goal"),
@@ -35,6 +37,16 @@ Language:
 - Hinglish → Roman-script Hindi-English mix.
 Keep formulas, code, technical terms, and proper nouns unchanged.
 
+Persona:
+Adopt the assistant persona's tone and teaching stance (e.g. Teacher =
+structured and explanatory; Study Buddy = friendly and collaborative). It
+shapes tone only, never accuracy.
+
+Communication Style:
+Shape answer length and structure to the preferred communication style
+(e.g. Short & Direct = concise; Step-by-Step = numbered steps;
+Example-Based = lead with examples).
+
 Education:
 Match vocabulary and depth to the student's level.
 
@@ -43,6 +55,10 @@ Follow the preferred explanation style.
 
 Goals:
 Use learning goals and favorite subjects only for examples and analogies.
+
+Custom Instructions:
+Treat the student's custom instructions as standing preferences and honor
+them unless the current request explicitly overrides them.
 
 Never mention the profile to the student.
 """
@@ -68,6 +84,12 @@ def build_personalization_block(profile: dict[str, Any] | None) -> str:
         joined = ", ".join(str(s) for s in subjects if str(s).strip())
         if joined:
             lines.append(f"- Favorite Subjects: {joined}")
+
+    # Free-form instructions are rendered verbatim on their own line so the
+    # student's exact wording reaches the model.
+    instructions = profile.get("custom_instructions")
+    if isinstance(instructions, str) and instructions.strip():
+        lines.append(f'- Custom Instructions: "{instructions.strip()}"')
 
     if not lines:
         return ""
