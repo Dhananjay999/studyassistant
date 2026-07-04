@@ -3,53 +3,113 @@ import {
   BarChart3,
   Clock,
   Gauge,
+  GraduationCap,
   HelpCircle,
   History,
   ListChecks,
   Loader2,
   Play,
   Repeat,
-  Search,
   Sparkles,
 } from "lucide-react";
-import { AppShell } from "@/components/AppShell";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { GlassCard } from "@/components/common/GlassCard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Seo } from "@/components/common/Seo";
+import { ListToolbar } from "@/components/common/list";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import type { QuizInitialView } from "@/components/chat/QuizDrawer";
 import { BookmarkButton } from "@/components/BookmarkButton";
-import { useQuizzes } from "@/hooks/api";
+import { useExamPatterns, useQuizzes } from "@/hooks/api";
 import { getQuiz } from "@/lib/api";
+import { useListQuery } from "@/hooks/useListQuery";
+import {
+  applyListQuery,
+  byDateAsc,
+  byDateDesc,
+  type ListConfig,
+} from "@/lib/listQuery";
 import {
   difficultyMeta,
   estimatedMinutes,
+  formatTimeLimit,
   relativeDay,
 } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
-import type { QuizContent, QuizListItem } from "@/types";
+import {
+  hasExamConfig,
+  type ExamPattern,
+  type QuizContent,
+  type QuizListItem,
+} from "@/types";
+
+/** Sort/filter config for the quizzes list (exam patterns injected at runtime). */
+function buildQuizConfig(patterns: ExamPattern[]): ListConfig<QuizListItem> {
+  return {
+    defaultSort: "recent",
+    sorts: [
+      { value: "recent", label: "Recently created", compare: (a, b) => byDateDesc(a.created_at, b.created_at) },
+      { value: "oldest", label: "Oldest", compare: (a, b) => byDateAsc(a.created_at, b.created_at) },
+      { value: "last_attempt", label: "Last attempt", compare: (a, b) => byDateDesc(a.last_attempt_at, b.last_attempt_at) },
+      { value: "score_desc", label: "Highest score", compare: (a, b) => (b.best_score ?? -1) - (a.best_score ?? -1) },
+      { value: "score_asc", label: "Lowest score", compare: (a, b) => (a.best_score ?? Infinity) - (b.best_score ?? Infinity) },
+      { value: "most_attempted", label: "Most attempted", compare: (a, b) => b.attempt_count - a.attempt_count },
+      { value: "az", label: "Alphabetical (A–Z)", compare: (a, b) => a.title.localeCompare(b.title) },
+    ],
+    filters: [
+      {
+        id: "status",
+        label: "Status",
+        kind: "multi",
+        options: [
+          { value: "attempted", label: "Attempted" },
+          { value: "not_attempted", label: "Not attempted" },
+        ],
+        predicate: (q, sel) =>
+          sel.some((s) =>
+            s === "attempted" ? q.attempt_count > 0 : q.attempt_count === 0,
+          ),
+      },
+      {
+        id: "difficulty",
+        label: "Difficulty",
+        kind: "multi",
+        options: [
+          { value: "easy", label: "Easy" },
+          { value: "medium", label: "Medium" },
+          { value: "hard", label: "Hard" },
+        ],
+        predicate: (q, sel) => sel.includes((q.difficulty ?? "").toLowerCase()),
+      },
+      {
+        id: "exam",
+        label: "Exam pattern",
+        kind: "multi",
+        options: patterns.map((p) => ({ value: p.key, label: p.label })),
+        predicate: (q, sel) =>
+          hasExamConfig(q.exam_config) && sel.includes(q.exam_config.pattern),
+      },
+    ],
+    searchFields: (q) => [q.title, q.topic],
+  };
+}
 
 export default function QuizzesPage() {
   const { data: quizzes = [], isLoading } = useQuizzes();
+  const { data: patterns = [] } = useExamPatterns();
   const [quiz, setQuiz] = useState<QuizContent | null>(null);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<QuizInitialView>("take");
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
 
-  // Instant client-side filter by title or topic.
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return quizzes;
-    return quizzes.filter(
-      (x) =>
-        x.title.toLowerCase().includes(q) ||
-        (x.topic ?? "").toLowerCase().includes(q),
-    );
-  }, [quizzes, query]);
+  const config = useMemo(() => buildQuizConfig(patterns), [patterns]);
+  const listQuery = useListQuery(config);
+  const filtered = useMemo(
+    () => applyListQuery(quizzes, config, listQuery.state),
+    [quizzes, config, listQuery.state],
+  );
 
   const openQuiz = async (id: string, initialView: QuizInitialView) => {
     setLoadingId(id);
@@ -64,7 +124,7 @@ export default function QuizzesPage() {
   };
 
   return (
-    <AppShell title="Quizzes">
+    <PageContainer title="Quizzes">
       <Seo title="Quizzes — Aeva" noindex path="/quizzes" />
       <div className="p-4">
         {isLoading ? (
@@ -79,19 +139,15 @@ export default function QuizzesPage() {
           </div>
         ) : (
           <>
-            <div className="relative mb-4 max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search quizzes by title or topic…"
-                className="pl-9"
-                aria-label="Search quizzes"
-              />
-            </div>
+            <ListToolbar
+              className="mb-4"
+              config={config}
+              query={listQuery}
+              placeholder="Search quizzes by title or topic…"
+            />
             {filtered.length === 0 ? (
               <p className="py-16 text-center text-sm text-muted-foreground">
-                No quizzes match “{query}”.
+                No quizzes match your search or filters.
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -115,7 +171,7 @@ export default function QuizzesPage() {
         onOpenChange={setOpen}
         initialView={view}
       />
-    </AppShell>
+    </PageContainer>
   );
 }
 
@@ -151,13 +207,19 @@ function QuizGridCard({
   loading: boolean;
   onOpen: (view: QuizInitialView) => void;
 }) {
+  const { data: patterns = [] } = useExamPatterns();
   const attempted = q.attempt_count > 0 && q.best_score !== null;
   const pct = Math.round(q.best_score ?? 0);
   const diff = difficultyMeta(q.difficulty);
   const minutes = estimatedMinutes(q.question_count, q.difficulty);
+  const exam = hasExamConfig(q.exam_config) ? q.exam_config : null;
+  const examLabel = exam
+    ? (patterns.find((p) => p.key === exam.pattern)?.label ??
+      (exam.pattern === "custom" ? "Exam" : exam.pattern))
+    : null;
 
   return (
-    <GlassCard className="flex h-full flex-col p-4 transition-shadow hover:shadow-glow">
+    <GlassCard className="flex h-full flex-col p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm">
       {/* Header: title + difficulty badge + bookmark */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -171,6 +233,12 @@ function QuizGridCard({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {examLabel && (
+            <span className="flex items-center gap-0.5 rounded-full bg-brand-1/15 px-2 py-0.5 text-[10px] font-semibold text-brand-1">
+              <GraduationCap className="h-3 w-3" />
+              {examLabel}
+            </span>
+          )}
           <span
             className={cn(
               "rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -229,7 +297,15 @@ function QuizGridCard({
               value={String(q.question_count)}
             />
             <Metric icon={Gauge} label="Level" value={diff.label} />
-            <Metric icon={Clock} label="Est. time" value={`${minutes}m`} />
+            <Metric
+              icon={Clock}
+              label={exam && exam.timer_seconds > 0 ? "Time limit" : "Est. time"}
+              value={
+                exam && exam.timer_seconds > 0
+                  ? formatTimeLimit(exam.timer_seconds)
+                  : `${minutes}m`
+              }
+            />
           </>
         )}
       </div>
@@ -260,7 +336,8 @@ function QuizGridCard({
         <Button
           onClick={() => onOpen("take")}
           disabled={loading}
-          className="flex-1 gap-2 bg-brand-gradient text-white"
+          variant="brand"
+          className="flex-1 gap-2"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />

@@ -1,6 +1,6 @@
 """Bookmark data access."""
 
-from typing import Any
+from typing import Any, cast
 
 from aeva.bookmark.schema.bookmark_schema import (
     CollectionData,
@@ -12,9 +12,66 @@ from aeva.supabase.supabase_service import SupabaseService
 
 DEFAULT_COLLECTION = "Favorites"
 
+# item_type -> source table whose row carries the origin session_id.
+# `item_ref` holds that row's id (message id / quiz id / flashcard set id).
+_SESSION_SOURCE = {
+    "response": "messages",
+    "quiz": "quizzes",
+    "flashcard": "flashcard_sets",
+}
+
 
 class BookmarkRepository:
     """Persist and load bookmarks and collections."""
+
+    @staticmethod
+    def _attach_session_ids(
+        supabase: SupabaseService,
+        user_id: str,
+        bookmarks: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Backfill each bookmark's origin ``session_id`` (best-effort).
+
+        Bookmarks store only the id of their source in ``item_ref``, not the
+        conversation it belongs to. Each source table (messages, quizzes,
+        flashcard sets) carries ``session_id``, so one batched,
+        ownership-scoped lookup per type resolves it. The value is ``None``
+        when the source was deleted or never had a session, letting the
+        client reopen the exact chat instead of starting a new one.
+        """
+        refs_by_type: dict[str, list[str]] = {}
+        for bookmark in bookmarks:
+            ref = bookmark.get("item_ref")
+            if ref and bookmark["item_type"] in _SESSION_SOURCE:
+                refs_by_type.setdefault(bookmark["item_type"], []).append(ref)
+
+        session_of: dict[str, str] = {}
+        for item_type, refs in refs_by_type.items():
+            table = _SESSION_SOURCE[item_type]
+            if item_type == "response":
+                # messages has no user_id; scope via its session's owner.
+                query = (
+                    supabase.client.table(table)
+                    .select("id, session_id, sessions!inner(user_id)")
+                    .eq("sessions.user_id", user_id)
+                )
+            else:
+                query = (
+                    supabase.client.table(table)
+                    .select("id, session_id")
+                    .eq("user_id", user_id)
+                )
+            rows = query.in_("id", refs).execute()
+            for row in cast("list[dict[str, Any]]", rows.data or []):
+                session_id = row.get("session_id")
+                if session_id:
+                    session_of[row["id"]] = session_id
+
+        for bookmark in bookmarks:
+            bookmark["session_id"] = session_of.get(
+                bookmark.get("item_ref") or ""
+            )
+        return bookmarks
 
     @staticmethod
     def _ensure_default_collection(
@@ -120,7 +177,12 @@ class BookmarkRepository:
             .order("created_at", desc=True)
             .execute()
         )
-        return success_response("Bookmarks retrieved", result.data or [])
+        bookmarks = BookmarkRepository._attach_session_ids(
+            supabase,
+            current_user.id,
+            cast("list[dict[str, Any]]", result.data or []),
+        )
+        return success_response("Bookmarks retrieved", bookmarks)
 
     @staticmethod
     def get_bookmark(
@@ -139,7 +201,12 @@ class BookmarkRepository:
         )
         if not result or not result.data:
             raise CustomError(ERROR_CODES["NOT_FOUND"])
-        return success_response("Bookmark retrieved", result.data)
+        bookmark = BookmarkRepository._attach_session_ids(
+            supabase,
+            current_user.id,
+            [cast("dict[str, Any]", result.data)],
+        )[0]
+        return success_response("Bookmark retrieved", bookmark)
 
     @staticmethod
     def create_bookmark(

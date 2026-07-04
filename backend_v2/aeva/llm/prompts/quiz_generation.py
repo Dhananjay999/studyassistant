@@ -1,38 +1,57 @@
-"""Quiz generation contract: prompt, structured-output schema, tool params.
+"""Quiz generation contract: prompt template, output schema, tool params.
+
+``QUIZ_GENERATION_TEMPLATE`` below IS the prompt the model receives — system
+channel, conversation marker, the request parameters, and the generation
+rules. Study material, when the quiz is built from uploads, travels as
+provider binary attachments (``uses_attachments``), not inline text.
 
 ``QUIZ_GENERATION_SCHEMA`` is provider-independent: any provider must return
 JSON matching it so the quiz structure stays stable across models/vendors.
 """
 
-QUIZ_GENERATION_PROMPT = """
+from aeva.llm.prompts.blocks import SYSTEM_PROMPT_BLOCK
+from aeva.llm.prompts.builder import PromptTemplate
+
+QUIZ_GENERATION_TEMPLATE = PromptTemplate(
+    name="quiz_generation",
+    system="{SYSTEM_PROMPT}{USER_PROFILE}",
+    user="""{CONVERSATION_CONTEXT}
 Create a study quiz as Aeva.
 
-Topic: {topic}
-Question count: {count}
-Difficulty: {difficulty}
-Question types: {types}
-Recent context: {context}
-Additional instructions: {instructions}
+Topic: {TOPIC}
+Question count: {QUESTION_COUNT}
+Difficulty: {DIFFICULTY}
+Question types: {QUESTION_TYPES}
+Recent context: {RECENT_CONTEXT}
+Additional instructions: {ADDITIONAL_INSTRUCTIONS}
 
 Use the attached study material if provided; otherwise generate the quiz from the topic. If the topic is vague, infer it from the recent context.
 
 Requirements:
-- Generate exactly {count} questions.
-- Use only these question types: {types}.
-- single_select: exactly one correct answer.
-- multi_select: two or more correct answers.
-- true_false: options must be exactly ["True", "False"].
-- Every value in correct_answers must exactly match an option.
-- Match the requested difficulty:
-  - easy: recall
-  - medium: application
-  - hard: reasoning
-- Test understanding, not memorization.
-- Make distractors plausible.
-- Avoid giveaway wording.
-- Include a brief explanation for every question.
-- Follow any additional instructions when provided.
-"""
+
+**Resolve the topic first:**
+
+1. Use the current request.
+2. If it's generic (e.g. "Generate a quiz"), infer the topic from recent conversation.
+3. Prefer any mentioned exam, subject, chapter, section, study goal, or attached study material.
+4. If study material is attached, use it unless the user requests another topic.
+
+If the topic is an **exam** (SSC CGL, UPSC, NEET, JEE, CAT, GATE, etc.), generate questions that match the exam's syllabus, section, pattern, and requested difficulty—not generic school GK.
+
+Difficulty is relative to the target exam:
+
+* Easy = basic exam-level recall
+* Medium = application
+* Hard = reasoning
+
+Generate exactly the requested number of questions using only the requested question type(s). Cover the topic broadly, use plausible distractors, include a brief explanation for each question, and ensure every `correct_answers` value exactly matches an option.
+""",
+    defaults={"SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK},
+    optional=("USER_PROFILE",),
+    markers=("CONVERSATION_CONTEXT",),
+    uses_history=True,
+    uses_attachments=True,
+)
 
 # Structured output for quiz generation.
 QUIZ_GENERATION_SCHEMA: dict = {
@@ -120,6 +139,15 @@ QUIZ_GENERATOR_PARAMS: dict = {
             "description": (
                 "Extra free-text guidance for the quiz (focus areas, style). "
                 "Only set when the student explicitly provides it."
+            ),
+        },
+        "exam_config": {
+            "type": "object",
+            "description": (
+                "Exam Mode config the student chose in the setup form "
+                "(marking scheme + timer). Opaque passthrough — persisted with "
+                "the quiz and used only for scoring/display, never for "
+                "generating questions."
             ),
         },
     },

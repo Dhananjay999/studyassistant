@@ -96,6 +96,32 @@ export interface QuizQuestion {
   options: string[];
 }
 
+/** Exam Mode marking scheme + timer stored on a quiz ({} / undefined = an
+ * ordinary practice quiz scored by accuracy only). */
+export interface ExamConfig {
+  pattern: string;
+  correct: number;
+  negative: number; // <= 0, applied per wrong answer
+  skip: number;
+  timer_seconds: number; // 0 = no timer
+}
+
+/** A built-in exam-pattern preset (GET /quiz/exam-patterns). */
+export interface ExamPattern {
+  key: string;
+  label: string;
+  correct: number;
+  negative: number;
+  skip: number;
+  timer_seconds: number;
+  default_type: QuestionType | null;
+}
+
+/** True when a quiz carries a usable Exam Mode config. */
+export function hasExamConfig(cfg?: ExamConfig | null): cfg is ExamConfig {
+  return Boolean(cfg && cfg.pattern);
+}
+
 export interface QuizContent {
   quiz_id: string;
   title: string;
@@ -103,6 +129,8 @@ export interface QuizContent {
   questions: QuizQuestion[];
   difficulty?: Difficulty;
   source?: string;
+  /** Exam Mode config; absent/empty for ordinary practice quizzes. */
+  exam_config?: ExamConfig | null;
 }
 
 export interface QuizPerQuestion {
@@ -125,6 +153,14 @@ export interface QuizEvaluation {
   unanswered_count: number;
   time_taken_seconds?: number;
   per_question: QuizPerQuestion[];
+  // Marks-based fields, present only for exam attempts (undefined otherwise).
+  final_score?: number;
+  max_marks?: number;
+  positive_marks?: number;
+  negative_marks?: number;
+  skip_marks?: number;
+  exam_incorrect?: number;
+  marking?: { correct: number; negative: number; skip: number };
 }
 
 /** On-demand AI performance analysis (returned by /quiz/:id/analyze). */
@@ -159,6 +195,9 @@ export interface QuizAttemptSummary {
   partial_count: number;
   unanswered_count: number;
   time_taken_seconds: number;
+  // Marks for exam attempts (null for ordinary, accuracy-only attempts).
+  final_score?: number | null;
+  max_marks?: number | null;
   created_at: string;
   is_best: boolean;
   has_analysis: boolean;
@@ -184,6 +223,8 @@ export interface QuizOptions {
   use_media?: boolean;
   /** Free-text extra guidance typed in the form; passed to the quiz tool. */
   additional_instructions?: string;
+  /** Exam Mode marking scheme + timer; omitted for ordinary quizzes. */
+  exam_config?: ExamConfig;
 }
 
 export interface MessageMeta {
@@ -346,6 +387,7 @@ export interface PendingQuizSetup {
   questionCount?: number | null;
   questionTypes?: QuestionType[] | null;
   difficulty?: Difficulty | null;
+  examConfig?: ExamConfig | null;
 }
 
 // Public, non-secret runtime config from GET /config.
@@ -437,6 +479,9 @@ export interface Bookmark {
   // Source id when known (quiz_id, media id, or message id) — used to render
   // the bookmarked state on the originating item.
   item_ref: string | null;
+  // Origin conversation, resolved server-side from item_ref. Null when the
+  // source was deleted or the type has no session (note/media).
+  session_id?: string | null;
   title: string;
   content: string;
   metadata: Record<string, unknown>;
@@ -465,6 +510,8 @@ export interface QuizListItem {
   // "easy" | "medium" | "hard" — persisted at generation time.
   difficulty: string | null;
   question_count: number;
+  /** Exam Mode config; absent/empty for ordinary practice quizzes. */
+  exam_config?: ExamConfig | null;
   // Best-attempt summary (null when the quiz has never been attempted).
   attempt_count: number;
   best_score: number | null;

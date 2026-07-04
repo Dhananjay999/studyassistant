@@ -14,6 +14,7 @@ import {
   getMe,
   refreshSession,
   setTokenGetter,
+  setUnauthorizedHandler,
 } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { qk } from "@/hooks/api";
@@ -85,9 +86,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (expiresAt: number) => {
       if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
       const ms = Math.max(expiresAt - Date.now() - 60_000, 5_000);
-      refreshTimer.current = window.setTimeout(doRefresh, ms);
+      // If the pre-emptive refresh fails, the token is (or is about to be)
+      // expired with no way back — log the user out rather than leave them
+      // holding a dead token.
+      refreshTimer.current = window.setTimeout(() => {
+        void doRefresh().then((ok) => {
+          if (!ok) clearSession();
+        });
+      }, ms);
     },
-    [doRefresh],
+    [doRefresh, clearSession],
   );
 
   const persist = useCallback(
@@ -131,6 +139,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setTokenGetter(() => tokenRef.current);
+    // Any 401 from the API means the token expired/was revoked — log out.
+    setUnauthorizedHandler(clearSession);
 
     (async () => {
       const at = localStorage.getItem(STORAGE.access);

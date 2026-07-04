@@ -7,6 +7,7 @@ from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import success_response
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
+from aeva.quiz import exam_patterns
 from aeva.quiz.quiz_engine import QuizEngine
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
@@ -57,6 +58,33 @@ class QuizService:
             "Quizzes retrieved", self.repo.list_quizzes(user_id)
         )
 
+    @staticmethod
+    def list_exam_patterns() -> dict[str, Any]:
+        """List the built-in exam-pattern presets for Exam Mode."""
+        return success_response(
+            "Exam patterns", exam_patterns.list_patterns()
+        )
+
+    def update_exam_config(
+        self, quiz_id: str, user_id: str, raw_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Validate and persist a quiz's Exam Mode config, then return it.
+
+        The marking scheme + timer are scoring/display config only, so editing
+        them never regenerates questions — every future attempt reuses the new
+        scheme.
+        """
+        if not self.repo.get_quiz(quiz_id, user_id):
+            raise CustomError(ERROR_CODES["QUIZ_NOT_FOUND"])
+        config = exam_patterns.normalize_exam_config(raw_config)
+        updated = self.repo.update_exam_config(quiz_id, user_id, config)
+        if updated is None:
+            raise CustomError(ERROR_CODES["QUIZ_NOT_FOUND"])
+        return success_response("Exam settings updated", {
+            "quiz_id": quiz_id,
+            "exam_config": config,
+        })
+
     def list_attempts(self, quiz_id: str, user_id: str) -> dict[str, Any]:
         """List a quiz's attempt history (newest first)."""
         if not self.repo.get_quiz(quiz_id, user_id):
@@ -103,7 +131,12 @@ class QuizService:
         if not quiz:
             raise CustomError(ERROR_CODES["QUIZ_NOT_FOUND"])
 
-        evaluation = QuizEngine.evaluate(quiz["questions"], answers)
+        # Exam quizzes carry a marking scheme; ordinary quizzes score by
+        # accuracy only (marking is None → evaluation shape is unchanged).
+        marking = exam_patterns.marking_from_config(quiz.get("exam_config"))
+        evaluation = QuizEngine.evaluate(
+            quiz["questions"], answers, marking=marking
+        )
         evaluation["time_taken_seconds"] = max(int(time_taken_seconds), 0)
         attempt = self.repo.save_attempt(quiz_id, user_id, answers, evaluation)
         return success_response("Quiz submitted", {
@@ -142,17 +175,17 @@ class QuizService:
     ) -> dict[str, Any]:
         """Call the LLM once for a structured performance analysis."""
         profile = self.supabase.get_profile(user_id)
-        system_prompt = prompts.personalize(
-            prompts.SYSTEM_PROMPT,
-            prompts.build_personalization_block(profile),
-        )
-        prompt = prompts.QUIZ_ANALYSIS_PROMPT.format(
-            quiz=json.dumps(quiz, indent=2),
-            answers=json.dumps(answers, indent=2),
-            evaluation=json.dumps(evaluation, indent=2),
+        rendered = prompts.PromptBuilder.build(
+            prompts.QUIZ_ANALYSIS_TEMPLATE,
+            QUIZ_DATA=json.dumps(quiz, indent=2),
+            STUDENT_ANSWERS=json.dumps(answers, indent=2),
+            EVALUATION=json.dumps(evaluation, indent=2),
+            USER_PROFILE=prompts.user_profile_segment(
+                prompts.build_personalization_block(profile)
+            ),
         )
         return self.analysis_llm.generate_structured(
-            prompt,
+            rendered.user_message,
             prompts.QUIZ_ANALYSIS_SCHEMA,
-            system_prompt=system_prompt,
+            system_prompt=rendered.system_prompt,
         )

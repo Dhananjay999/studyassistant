@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ChevronRight,
   FileText,
   HelpCircle,
   ImageIcon,
@@ -314,18 +315,20 @@ export function MediaSidebar({
                     key={q.quiz_id}
                     type="button"
                     onClick={() => onOpenQuiz(q.quiz_id)}
-                    className="flex items-center gap-2 rounded-xl border border-border/60 p-2 text-left transition-colors hover:border-brand-1/50 hover:bg-muted/50"
+                    className="group relative flex items-center gap-2.5 overflow-hidden rounded-xl border border-brand-1/20 bg-brand-1/[0.03] p-2.5 pl-3 text-left transition-all hover:-translate-y-0.5 hover:border-brand-1/50 hover:bg-brand-1/[0.06] hover:shadow-sm"
                   >
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-1/10 text-brand-1">
-                      <HelpCircle className="h-4 w-4" />
+                    <span className="absolute inset-y-0 left-0 w-1 bg-brand-1" />
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-1 text-white shadow-sm">
+                      <HelpCircle className="h-[18px] w-[18px]" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium">{q.title}</p>
-                      <p className="text-[10px] text-muted-foreground">
+                      <p className="truncate text-xs font-semibold">{q.title}</p>
+                      <span className="mt-1 inline-flex items-center rounded-full bg-brand-1/10 px-1.5 py-0.5 text-[10px] font-medium text-brand-1">
                         {q.question_count}{" "}
                         {q.question_count === 1 ? "question" : "questions"}
-                      </p>
+                      </span>
                     </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-brand-1/50 transition-transform group-hover:translate-x-0.5" />
                   </button>
                 ))}
                 {flashcardSets.map((f) => (
@@ -333,18 +336,19 @@ export function MediaSidebar({
                     key={f.set_id}
                     type="button"
                     onClick={() => onOpenFlashcards(f.set_id)}
-                    className="flex items-center gap-2 rounded-xl border border-border/60 p-2 text-left transition-colors hover:border-brand-1/50 hover:bg-muted/50"
+                    className="group relative flex items-center gap-2.5 overflow-hidden rounded-xl border border-brand-2/20 bg-brand-2/[0.03] p-2.5 pl-3 text-left transition-all hover:-translate-y-0.5 hover:border-brand-2/50 hover:bg-brand-2/[0.06] hover:shadow-sm"
                   >
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-2/10 text-brand-2">
-                      <Layers className="h-4 w-4" />
+                    <span className="absolute inset-y-0 left-0 w-1 bg-brand-2" />
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-brand-2/40 bg-brand-2/15 text-brand-2">
+                      <Layers className="h-[18px] w-[18px]" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium">{f.title}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {f.card_count}{" "}
-                        {f.card_count === 1 ? "card" : "cards"}
-                      </p>
+                      <p className="truncate text-xs font-semibold">{f.title}</p>
+                      <span className="mt-1 inline-flex items-center rounded-full bg-brand-2/10 px-1.5 py-0.5 text-[10px] font-medium text-brand-2">
+                        {f.card_count} {f.card_count === 1 ? "card" : "cards"}
+                      </span>
                     </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-brand-2/50 transition-transform group-hover:translate-x-0.5" />
                   </button>
                 ))}
               </>

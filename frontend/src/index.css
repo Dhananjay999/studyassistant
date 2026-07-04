@@ -330,8 +330,55 @@
 
   /* Soft brand glow */
   .glow {
-    box-shadow: 0 0 0 1px hsl(var(--brand-1) / 0.25),
-      0 10px 40px -10px hsl(var(--brand-1) / 0.45);
+    box-shadow: 0 0 0 1px hsl(var(--brand-1) / 0.18),
+      0 6px 24px -12px hsl(var(--brand-1) / 0.28);
+  }
+
+  /* Chat composer: a thin animated gradient border instead of a drop shadow.
+     The wrapper paints the gradient; the 1px padding lets the solid inner
+     surface mask all but a hairline of it. The pan is intentionally slow and
+     low-contrast (reads as a living edge, not a rainbow). A soft brand glow
+     fades in only on focus. */
+  .composer-shell {
+    position: relative;
+    border-radius: 1rem;
+    padding: 1px;
+    background: linear-gradient(
+      120deg,
+      hsl(var(--brand-1) / 0.55),
+      hsl(var(--brand-3) / 0.4),
+      hsl(var(--brand-4) / 0.5),
+      hsl(var(--brand-1) / 0.55)
+    );
+    background-size: 300% 300%;
+    animation: gradient-pan 14s ease infinite;
+    transition: box-shadow 0.35s ease;
+  }
+  .composer-shell:focus-within {
+    box-shadow: 0 0 0 3px hsl(var(--brand-1) / 0.1),
+      0 6px 28px -14px hsl(var(--brand-1) / 0.4);
+  }
+  .composer-shell > * {
+    border-radius: calc(1rem - 1px);
+  }
+  html.reduce-motion .composer-shell {
+    animation: none;
+  }
+
+  /* react-colorful sizing/rounding inside the accent popover. */
+  .accent-picker .react-colorful {
+    width: 216px;
+    height: 172px;
+  }
+  .accent-picker .react-colorful__saturation {
+    border-radius: 0.6rem 0.6rem 0 0;
+  }
+  .accent-picker .react-colorful__last-control {
+    border-radius: 0 0 0.6rem 0.6rem;
+  }
+  .accent-picker .react-colorful__hue,
+  .accent-picker .react-colorful__saturation {
+    margin-bottom: 0;
   }
 
   .scrollbar-hide {

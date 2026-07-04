@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { History, Loader2, Play } from "lucide-react";
 import {
   Dialog,
@@ -6,17 +6,33 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { QuizRunner } from "@/components/quiz/QuizRunner";
 import { QuizAttemptReport } from "@/components/quiz/QuizAttemptReport";
 import { QuizAttemptsTab } from "@/components/quiz/QuizAttemptsTab";
-import { useQuizAttempt } from "@/hooks/api";
+import { ExamSummary } from "@/components/quiz/ExamSummary";
+import { useQuizAttempt, useQuizAttempts } from "@/hooks/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
-import type { QuizContent, QuizSubmitResult } from "@/types";
+import {
+  hasExamConfig,
+  type ExamConfig,
+  type QuizContent,
+  type QuizSubmitResult,
+} from "@/types";
 
-type View = "menu" | "run" | "report";
+type View = "menu" | "summary" | "run" | "report";
 type Tab = "take" | "attempts";
 
 /** How the dashboard opens: a freshly-opened quiz jumps straight into taking
@@ -44,23 +60,62 @@ export function QuizDrawer({
   const [tab, setTab] = useState<Tab>("take");
   const [freshResult, setFreshResult] = useState<QuizSubmitResult | null>(null);
   const [openAttemptId, setOpenAttemptId] = useState<string | null>(null);
+  // Locally-edited exam config (via "Edit settings") so the summary + runner
+  // reflect the change immediately; also persisted to the backend.
+  const [examOverride, setExamOverride] = useState<ExamConfig | null>(null);
+  // True once the entry screen is chosen for this open (gates the loader).
+  const [inited, setInited] = useState(false);
+  // Confirmation before abandoning an in-progress attempt.
+  const [confirmClose, setConfirmClose] = useState(false);
 
   const quizId = quiz?.quiz_id ?? "";
+  const isExam = hasExamConfig(quiz?.exam_config);
+  // Exam quizzes open a briefing screen first; ordinary quizzes go straight in.
+  const takeView: View = isExam ? "summary" : "run";
+
+  // Attempts drive the entry screen: an already-attempted quiz opens on the
+  // menu (Take Quiz / Attempts tabs) instead of jumping into a new attempt.
+  const attemptsQuery = useQuizAttempts(quizId, open && Boolean(quizId));
+  const hasAttempts = (attemptsQuery.data?.length ?? 0) > 0;
 
   // (Re)initialise the dashboard whenever a quiz is opened or the entry point
-  // changes. A freshly-opened quiz goes straight into a new attempt.
+  // changes. For the default "run" entry we wait for attempts before choosing.
   useEffect(() => {
-    if (!open) return;
-    setFreshResult(null);
-    setOpenAttemptId(null);
-    if (initialView === "run") {
-      setView("run");
-      setTab("take");
-    } else {
+    if (!open) {
+      setInited(false);
+      return;
+    }
+    if (inited) return;
+    if (initialView !== "run") {
+      setFreshResult(null);
+      setOpenAttemptId(null);
+      setExamOverride(null);
       setView("menu");
       setTab(initialView);
+      setInited(true);
+      return;
     }
-  }, [open, quiz?.quiz_id, initialView]);
+    // Default entry (chat / sidebar): wait for the attempts query to resolve.
+    if (attemptsQuery.isLoading) return;
+    setFreshResult(null);
+    setOpenAttemptId(null);
+    setExamOverride(null);
+    if (hasAttempts) {
+      setView("menu");
+      setTab("take");
+    } else {
+      setView(takeView);
+      setTab("take");
+    }
+    setInited(true);
+  }, [
+    open,
+    inited,
+    initialView,
+    attemptsQuery.isLoading,
+    hasAttempts,
+    takeView,
+  ]);
 
   // Historical attempt detail (only fetched while viewing a saved attempt).
   const attemptQuery = useQuizAttempt(
@@ -69,7 +124,14 @@ export function QuizDrawer({
   );
   const detail = attemptQuery.data;
 
-  if (!quiz) return null;
+  // Quiz with the just-edited exam config applied (for summary + runner).
+  const effectiveQuiz = useMemo<QuizContent | null>(
+    () =>
+      quiz && examOverride ? { ...quiz, exam_config: examOverride } : quiz,
+    [quiz, examOverride],
+  );
+
+  if (!quiz || !effectiveQuiz) return null;
 
   const backToAttempts = () => {
     setFreshResult(null);
@@ -78,8 +140,18 @@ export function QuizDrawer({
     setTab("attempts");
   };
 
+  // Guard against losing progress: closing mid-attempt asks first.
+  const requestClose = (next: boolean) => {
+    if (!next && view === "run") {
+      setConfirmClose(true);
+      return;
+    }
+    onOpenChange(next);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog open={open} onOpenChange={requestClose}>
       <DialogContent
         className={cn(
           "flex flex-col gap-0 overflow-hidden p-0",
@@ -93,7 +165,11 @@ export function QuizDrawer({
           Take the quiz, review attempts, and track your progress.
         </DialogDescription>
 
-        {view === "report" ? (
+        {!inited ? (
+          <div className="grid flex-1 place-items-center">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : view === "report" ? (
           freshResult ? (
             <QuizAttemptReport
               quiz={quiz}
@@ -117,13 +193,24 @@ export function QuizDrawer({
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           )
+        ) : view === "summary" ? (
+          <>
+            <header className="border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
+              <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
+            </header>
+            <ExamSummary
+              quiz={effectiveQuiz}
+              onStart={() => setView("run")}
+              onConfigSaved={setExamOverride}
+            />
+          </>
         ) : view === "run" ? (
           <>
             <header className="border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
               <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
             </header>
             <QuizRunner
-              quiz={quiz}
+              quiz={effectiveQuiz}
               onSubmitted={(res) => {
                 setFreshResult(res);
                 setView("report");
@@ -138,7 +225,7 @@ export function QuizDrawer({
           >
             <header className="space-y-3 border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
               <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
-              <TabsList className="grid w-full max-w-xs grid-cols-2">
+              <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="take">Take Quiz</TabsTrigger>
                 <TabsTrigger value="attempts">Attempts</TabsTrigger>
               </TabsList>
@@ -148,14 +235,14 @@ export function QuizDrawer({
               <TabsContent value="take" className="mt-0">
                 <TakePanel
                   quiz={quiz}
-                  onStart={() => setView("run")}
+                  onStart={() => setView(takeView)}
                   onViewAttempts={() => setTab("attempts")}
                 />
               </TabsContent>
               <TabsContent value="attempts" className="mt-0">
                 <QuizAttemptsTab
                   quizId={quizId}
-                  onStartAttempt={() => setView("run")}
+                  onStartAttempt={() => setView(takeView)}
                   onOpenAttempt={(attemptId) => {
                     setFreshResult(null);
                     setOpenAttemptId(attemptId);
@@ -168,6 +255,30 @@ export function QuizDrawer({
         )}
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Leave the quiz?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Your attempt is in progress and hasn't been submitted. If you leave
+            now, your answers will be lost.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep going</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              setConfirmClose(false);
+              onOpenChange(false);
+            }}
+          >
+            Leave quiz
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 

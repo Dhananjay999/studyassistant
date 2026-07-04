@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { ACCENT_VARS, accentVarsFromHex } from "@/lib/accentColor";
 
 /**
  * Appearance preferences that aren't covered by light/dark (which `next-themes`
@@ -27,7 +28,8 @@ export type ColorTheme =
   | "emerald"
   | "sunset"
   | "gold"
-  | "rose";
+  | "rose"
+  | "custom";
 
 export type ContentFont =
   | "inter"
@@ -38,6 +40,8 @@ export type ContentFont =
 
 interface Preferences {
   colorTheme: ColorTheme;
+  /** Hex color used when `colorTheme === "custom"`. */
+  customAccent: string;
   fontSize: FontSize;
   contentFont: ContentFont;
   reduceMotion: boolean;
@@ -46,6 +50,7 @@ interface Preferences {
 
 interface PreferencesContextValue extends Preferences {
   setColorTheme: (theme: ColorTheme) => void;
+  setCustomAccent: (hex: string) => void;
   setFontSize: (size: FontSize) => void;
   setContentFont: (font: ContentFont) => void;
   setReduceMotion: (on: boolean) => void;
@@ -55,6 +60,7 @@ interface PreferencesContextValue extends Preferences {
 
 const DEFAULTS: Preferences = {
   colorTheme: "default",
+  customAccent: "#8b5cf6",
   fontSize: "medium",
   contentFont: "inter",
   reduceMotion: false,
@@ -85,6 +91,17 @@ function apply(prefs: Preferences): void {
   root.dataset.contentFont = prefs.contentFont;
   root.classList.toggle("reduce-motion", prefs.reduceMotion);
   root.classList.toggle("compact", prefs.compact);
+
+  // Custom accent: write the tokens inline (they win over the [data-theme]
+  // stylesheet rules). Any other theme clears them so its rules take over.
+  if (prefs.colorTheme === "custom") {
+    const vars = accentVarsFromHex(prefs.customAccent);
+    for (const [key, val] of Object.entries(vars)) {
+      root.style.setProperty(key, val);
+    }
+  } else {
+    for (const key of ACCENT_VARS) root.style.removeProperty(key);
+  }
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
@@ -102,6 +119,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const setColorTheme = useCallback(
     (colorTheme: ColorTheme) => setPrefs((p) => ({ ...p, colorTheme })),
+    [],
+  );
+  const setCustomAccent = useCallback(
+    (customAccent: string) =>
+      setPrefs((p) => ({ ...p, customAccent, colorTheme: "custom" })),
     [],
   );
   const setFontSize = useCallback(
@@ -126,6 +148,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     () => ({
       ...prefs,
       setColorTheme,
+      setCustomAccent,
       setFontSize,
       setContentFont,
       setReduceMotion,
@@ -135,6 +158,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [
       prefs,
       setColorTheme,
+      setCustomAccent,
       setFontSize,
       setContentFont,
       setReduceMotion,

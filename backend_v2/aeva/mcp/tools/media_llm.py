@@ -168,12 +168,15 @@ class MediaLLMTool(BaseTool):
                 "sources": [],
                 "media_count": len(ready),
             }
+        rendered = prompts.PromptBuilder.build(
+            prompts.MEDIA_TEMPLATE,
+            USER_MESSAGE=query,
+            DOCUMENT_CONTEXT=context,
+            USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+        )
         answer = self.llm.generate(
-            prompts.MEDIA_PROMPT.format(query=query, context=context)
-            + prompts.ANSWER_META_INSTRUCTION,
-            system_prompt=prompts.personalize(
-                prompts.SYSTEM_PROMPT, ctx.personalization
-            ),
+            rendered.user_message,
+            system_prompt=rendered.system_prompt,
             history=ctx.history,
         )
         return {
@@ -192,12 +195,15 @@ class MediaLLMTool(BaseTool):
         attachments = self._fallback_attachments(ctx, records)
         if not attachments:
             return {"answer": prompts.NO_MEDIA_MESSAGE, "media_count": 0}
+        rendered = prompts.PromptBuilder.build(
+            prompts.MEDIA_TEMPLATE,
+            USER_MESSAGE=query,
+            DOCUMENT_CONTEXT="(none)",
+            USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+        )
         answer = self.llm.generate(
-            prompts.MEDIA_PROMPT.format(query=query, context="(none)")
-            + prompts.ANSWER_META_INSTRUCTION,
-            system_prompt=prompts.personalize(
-                prompts.SYSTEM_PROMPT, ctx.personalization
-            ),
+            rendered.user_message,
+            system_prompt=rendered.system_prompt,
             attachments=attachments,
             history=ctx.history,
         )
@@ -228,16 +234,18 @@ class MediaLLMTool(BaseTool):
             if not attachments:
                 yield prompts.NO_MEDIA_MESSAGE
                 return {"answer": prompts.NO_MEDIA_MESSAGE, "media_count": 0}
-            prompt = (
-                prompts.MEDIA_PROMPT.format(query=query, context="(none)")
-                + prompts.ANSWER_META_INSTRUCTION
+            rendered = prompts.PromptBuilder.build(
+                prompts.MEDIA_TEMPLATE,
+                USER_MESSAGE=query,
+                DOCUMENT_CONTEXT="(none)",
+                USER_PROFILE=prompts.user_profile_segment(
+                    ctx.personalization
+                ),
             )
             answer = ""
             for chunk in llm.generate_stream(
-                prompt,
-                system_prompt=prompts.personalize(
-                    prompts.SYSTEM_PROMPT, ctx.personalization
-                ),
+                rendered.user_message,
+                system_prompt=rendered.system_prompt,
                 attachments=attachments,
                 history=ctx.history,
             ):
@@ -253,16 +261,16 @@ class MediaLLMTool(BaseTool):
                 "sources": [],
                 "media_count": len(ready),
             }
-        prompt = (
-            prompts.MEDIA_PROMPT.format(query=query, context=context)
-            + prompts.ANSWER_META_INSTRUCTION
+        rendered = prompts.PromptBuilder.build(
+            prompts.MEDIA_TEMPLATE,
+            USER_MESSAGE=query,
+            DOCUMENT_CONTEXT=context,
+            USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
         answer = ""
         for chunk in llm.generate_stream(
-            prompt,
-            system_prompt=prompts.personalize(
-                prompts.SYSTEM_PROMPT, ctx.personalization
-            ),
+            rendered.user_message,
+            system_prompt=rendered.system_prompt,
             history=ctx.history,
         ):
             answer += chunk

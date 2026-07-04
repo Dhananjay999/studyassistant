@@ -80,8 +80,8 @@ export default {
 				sm: "calc(var(--radius) - 8px)",
 			},
 			boxShadow: {
-				glow: "0 10px 40px -10px hsl(var(--brand-1) / 0.45)",
-				"glow-lg": "0 20px 70px -15px hsl(var(--brand-1) / 0.55)",
+				glow: "0 6px 24px -12px hsl(var(--brand-1) / 0.28)",
+				"glow-lg": "0 14px 48px -16px hsl(var(--brand-1) / 0.32)",
 			},
 			backgroundImage: {
 				"brand-gradient":

@@ -237,7 +237,7 @@ class AssistantOrchestrator:
             history = []
             enriched_message = (
                 f"{ctx.message}\n\nUse ONLY the following content as the "
-                'source. Ignore any other messages in this '
+                'source.'
                 f'conversation:\n"""\n{ctx.source_content}\n"""'
             )
 
@@ -640,6 +640,8 @@ class AssistantOrchestrator:
             params["use_media"] = opts.use_media
         if opts.additional_instructions:
             params["additional_instructions"] = opts.additional_instructions
+        if opts.exam_config:
+            params["exam_config"] = opts.exam_config
         return params
 
     @staticmethod
@@ -688,6 +690,7 @@ class AssistantOrchestrator:
             "question_count": tool_params.get("question_count"),
             "question_types": tool_params.get("question_types"),
             "difficulty": tool_params.get("difficulty"),
+            "exam_config": tool_params.get("exam_config") or {},
             "media_available": bool(ctx.media_ids),
         }
 
@@ -811,17 +814,18 @@ class AssistantOrchestrator:
                 f"{clarification.action}. Prefer run_tool."
             )
 
-        prompt = prompts.PLAN_TURN_PROMPT.format(
-            message=enriched_message,
-            tools=tools_desc,
-            media_hint=media_hint,
-            clar_hint=clar_hint,
+        rendered = prompts.PromptBuilder.build(
+            prompts.PLAN_TURN_TEMPLATE,
+            USER_MESSAGE=enriched_message,
+            AVAILABLE_TOOLS=tools_desc,
+            MEDIA_HINT=media_hint,
+            CLARIFICATION_HINT=clar_hint,
         )
         return self.llm.generate_structured(
-            prompt,
+            rendered.user_message,
             prompts.PLAN_TURN_SCHEMA,
             history=history,
-            system_prompt=prompts.PLAN_SYSTEM_PROMPT,
+            system_prompt=rendered.system_prompt,
         )
 
     @staticmethod

@@ -22,6 +22,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useBookmarks, useCollections, useSearch } from "@/hooks/api";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 /**
  * Cmd/Ctrl+F global search. Chats (incl. response/question text), quizzes, and
@@ -44,13 +45,8 @@ export function GlobalCommandPalette({
   const isDark = resolvedTheme !== "light";
 
   const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
-
   // Debounce keystrokes before hitting the backend.
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebounced(query), 180);
-    return () => window.clearTimeout(t);
-  }, [query]);
+  const debounced = useDebouncedValue(query, 180);
 
   // Reset the query each time the palette is reopened.
   useEffect(() => {

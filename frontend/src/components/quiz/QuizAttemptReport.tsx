@@ -19,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { useAnalyzeQuiz, useCreateSession } from "@/hooks/api";
-import { formatDuration } from "@/lib/quizFormat";
+import { formatDuration, formatMark, formatMarks } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
 import type {
   ChatSeed,
@@ -59,6 +59,9 @@ export function QuizAttemptReport({
 
   const questions = quiz.questions ?? [];
   const hasMulti = questions.some((x) => x.type === "multi_select");
+  // Exam attempts carry a marks-based score; ordinary ones show accuracy only.
+  const isExam =
+    ev.final_score !== undefined && ev.final_score !== null;
 
   const tiles = useMemo<
     Array<{ label: string; value: number; icon: typeof Target; tone: string }>
@@ -153,16 +156,79 @@ export function QuizAttemptReport({
             className="relative overflow-hidden rounded-2xl bg-brand-gradient p-6 text-center text-white shadow-glow"
           >
             <Trophy className="mx-auto h-8 w-8" />
-            <p className="mt-2 font-display text-5xl font-extrabold tabular-nums">
-              {Math.round(ev.score)}%
-            </p>
-            <p className="mt-1 text-sm opacity-90">
-              {ev.correct_count}/{ev.total} correct
-              {ev.time_taken_seconds
-                ? ` · ${formatDuration(ev.time_taken_seconds)}`
-                : ""}
-            </p>
+            {isExam ? (
+              <>
+                <p className="mt-2 font-display text-5xl font-extrabold tabular-nums">
+                  {formatMarks(ev.final_score ?? 0, ev.max_marks)}
+                </p>
+                <p className="mt-1 text-sm opacity-90">
+                  Final score · {ev.correct_count}/{ev.total} correct ·{" "}
+                  {Math.round(ev.score)}% accuracy
+                  {ev.time_taken_seconds
+                    ? ` · ${formatDuration(ev.time_taken_seconds)}`
+                    : ""}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-2 font-display text-5xl font-extrabold tabular-nums">
+                  {Math.round(ev.score)}%
+                </p>
+                <p className="mt-1 text-sm opacity-90">
+                  {ev.correct_count}/{ev.total} correct
+                  {ev.time_taken_seconds
+                    ? ` · ${formatDuration(ev.time_taken_seconds)}`
+                    : ""}
+                </p>
+              </>
+            )}
           </motion.div>
+
+          {/* Marks breakdown (exam attempts only) */}
+          {isExam && (
+            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+              <p className="mb-3 text-sm font-semibold">Marks breakdown</p>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <MarkTile
+                  label="Positive"
+                  value={formatMark(ev.positive_marks ?? 0)}
+                  tone="emerald"
+                />
+                <MarkTile
+                  label="Negative"
+                  value={formatMark(ev.negative_marks ?? 0)}
+                  tone="red"
+                />
+                <MarkTile
+                  label="Skipped"
+                  value={formatMark(ev.skip_marks ?? 0)}
+                  tone="muted"
+                />
+                <MarkTile
+                  label="Final"
+                  value={formatMarks(ev.final_score ?? 0, ev.max_marks)}
+                  tone="violet"
+                />
+              </div>
+              {ev.marking && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Scored as: {ev.correct_count} correct ×{" "}
+                  {formatMark(ev.marking.correct)}
+                  {" "}
+                  {ev.exam_incorrect ?? 0} wrong ×{" "}
+                  {formatMark(ev.marking.negative)}
+                  {ev.marking.skip
+                    ? ` + ${ev.unanswered_count} skipped × ${formatMark(
+                        ev.marking.skip,
+                      )}`
+                    : ""}{" "}
+                  = <span className="font-semibold text-foreground">
+                    {formatMarks(ev.final_score ?? 0, ev.max_marks)}
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Summary tiles */}
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -297,6 +363,37 @@ function StatTile({
         {label}
       </div>
       <p className="mt-1 font-display text-2xl font-bold tabular-nums">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+const MARK_TONES: Record<string, string> = {
+  muted: "text-muted-foreground",
+  emerald: "text-emerald-600 dark:text-emerald-400",
+  red: "text-rose-600 dark:text-rose-400",
+  violet: "text-brand-1",
+};
+
+function MarkTile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-card/50 p-3 text-center">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p
+        className={cn(
+          "mt-1 font-display text-xl font-bold tabular-nums",
+          MARK_TONES[tone],
+        )}
+      >
         {value}
       </p>
     </div>

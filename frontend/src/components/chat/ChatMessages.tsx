@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Bot, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ export function ChatMessages({
   onCreateFlashcards,
   onOpenQuiz,
   onOpenFlashcards,
+  highlightId,
 }: {
   messages: Message[];
   mediaAvailable: boolean;
@@ -45,14 +46,46 @@ export function ChatMessages({
   onCreateFlashcards: (sourceContent: string) => void;
   onOpenQuiz: (quiz: QuizContent) => void;
   onOpenFlashcards: (setId: string) => void;
+  /** Message to scroll to and flash-highlight (e.g. opened from a bookmark). */
+  highlightId?: string | null;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   // Rendered markdown nodes, so Copy yields clean text + rich HTML.
   const contentRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Message row containers, keyed by id, for scroll-to-message.
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // The highlight we've already scrolled to, so it fires once per target.
+  const appliedHighlight = useRef<string | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
 
+  // Auto-scroll to the newest message. Suppressed while a highlight target is
+  // still pending so it never yanks the view away from the message we're about
+  // to jump to (opened from a bookmark).
   useEffect(() => {
+    if (highlightId && appliedHighlight.current !== highlightId) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, highlightId]);
+
+  // Scroll to and briefly flash the highlighted message once it's rendered.
+  // The scroll is deferred to the next frame so it runs *after* the mount's
+  // bottom-scroll and reliably wins the race, regardless of effect order.
+  useEffect(() => {
+    if (!highlightId || appliedHighlight.current === highlightId) return;
+    const el = rowRefs.current.get(highlightId);
+    if (!el) return; // history not loaded yet — reruns when messages arrive.
+    appliedHighlight.current = highlightId;
+    setFlashId(highlightId);
+    // Defer past the mount's bottom-scroll and initial markdown/code layout so
+    // this is the final scroll and the target row is at its settled position.
+    const scrollT = window.setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    const flashT = window.setTimeout(() => setFlashId(null), 2400);
+    return () => {
+      window.clearTimeout(scrollT);
+      window.clearTimeout(flashT);
+    };
+  }, [highlightId, messages]);
 
   const copyMessage = (id: string, fallback: string) => {
     const el = contentRefs.current.get(id);
@@ -76,11 +109,15 @@ export function ChatMessages({
         return (
           <motion.div
             key={msg.id}
+            ref={(el) => {
+              if (el) rowRefs.current.set(msg.id, el);
+              else rowRefs.current.delete(msg.id);
+            }}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
             className={cn(
-              "flex gap-2 sm:gap-3",
+              "flex scroll-mt-24 gap-2 sm:gap-3",
               msg.role === "user" && "flex-row-reverse",
             )}
           >
@@ -103,10 +140,12 @@ export function ChatMessages({
 
             <div
               className={cn(
-                "rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                "rounded-2xl px-4 py-3 text-sm leading-relaxed transition-shadow duration-700",
                 msg.role === "user"
                   ? "max-w-[85%] rounded-br-sm bg-primary text-primary-foreground"
                   : "min-w-0 max-w-full flex-1 glass rounded-bl-sm",
+                flashId === msg.id &&
+                  "ring-2 ring-brand-1 ring-offset-2 ring-offset-background",
               )}
             >
               {msg.meta?.tool_used && (

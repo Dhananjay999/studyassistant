@@ -14,7 +14,7 @@ import {
   MoreHorizontal,
   NotebookPen,
   Pencil,
-  Search,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -23,16 +23,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SwipeableRow } from "@/components/common/SwipeableRow";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { ListToolbar } from "@/components/common/list";
 import { FolderPickerSheet } from "@/components/bookmarks/FolderPickerSheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLongPress } from "@/hooks/useLongPress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,20 +35,41 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Seo } from "@/components/common/Seo";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
-import { AppShell } from "@/components/AppShell";
+import { PageContainer } from "@/components/layout/PageContainer";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { QuizDrawer } from "@/components/chat/QuizDrawer";
+import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
+import { MarkdownContent } from "@/components/chat/MarkdownContent";
+import { getQuiz } from "@/lib/api";
+import { useListQuery } from "@/hooks/useListQuery";
+import {
+  applyListQuery,
+  byDateAsc,
+  byDateDesc,
+  type ListConfig,
+} from "@/lib/listQuery";
 import { cn } from "@/lib/utils";
 import {
   useBookmarks,
   useCollections,
   useCreateCollection,
+  useCreateSession,
   useDeleteBookmark,
   useDeleteCollection,
   useRenameCollection,
   useUpdateBookmark,
 } from "@/hooks/api";
-import type { Bookmark as BookmarkT, BookmarkType } from "@/types";
-
-type SortKey = "recent" | "oldest" | "name";
+import type {
+  Bookmark as BookmarkT,
+  BookmarkType,
+  ChatSeed,
+  QuizContent,
+} from "@/types";
 
 const TYPE_META: Record<
   BookmarkType,
@@ -67,14 +82,36 @@ const TYPE_META: Record<
   note: { label: "Note", icon: NotebookPen },
 };
 
-const TYPE_FILTERS: Array<BookmarkType | "all"> = [
-  "all",
-  "response",
-  "quiz",
-  "flashcard",
-  "media",
-  "note",
-];
+/**
+ * Sort/filter config for the bookmarks list. `resolveFolder` maps a bookmark's
+ * collection id to its folder name so search matches the folder too. (Folder
+ * scoping itself is a separate sidebar pre-filter, not a toolbar filter.)
+ */
+function buildBookmarkConfig(
+  resolveFolder: (id: string | null) => string,
+): ListConfig<BookmarkT> {
+  return {
+    defaultSort: "recent",
+    sorts: [
+      { value: "recent", label: "Recently saved", compare: (a, b) => byDateDesc(a.created_at, b.created_at) },
+      { value: "oldest", label: "Oldest", compare: (a, b) => byDateAsc(a.created_at, b.created_at) },
+      { value: "name", label: "Alphabetical (A–Z)", compare: (a, b) => a.title.localeCompare(b.title) },
+    ],
+    filters: [
+      {
+        id: "type",
+        label: "Type",
+        kind: "multi",
+        options: (Object.keys(TYPE_META) as BookmarkType[]).map((t) => ({
+          value: t,
+          label: TYPE_META[t].label,
+        })),
+        predicate: (b, sel) => sel.includes(b.item_type),
+      },
+    ],
+    searchFields: (b) => [b.title, b.content, resolveFolder(b.collection_id)],
+  };
+}
 
 export default function BookmarksPage() {
   const navigate = useNavigate();
@@ -85,13 +122,11 @@ export default function BookmarksPage() {
   const deleteCollection = useDeleteCollection();
   const removeBookmark = useDeleteBookmark();
   const updateBookmark = useUpdateBookmark();
+  const createSession = useCreateSession();
 
   const isMobile = useIsMobile();
 
   const [activeCollection, setActiveCollection] = useState<string>("all");
-  const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<BookmarkType | "all">("all");
-  const [sort, setSort] = useState<SortKey>("recent");
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -109,6 +144,63 @@ export default function BookmarksPage() {
   } | null>(null);
   const [confirmIds, setConfirmIds] = useState<string[] | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Opening a bookmark surfaces its content in a centered popup (never a new
+  // chat): quizzes → QuizDrawer, flashcards → FlashcardViewer, everything else
+  // → a read-only content dialog with a "Continue in chat" springboard.
+  const [contentBookmark, setContentBookmark] = useState<BookmarkT | null>(
+    null,
+  );
+  const [quiz, setQuiz] = useState<QuizContent | null>(null);
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [flashcardSetId, setFlashcardSetId] = useState<string | null>(null);
+  const [cardsOpen, setCardsOpen] = useState(false);
+  const [openingQuizId, setOpeningQuizId] = useState<string | null>(null);
+
+  const openBookmark = async (b: BookmarkT) => {
+    if (b.item_type === "quiz" && b.item_ref) {
+      setOpeningQuizId(b.id);
+      try {
+        setQuiz(await getQuiz(b.item_ref));
+        setQuizOpen(true);
+      } catch {
+        toast.error("This quiz is no longer available");
+      } finally {
+        setOpeningQuizId(null);
+      }
+      return;
+    }
+    if (b.item_type === "flashcard" && b.item_ref) {
+      setFlashcardSetId(b.item_ref);
+      setCardsOpen(true);
+      return;
+    }
+    // response / note / media (and quizzes/flashcards missing their ref).
+    setContentBookmark(b);
+  };
+
+  const continueInChat = async (b: BookmarkT) => {
+    setContentBookmark(null);
+    // Prefer reopening the exact conversation this bookmark came from. Only
+    // when there's no origin session (deleted, or a note/media bookmark) do
+    // we fall back to seeding a fresh chat with the saved content.
+    if (b.session_id) {
+      // For a saved response, item_ref is the message id — scroll to it.
+      const highlightMessageId =
+        b.item_type === "response" ? b.item_ref : undefined;
+      navigate(`/chat?sessionId=${b.session_id}`, {
+        state: highlightMessageId ? { highlightMessageId } : undefined,
+      });
+      return;
+    }
+    const seed: ChatSeed = {
+      mode: "continue",
+      content: b.content || b.title,
+      title: b.title,
+    };
+    const session = await createSession.mutateAsync({});
+    navigate(`/chat?sessionId=${session.id}`, { state: { seed } });
+  };
 
   const enterSelect = (id: string) => {
     setSelectMode(true);
@@ -171,32 +263,22 @@ export default function BookmarksPage() {
   const collectionName = (id: string | null) =>
     collections.find((c) => c.id === id)?.name ?? "Unfiled";
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = bookmarks.slice();
-    if (activeCollection !== "all") {
-      list = list.filter((b) => b.collection_id === activeCollection);
-    }
-    if (typeFilter !== "all") {
-      list = list.filter((b) => b.item_type === typeFilter);
-    }
-    if (q) {
-      list = list.filter(
-        (b) =>
-          b.title.toLowerCase().includes(q) ||
-          b.content.toLowerCase().includes(q) ||
-          collectionName(b.collection_id).toLowerCase().includes(q),
-      );
-    }
-    list.sort((a, b) => {
-      if (sort === "name") return a.title.localeCompare(b.title);
-      const da = new Date(a.created_at).getTime();
-      const db = new Date(b.created_at).getTime();
-      return sort === "oldest" ? da - db : db - da;
-    });
-    return list;
+  const config = useMemo(
+    () => buildBookmarkConfig(collectionName),
+    // collectionName only depends on collections.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookmarks, collections, activeCollection, typeFilter, query, sort]);
+    [collections],
+  );
+  const listQuery = useListQuery(config);
+
+  // Folder scoping is a sidebar pre-filter; search/sort/type live in the toolbar.
+  const filtered = useMemo(() => {
+    const scoped =
+      activeCollection === "all"
+        ? bookmarks
+        : bookmarks.filter((b) => b.collection_id === activeCollection);
+    return applyListQuery(scoped, config, listQuery.state);
+  }, [bookmarks, activeCollection, config, listQuery.state]);
 
   const countFor = (id: string) =>
     bookmarks.filter((b) => b.collection_id === id).length;
@@ -242,7 +324,7 @@ export default function BookmarksPage() {
   return (
     <>
       <Seo title="Bookmarks — Aeva" noindex path="/bookmarks" />
-      <AppShell title="Bookmarks" hideDesktopSidebar backTo="/chat">
+      <PageContainer title="Bookmarks">
         <div className="flex min-h-full flex-col lg:flex-row">
           {/* Folder navigation */}
           <aside className="w-full shrink-0 border-b border-border/50 p-3 lg:w-64 lg:border-b-0 lg:border-r">
@@ -330,54 +412,26 @@ export default function BookmarksPage() {
 
           {/* Main */}
           <main className="flex-1 p-4">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search bookmarks…"
-                  className="pl-9"
-                />
-              </div>
-              <Select
-                value={sort}
-                onValueChange={(v) => setSort(v as SortKey)}
-              >
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="recent">Recent</SelectItem>
-                  <SelectItem value="oldest">Oldest</SelectItem>
-                  <SelectItem value="name">Name</SelectItem>
-                </SelectContent>
-              </Select>
-              {filtered.length > 0 && (
-                <Button
-                  variant={selectMode ? "default" : "outline"}
-                  className="gap-2 sm:w-auto"
-                  onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
-                >
-                  <ListChecks className="h-4 w-4" />
-                  {selectMode ? "Done" : "Select"}
-                </Button>
-              )}
-            </div>
-
-            <div className="mb-4 flex flex-wrap gap-1.5">
-              {TYPE_FILTERS.map((t) => (
-                <Button
-                  key={t}
-                  size="sm"
-                  variant={typeFilter === t ? "default" : "outline"}
-                  className="h-7 rounded-full px-3 text-xs capitalize"
-                  onClick={() => setTypeFilter(t)}
-                >
-                  {t === "all" ? "All" : TYPE_META[t].label}
-                </Button>
-              ))}
-            </div>
+            <ListToolbar
+              className="mb-4"
+              config={config}
+              query={listQuery}
+              placeholder="Search bookmarks…"
+              extra={
+                (filtered.length > 0 || selectMode) && (
+                  <Button
+                    variant={selectMode ? "default" : "outline"}
+                    className="gap-2"
+                    onClick={() =>
+                      selectMode ? exitSelect() : setSelectMode(true)
+                    }
+                  >
+                    <ListChecks className="h-4 w-4" />
+                    {selectMode ? "Done" : "Select"}
+                  </Button>
+                )
+              }
+            />
 
             {bookmarksLoading && bookmarks.length === 0 ? (
               <CardGridSkeleton />
@@ -395,9 +449,8 @@ export default function BookmarksPage() {
                     selected={selectedIds.has(b.id)}
                     onToggleSelect={() => toggleSelect(b.id)}
                     onEnterSelect={() => enterSelect(b.id)}
-                    onOpen={() =>
-                      navigate("/chat", { state: { previewBookmark: b } })
-                    }
+                    opening={openingQuizId === b.id}
+                    onOpen={() => openBookmark(b)}
                     onRequestMove={() =>
                       setMoveState({ ids: [b.id], currentId: b.collection_id })
                     }
@@ -451,8 +504,89 @@ export default function BookmarksPage() {
           loading={bulkBusy}
           onConfirm={confirmDelete}
         />
-      </AppShell>
+
+        {/* Center popups — open a saved item in place instead of a new chat. */}
+        <QuizDrawer quiz={quiz} open={quizOpen} onOpenChange={setQuizOpen} />
+        <FlashcardViewer
+          setId={flashcardSetId}
+          open={cardsOpen}
+          onOpenChange={setCardsOpen}
+        />
+        <BookmarkContentDialog
+          bookmark={contentBookmark}
+          onOpenChange={(o) => !o && setContentBookmark(null)}
+          onContinue={continueInChat}
+          continuing={createSession.isPending}
+        />
+      </PageContainer>
     </>
+  );
+}
+
+/**
+ * Read-only centered popup for text-style bookmarks (response / note / media,
+ * or a quiz/flashcard whose source was deleted). Shows the saved content and
+ * offers a "Continue in chat" springboard into a fresh session.
+ */
+function BookmarkContentDialog({
+  bookmark,
+  onOpenChange,
+  onContinue,
+  continuing,
+}: {
+  bookmark: BookmarkT | null;
+  onOpenChange: (open: boolean) => void;
+  onContinue: (b: BookmarkT) => void;
+  continuing: boolean;
+}) {
+  const meta = bookmark ? TYPE_META[bookmark.item_type] : null;
+  const Icon = meta?.icon ?? FileText;
+
+  return (
+    <Dialog open={bookmark !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0">
+        {bookmark && (
+          <>
+            <DialogHeader className="border-b border-border/50 px-5 py-4">
+              <div className="mb-1.5 flex items-center gap-2">
+                <Badge variant="secondary" className="gap-1 text-[10px]">
+                  <Icon className="h-3 w-3" /> {meta?.label}
+                </Badge>
+                <span className="text-[10px] text-muted-foreground">
+                  Saved {new Date(bookmark.created_at).toLocaleDateString()}
+                </span>
+              </div>
+              <DialogTitle className="text-left text-lg">
+                {bookmark.title || "Saved content"}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="max-h-[55vh] overflow-y-auto px-5 py-4">
+              <div className="learning-content prose prose-sm max-w-none dark:prose-invert">
+                <MarkdownContent
+                  content={bookmark.content || "_No content saved._"}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-border/50 px-5 py-3">
+              <Button
+                onClick={() => onContinue(bookmark)}
+                disabled={continuing}
+                className="gap-2 bg-brand-gradient text-white"
+              >
+                {continuing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {bookmark.session_id ? "Open conversation" : "Continue in chat"}
+              </Button>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -592,6 +726,7 @@ function BookmarkCard({
   swipeEnabled,
   selectMode,
   selected,
+  opening,
   onToggleSelect,
   onEnterSelect,
   onOpen,
@@ -603,6 +738,7 @@ function BookmarkCard({
   swipeEnabled: boolean;
   selectMode: boolean;
   selected: boolean;
+  opening: boolean;
   onToggleSelect: () => void;
   onEnterSelect: () => void;
   onOpen: () => void;
@@ -668,9 +804,19 @@ function BookmarkCard({
           )}
         </div>
       ) : (
-        <button type="button" onClick={onOpen} className="text-left">
-          <h3 className="line-clamp-2 text-sm font-semibold hover:underline">
-            {bookmark.title || "Untitled"}
+        <button
+          type="button"
+          onClick={onOpen}
+          disabled={opening}
+          className="text-left"
+        >
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold hover:underline">
+            <span className="line-clamp-2">
+              {bookmark.title || "Untitled"}
+            </span>
+            {opening && (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+            )}
           </h3>
           {bookmark.content && (
             <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">

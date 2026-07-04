@@ -3,14 +3,18 @@ import {
   ArrowRight,
   BarChart3,
   Clock,
+  GraduationCap,
   HelpCircle,
   Sparkles,
+  Timer,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/common/GlassCard";
 import { BookmarkButton } from "@/components/BookmarkButton";
-import type { QuizContent } from "@/types";
+import { useExamPatterns } from "@/hooks/api";
+import { formatTimeLimit } from "@/lib/quizFormat";
+import { hasExamConfig, type QuizContent } from "@/types";
 
 const cap = (s?: string) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 
@@ -21,9 +25,15 @@ export function QuizCard({
   quiz: QuizContent;
   onStart: () => void;
 }) {
+  const { data: patterns = [] } = useExamPatterns();
   const count = quiz.questions?.length ?? 0;
   const mins = Math.max(1, Math.round(count * 2));
   const source = quiz.source || quiz.topic;
+  const exam = hasExamConfig(quiz.exam_config) ? quiz.exam_config : null;
+  const examLabel = exam
+    ? (patterns.find((p) => p.key === exam.pattern)?.label ??
+      (exam.pattern === "custom" ? "Exam" : exam.pattern))
+    : null;
 
   return (
     <motion.div
@@ -39,7 +49,14 @@ export function QuizCard({
             {quiz.title}
           </h4>
           <div className="flex shrink-0 items-center gap-1">
-            <Badge variant="secondary">Quiz</Badge>
+            {examLabel ? (
+              <Badge className="gap-1 bg-brand-1/15 text-brand-1">
+                <GraduationCap className="h-3 w-3" />
+                {examLabel}
+              </Badge>
+            ) : (
+              <Badge variant="secondary">Quiz</Badge>
+            )}
             <BookmarkButton
               item={{
                 item_type: "quiz",
@@ -73,11 +90,17 @@ export function QuizCard({
             <BarChart3 className="h-4 w-4" />{" "}
             {quiz.difficulty ? `${cap(quiz.difficulty)} difficulty` : "Mixed"}
           </span>
+          {exam && exam.timer_seconds > 0 && (
+            <span className="flex items-center gap-2">
+              <Timer className="h-4 w-4" /> {formatTimeLimit(exam.timer_seconds)}
+            </span>
+          )}
         </div>
 
         <Button
           onClick={onStart}
-          className="group mt-4 w-full gap-2 bg-brand-gradient text-white"
+          variant="brand"
+          className="group mt-4 w-full gap-2"
         >
           Open Quiz
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />

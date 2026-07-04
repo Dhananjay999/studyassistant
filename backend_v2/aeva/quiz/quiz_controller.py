@@ -8,10 +8,18 @@ from flask_smorest import Blueprint
 from aeva.common.decorators import user_required
 from aeva.common.schema import ResponseEnvelopeSchema, UserData
 from aeva.quiz.quiz_service import QuizService
-from aeva.quiz.schema.quiz_schema import QuizAnalyzeSchema, QuizSubmitSchema
+from aeva.quiz.schema.quiz_schema import (
+    ExamConfigUpdateSchema,
+    QuizAnalyzeSchema,
+    QuizSubmitSchema,
+)
 
 if TYPE_CHECKING:
-    from aeva.quiz.schema.quiz_schema import QuizAnalyzeData, QuizSubmitData
+    from aeva.quiz.schema.quiz_schema import (
+        ExamConfigUpdateData,
+        QuizAnalyzeData,
+        QuizSubmitData,
+    )
 
 blueprint = Blueprint(
     "quiz",
@@ -30,6 +38,17 @@ class QuizListEndpoint(MethodView):
     def get(current_user: UserData) -> dict[str, Any]:
         """List quizzes (newest first) with counts and attempt summary."""
         return QuizService().list_quizzes(current_user.id)
+
+
+class QuizExamPatternsEndpoint(MethodView):
+    """List the built-in exam-pattern presets for Exam Mode."""
+
+    @staticmethod
+    @blueprint.response(200)
+    @user_required
+    def get(current_user: UserData) -> dict[str, Any]:  # noqa: ARG004
+        """Return exam-pattern presets (marking scheme + timer + defaults)."""
+        return QuizService.list_exam_patterns()
 
 
 class QuizDetailEndpoint(MethodView):
@@ -66,6 +85,27 @@ class QuizAttemptDetailEndpoint(MethodView):
         """Fetch one attempt with quiz, evaluation, and AI analysis."""
         return QuizService().get_attempt_detail(
             quiz_id, attempt_id, current_user.id
+        )
+
+
+class QuizExamConfigEndpoint(MethodView):
+    """Update a quiz's Exam Mode config (marking scheme + timer)."""
+
+    @staticmethod
+    @blueprint.arguments(ExamConfigUpdateSchema)
+    @blueprint.response(200)
+    @user_required
+    def patch(
+        current_user: UserData,
+        request_data: object,
+        quiz_id: str,
+    ) -> dict[str, Any]:
+        """Persist edited exam settings; reused by every future attempt."""
+        data = cast("ExamConfigUpdateData", request_data)
+        return QuizService().update_exam_config(
+            quiz_id,
+            current_user.id,
+            data.exam_config,
         )
 
 
@@ -117,6 +157,12 @@ blueprint.add_url_rule(
     view_func=QuizListEndpoint,
     endpoint="quiz_list",
 )
+# Registered before "/<quiz_id>" so this static path isn't captured as an id.
+blueprint.add_url_rule(
+    "/exam-patterns",
+    view_func=QuizExamPatternsEndpoint,
+    endpoint="quiz_exam_patterns",
+)
 blueprint.add_url_rule(
     "/<quiz_id>",
     view_func=QuizDetailEndpoint,
@@ -131,6 +177,11 @@ blueprint.add_url_rule(
     "/<quiz_id>/attempts/<attempt_id>",
     view_func=QuizAttemptDetailEndpoint,
     endpoint="quiz_attempt_detail",
+)
+blueprint.add_url_rule(
+    "/<quiz_id>/exam-config",
+    view_func=QuizExamConfigEndpoint,
+    endpoint="quiz_exam_config",
 )
 blueprint.add_url_rule(
     "/<quiz_id>/submit",

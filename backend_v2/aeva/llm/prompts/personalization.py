@@ -1,6 +1,7 @@
 """Personalization: turn a user's learning profile into a prompt fragment.
 
-Kept deliberately lightweight. The block is appended to a tool's system prompt
+Kept deliberately lightweight. The block reaches a template's system channel
+through the ``{USER_PROFILE}`` placeholder (see ``blocks.user_profile_segment``)
 only when the user has *completed* onboarding. Language is treated as a strict,
 high-priority instruction (a Hinglish learner who gets pure Devanagari Hindi is
 a real bug); the rest of the profile colours answers without overriding what the
@@ -95,17 +96,3 @@ def build_personalization_block(profile: dict[str, Any] | None) -> str:
         return ""
 
     return "User Learning Profile:\n" + "\n".join(lines) + "\n\n" + _INSTRUCTION
-
-
-def personalize(base: str | None, block: str | None) -> str | None:
-    """Append a personalization block to a base system prompt.
-
-    Returns ``base`` unchanged when there is no block, so callers that pass an
-    empty profile keep their existing behavior.
-    """
-    block = (block or "").strip()
-    if not block:
-        return base
-    if not base:
-        return block
-    return f"{base}\n\n{block}"

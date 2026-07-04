@@ -9,6 +9,8 @@ import type {
   Bookmark,
   BookmarkCollection,
   CreateBookmarkInput,
+  ExamConfig,
+  ExamPattern,
   LearningProfile,
   LearningProfileInput,
   MediaItem,
@@ -45,7 +47,9 @@ export const ENDPOINTS = {
   MEDIA_PROCESS: (id: string) => `/media/${id}/process`,
   ASSISTANT_STREAM: "/assistant/stream",
   QUIZZES: "/quiz/",
+  QUIZ_EXAM_PATTERNS: "/quiz/exam-patterns",
   QUIZ: (id: string) => `/quiz/${id}`,
+  QUIZ_EXAM_CONFIG: (id: string) => `/quiz/${id}/exam-config`,
   QUIZ_SUBMIT: (id: string) => `/quiz/${id}/submit`,
   QUIZ_ANALYZE: (id: string) => `/quiz/${id}/analyze`,
   QUIZ_ATTEMPTS: (id: string) => `/quiz/${id}/attempts`,
@@ -75,6 +79,13 @@ export function getAuthToken(): string | null {
   return getToken();
 }
 
+// Called whenever the backend rejects a request with 401 (expired/invalid
+// token). AuthContext registers it to clear the session and bounce to login.
+let onUnauthorized: () => void = () => {};
+export function setUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler;
+}
+
 function authHeaders(json = true): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (json) headers["Content-Type"] = "application/json";
@@ -93,6 +104,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       signal: controller.signal,
     });
     if (!res.ok) {
+      // An expired/invalid token surfaces as 401 here (the proactive refresh
+      // timer failed or never ran). Tear the session down so the app logs out.
+      if (res.status === 401) onUnauthorized();
       const err = await res.json().catch(() => ({}));
       throw new Error(err.msg || `Request failed (${res.status})`);
     }
@@ -282,6 +296,15 @@ export const mediaProcessUrl = (id: string) =>
 
 export const listQuizzes = () =>
   unwrap<QuizListItem[]>(ENDPOINTS.QUIZZES);
+
+export const listExamPatterns = () =>
+  unwrap<ExamPattern[]>(ENDPOINTS.QUIZ_EXAM_PATTERNS);
+
+export const updateQuizExamConfig = (id: string, examConfig: ExamConfig) =>
+  unwrap<{ quiz_id: string; exam_config: ExamConfig }>(
+    ENDPOINTS.QUIZ_EXAM_CONFIG(id),
+    { method: "PATCH", body: JSON.stringify({ exam_config: examConfig }) },
+  );
 
 export const getQuiz = async (id: string): Promise<QuizContent> => {
   // The detail endpoint may key the id as `id`; the client always needs

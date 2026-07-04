@@ -10,11 +10,18 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // richColors gives success/error/warning/info their own green/red/
+      // orange/blue treatment (with matching icons) that also respects the
+      // active light/dark theme. closeButton adds an explicit dismiss.
+      richColors
       toastOptions={{
         classNames: {
+          // Shared layout only — colors come from richColors per type so we
+          // don't override the type tint with a flat background here.
           toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
+            "group toast rounded-xl border shadow-lg group-[.toaster]:font-sans",
+          title: "text-sm font-semibold",
+          description: "text-[13px] opacity-90",
           actionButton:
             "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
           cancelButton:

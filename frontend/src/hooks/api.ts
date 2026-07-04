@@ -6,6 +6,7 @@ import {
 import * as api from "@/lib/api";
 import type {
   CreateBookmarkInput,
+  ExamConfig,
   LearningProfileInput,
   MediaItem,
   Session,
@@ -20,6 +21,7 @@ export const qk = {
   bookmarks: ["bookmarks"] as const,
   collections: ["collections"] as const,
   quizzes: ["quizzes"] as const,
+  examPatterns: ["exam-patterns"] as const,
   quizAttempts: (quizId: string) => ["quiz-attempts", quizId] as const,
   quizAttempt: (quizId: string, attemptId: string) =>
     ["quiz-attempts", quizId, attemptId] as const,
@@ -151,6 +153,25 @@ export function useAnalyzeQuiz() {
 
 export function useQuizzes() {
   return useQuery({ queryKey: qk.quizzes, queryFn: api.listQuizzes });
+}
+
+export function useExamPatterns() {
+  return useQuery({
+    queryKey: qk.examPatterns,
+    queryFn: api.listExamPatterns,
+    // Presets are backend constants; cache for the whole session.
+    staleTime: Infinity,
+  });
+}
+
+export function useUpdateExamConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; examConfig: ExamConfig }) =>
+      api.updateQuizExamConfig(v.id, v.examConfig),
+    // The quiz library shows the pattern/timer, so refresh it after an edit.
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.quizzes }),
+  });
 }
 
 export function useQuizAttempts(quizId: string, enabled = true) {

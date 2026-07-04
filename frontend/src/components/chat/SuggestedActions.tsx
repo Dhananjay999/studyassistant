@@ -18,8 +18,8 @@ import type {
 const HIGHLIGHT_CHIP = cn(
   "group inline-flex shrink-0 snap-start items-center gap-1.5 rounded-full",
   "border border-brand-1/40 bg-background px-3.5 py-2 text-xs font-semibold",
-  "text-foreground transition-all hover:border-brand-1/70",
-  "hover:shadow-[0_0_12px_-2px_hsl(var(--brand-1)/0.5)] disabled:opacity-60",
+  "text-foreground transition-all hover:border-brand-1/60",
+  "hover:bg-brand-1/[0.04] disabled:opacity-60",
 );
 
 function AnimatedIcon({ Icon }: { Icon: LucideIcon }) {

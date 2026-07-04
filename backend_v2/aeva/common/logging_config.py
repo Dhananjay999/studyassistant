@@ -72,3 +72,21 @@ def log_full_llm_requests() -> bool:
         "yes",
         "on",
     }
+
+
+def prompt_debug_enabled() -> bool:
+    """Whether the prompt builder should log every fully rendered prompt.
+
+    Driven by ``PROMPT_DEBUG`` (default off). When on, the builder logs the
+    complete prompt it assembled — every resolved placeholder, split by the
+    channel it is routed to (system / user / history) — right before the call
+    reaches the LLM client. Independent of ``LOG_LLM_REQUESTS`` (which logs at
+    the provider boundary): this is the prompt-architecture view, showing the
+    template after placeholder substitution.
+    """
+    return os.environ.get("PROMPT_DEBUG", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }

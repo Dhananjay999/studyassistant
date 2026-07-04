@@ -1,4 +1,4 @@
-"""Orchestrator contract: plan-a-turn prompt and structured-output schema.
+"""Orchestrator contract: plan-a-turn prompt template and output schema.
 
 The orchestrator is the FIRST stage of the pipeline. In one structured call
 it makes two decisions: (1) clarify or run a tool, and (2) which tool. It does
@@ -14,33 +14,35 @@ cases, negative cases, and edge cases, so the same input always plans the
 same way.
 
 The planner never writes an answer, so it does NOT inherit Aeva's answer-facing
-``SYSTEM_PROMPT`` (identity, formatting, teaching rules) — that would be pure
-wasted context on every turn. It gets ``PLAN_SYSTEM_PROMPT`` instead: a one-line
-directive that it is a router returning only JSON. All routing knowledge lives
-in ``PLAN_TURN_PROMPT`` (the user turn), keeping the system instruction tiny.
+``{SYSTEM_PROMPT}`` block (identity, formatting, teaching rules) — that would
+be pure wasted context on every turn — and no ``{USER_PROFILE}`` either: the
+planner emits JSON, never prose, so personalization cannot change its output.
+Its system channel is a one-line directive that it is a router returning only
+JSON; all routing knowledge lives in the user channel.
 """
 
-# Minimal system instruction for the planner. Deliberately tiny: the planner
-# emits JSON, never prose, so none of the answer-facing rules apply to it.
-PLAN_SYSTEM_PROMPT = (
-    "You are a routing layer, not the assistant. Decide the next action and "
-    "return only JSON matching the provided schema. Never write a reply to "
-    "the student."
-)
+from aeva.llm.prompts.builder import PromptTemplate
 
-PLAN_TURN_PROMPT = """
+PLAN_TURN_TEMPLATE = PromptTemplate(
+    name="plan_turn",
+    system=(
+        "You are a routing layer, not the assistant. Decide the next action "
+        "and return only JSON matching the provided schema. Never write a "
+        "reply to the student."
+    ),
+    user="""{CONVERSATION_CONTEXT}
 You are Aeva's planning layer.
 
 Never answer the student. Decide the next action and return only JSON matching the provided schema.
 
 Available tools:
-{tools}
+{AVAILABLE_TOOLS}
 
-{media_hint}
-{clar_hint}
+{MEDIA_HINT}
+{CLARIFICATION_HINT}
 
 Student message:
-{message}
+{USER_MESSAGE}
 
 Use the recent conversation to resolve follow-up references such as "explain more", "quiz me", "summarize this", or "in simpler terms". The current message has highest priority, followed by recent conversation and selected media.
 
@@ -112,7 +114,11 @@ When action="clarify", return:
 - questions: usually one question with 3-6 concise suggested options.
 
 Return only JSON matching the supplied schema.
-"""
+""",
+    optional=("CLARIFICATION_HINT",),
+    markers=("CONVERSATION_CONTEXT",),
+    uses_history=True,
+)
 
 PLAN_TURN_SCHEMA: dict = {
     "type": "object",

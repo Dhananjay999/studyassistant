@@ -189,12 +189,13 @@ export const ChatComposer = forwardRef<
             </motion.div>
           )}
         </AnimatePresence>
-        <div
-          className={cn(
-            "glass-strong flex items-end gap-2 rounded-2xl p-2 shadow-glow",
-            "focus-within:ring-2 focus-within:ring-ring/40",
-          )}
-        >
+        <div className="composer-shell">
+          <div
+            className={cn(
+              "flex items-end gap-2 bg-card/90 p-2 backdrop-blur-xl",
+              "supports-[backdrop-filter]:bg-card/80",
+            )}
+          >
           <input
             ref={fileRef}
             type="file"
@@ -248,6 +249,7 @@ export const ChatComposer = forwardRef<
           >
             <ArrowUp className="h-4 w-4" />
           </Button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,34 +1,68 @@
 import { useMemo, useState } from "react";
-import { GraduationCap, Layers, Search } from "lucide-react";
-import { AppShell } from "@/components/AppShell";
+import { GraduationCap, Layers } from "lucide-react";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { GlassCard } from "@/components/common/GlassCard";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Seo } from "@/components/common/Seo";
+import { ListToolbar } from "@/components/common/list";
 import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { useFlashcardSets } from "@/hooks/api";
+import { useListQuery } from "@/hooks/useListQuery";
+import {
+  applyListQuery,
+  byDateAsc,
+  byDateDesc,
+  type ListConfig,
+} from "@/lib/listQuery";
+import type { FlashcardListItem } from "@/types";
+
+/** Sort/filter config for the flashcard-sets list. */
+const FLASHCARD_CONFIG: ListConfig<FlashcardListItem> = {
+  defaultSort: "recent",
+  sorts: [
+    { value: "recent", label: "Recently created", compare: (a, b) => byDateDesc(a.created_at, b.created_at) },
+    { value: "oldest", label: "Oldest", compare: (a, b) => byDateAsc(a.created_at, b.created_at) },
+    { value: "az", label: "Alphabetical (A–Z)", compare: (a, b) => a.title.localeCompare(b.title) },
+    { value: "most_cards", label: "Most cards", compare: (a, b) => b.card_count - a.card_count },
+  ],
+  filters: [
+    {
+      id: "progress",
+      label: "Progress",
+      kind: "multi",
+      options: [
+        { value: "not_started", label: "Not started" },
+        { value: "in_progress", label: "In progress" },
+        { value: "mastered", label: "Mastered" },
+      ],
+      predicate: (s, sel) =>
+        sel.some((v) =>
+          v === "not_started"
+            ? s.studied === 0
+            : v === "mastered"
+              ? s.card_count > 0 && s.mastered === s.card_count
+              : s.studied > 0 && s.mastered < s.card_count,
+        ),
+    },
+  ],
+  searchFields: (s) => [s.title, s.topic],
+};
 
 export default function FlashcardsPage() {
   const { data: sets = [], isLoading } = useFlashcardSets();
   const [activeSet, setActiveSet] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
 
-  // Instant client-side filter by title or topic. Deep card-content search is
+  // Instant client-side search / sort / filter. Deep card-content search is
   // available from the global command palette (Cmd/Ctrl+F).
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return sets;
-    return sets.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) ||
-        (s.topic ?? "").toLowerCase().includes(q),
-    );
-  }, [sets, query]);
+  const listQuery = useListQuery(FLASHCARD_CONFIG);
+  const filtered = useMemo(
+    () => applyListQuery(sets, FLASHCARD_CONFIG, listQuery.state),
+    [sets, listQuery.state],
+  );
 
   const study = (id: string) => {
     setActiveSet(id);
@@ -36,7 +70,7 @@ export default function FlashcardsPage() {
   };
 
   return (
-    <AppShell title="Flashcards">
+    <PageContainer title="Flashcards">
       <Seo title="Flashcards — Aeva" noindex path="/flashcards" />
       <div className="p-4">
         {isLoading ? (
@@ -52,19 +86,15 @@ export default function FlashcardsPage() {
           </div>
         ) : (
           <>
-            <div className="relative mb-4 max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search flashcards by title or topic…"
-                className="pl-9"
-                aria-label="Search flashcards"
-              />
-            </div>
+            <ListToolbar
+              className="mb-4"
+              config={FLASHCARD_CONFIG}
+              query={listQuery}
+              placeholder="Search flashcards by title or topic…"
+            />
             {filtered.length === 0 ? (
               <p className="py-16 text-center text-sm text-muted-foreground">
-                No flashcard sets match “{query}”.
+                No flashcard sets match your search or filters.
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -75,7 +105,7 @@ export default function FlashcardsPage() {
                   return (
                 <GlassCard
                   key={s.id}
-                  className="flex flex-col p-4 transition-shadow hover:shadow-glow"
+                  className="flex flex-col p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="line-clamp-2 font-display text-base font-bold">
@@ -103,7 +133,8 @@ export default function FlashcardsPage() {
                   </p>
                   <Button
                     onClick={() => study(s.set_id)}
-                    className="mt-4 w-full gap-2 bg-brand-gradient text-white"
+                    variant="brand"
+                    className="mt-4 w-full gap-2"
                   >
                     <GraduationCap className="h-4 w-4" /> Study
                   </Button>
@@ -117,6 +148,6 @@ export default function FlashcardsPage() {
       </div>
 
       <FlashcardViewer setId={activeSet} open={open} onOpenChange={setOpen} />
-    </AppShell>
+    </PageContainer>
   );
 }

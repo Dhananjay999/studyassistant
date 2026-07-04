@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Seo } from "@/components/common/Seo";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { GlassCard } from "@/components/common/GlassCard";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
@@ -74,7 +75,7 @@ export default function BookmarkDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="grid h-dvh place-items-center bg-background">
+      <div className="grid h-full place-items-center bg-background">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
       </div>
     );
@@ -82,7 +83,7 @@ export default function BookmarkDetailPage() {
 
   if (!bookmark) {
     return (
-      <div className="grid h-dvh place-items-center bg-background text-center">
+      <div className="grid h-full place-items-center bg-background text-center">
         <div>
           <p className="font-medium">Bookmark not found</p>
           <Button
@@ -102,9 +103,9 @@ export default function BookmarkDetailPage() {
   const busy = createSession.isPending;
 
   return (
-    <>
+    <PageContainer title="Saved content">
       <Seo title="Saved content — Aeva" noindex path="/bookmarks" />
-      <div className="mx-auto min-h-dvh max-w-3xl bg-background px-4 py-4">
+      <div className="mx-auto max-w-3xl px-4 py-4">
         <header className="mb-4 flex items-center gap-2">
           <Button
             variant="ghost"
@@ -198,6 +199,6 @@ export default function BookmarkDetailPage() {
         open={cardsOpen}
         onOpenChange={setCardsOpen}
       />
-    </>
+    </PageContainer>
   );
 }

@@ -18,7 +18,9 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        academic: "bg-gradient-to-r from-academic-teal to-academic-burgundy text-white hover:shadow-lg hover:scale-105 transition-all duration-300",
+        brand:
+          "bg-primary text-primary-foreground font-semibold shadow-sm hover:bg-primary/90 hover:shadow-md active:scale-[0.98]",
+        academic: "bg-gradient-to-r from-academic-teal to-academic-burgundy text-white hover:shadow-md hover:brightness-105 transition-all duration-300",
         academicOutline: "border-2 border-academic-teal text-academic-teal bg-background hover:bg-academic-teal hover:text-white transition-all duration-300",
         academicRose: "bg-academic-rose text-white hover:bg-academic-burgundy hover:shadow-md transition-all duration-300",
       },

@@ -34,6 +34,9 @@ class QuizRepository:
                 # Persisted so the quizzes list can show difficulty without
                 # re-opening each quiz. Defaults to "medium" for older rows.
                 "difficulty": quiz_data.get("difficulty") or "medium",
+                # Exam Mode marking scheme + timer ({} for ordinary quizzes),
+                # reused by every attempt for scoring and display.
+                "exam_config": quiz_data.get("exam_config") or {},
             })
             .execute()
         )
@@ -67,6 +70,20 @@ class QuizRepository:
             "topic": quiz["topic"],
             "questions": questions_out,
         }
+
+    def update_exam_config(
+        self, quiz_id: str, user_id: str, exam_config: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Persist a new Exam Mode config on the quiz (owner-scoped)."""
+        result = (
+            self.supabase.client.table("quizzes")
+            .update({"exam_config": exam_config})
+            .eq("id", quiz_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
 
     def list_quizzes(self, user_id: str) -> list[dict[str, Any]]:
         """List the user's quizzes with counts and best-attempt summary."""
@@ -102,6 +119,7 @@ class QuizRepository:
                 "session_id": q["session_id"],
                 "created_at": q["created_at"],
                 "difficulty": q.get("difficulty") or "medium",
+                "exam_config": q.get("exam_config") or {},
                 "question_count": counts.get(q["id"], 0),
                 **summaries.get(q["id"], self._empty_summary()),
             }
@@ -191,6 +209,8 @@ class QuizRepository:
             "quiz_id": quiz["id"],
             "title": quiz["title"],
             "topic": quiz["topic"],
+            "difficulty": quiz.get("difficulty") or "medium",
+            "exam_config": quiz.get("exam_config") or {},
             "questions": questions,
         }
 
@@ -258,6 +278,9 @@ class QuizRepository:
                 "partial_count": evaluation.get("partial_count", 0),
                 "unanswered_count": evaluation.get("unanswered_count", 0),
                 "time_taken_seconds": evaluation.get("time_taken_seconds", 0),
+                # Marks-based fields for exam attempts (None for ordinary ones).
+                "final_score": evaluation.get("final_score"),
+                "max_marks": evaluation.get("max_marks"),
                 "created_at": r["created_at"],
                 "is_best": is_best,
                 "has_analysis": bool(feedback.get("study_plan")),

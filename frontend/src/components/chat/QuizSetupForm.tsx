@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { GraduationCap, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,9 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ExamSettingsFields } from "@/components/quiz/ExamSettingsFields";
 import { useAppConfig } from "@/hooks/api";
 import { cn } from "@/lib/utils";
-import type { Difficulty, QuestionType, QuizOptions } from "@/types";
+import { isExamConfig, NEUTRAL_EXAM_CONFIG } from "@/lib/quizFormat";
+import type { Difficulty, ExamConfig, QuestionType, QuizOptions } from "@/types";
 
 const TYPE_OPTIONS: { value: QuestionType; label: string }[] = [
   { value: "single_select", label: "Single select" },
@@ -28,6 +30,7 @@ export function QuizSetupForm({
   initialCount,
   initialTypes,
   initialDifficulty,
+  initialExamConfig,
   mediaAvailable = false,
   busy = false,
   onGenerate,
@@ -37,6 +40,7 @@ export function QuizSetupForm({
   initialCount?: number | null;
   initialTypes?: QuestionType[] | null;
   initialDifficulty?: Difficulty | null;
+  initialExamConfig?: ExamConfig | null;
   mediaAvailable?: boolean;
   busy?: boolean;
   onGenerate: (options: QuizOptions) => void;
@@ -56,6 +60,11 @@ export function QuizSetupForm({
   );
   const [instructions, setInstructions] = useState("");
   const [useMedia, setUseMedia] = useState(false);
+
+  // Exam Mode: editable marking scheme + timer (see ExamSettingsFields).
+  const [exam, setExam] = useState<ExamConfig>(
+    initialExamConfig ?? NEUTRAL_EXAM_CONFIG,
+  );
 
   const isMixed = ALL_TYPES.every((t) => types.includes(t));
   const countNum = Number(count);
@@ -77,11 +86,12 @@ export function QuizSetupForm({
       question_types: types,
       use_media: mediaAvailable ? useMedia : undefined,
       additional_instructions: instructions.trim() || undefined,
+      exam_config: isExamConfig(exam) ? exam : undefined,
     });
   };
 
   return (
-    <div className={cn("space-y-4", className)}>
+    <div className={cn("space-y-3", className)}>
       <div className="space-y-1.5">
         <Label className="text-xs">Topic</Label>
         <Input
@@ -209,6 +219,23 @@ export function QuizSetupForm({
           </div>
         </div>
       )}
+
+      <div className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+        <div className="flex items-center justify-between">
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+            <GraduationCap className="h-3.5 w-3.5 text-primary" />
+            Exam settings
+          </p>
+          <span className="text-[10px] text-muted-foreground">
+            per correct / wrong / skipped
+          </span>
+        </div>
+        <ExamSettingsFields
+          value={exam}
+          onChange={setExam}
+          onPatternDefaultType={(t) => setTypes([t])}
+        />
+      </div>
 
       <Button
         onClick={submit}

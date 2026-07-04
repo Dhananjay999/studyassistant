@@ -1,74 +1,84 @@
-"""Per-capability LLM contracts: prompts, output schemas, and tool params.
+"""Per-capability LLM contracts: prompt templates, schemas, and tool params.
 
-Each module groups everything that defines one capability's interaction with
-the LLM, so the response contract stays stable when models or providers change.
+Each module declares one complete :class:`PromptTemplate` — the *entire*
+prompt its capability sends, with ``{PLACEHOLDER}`` tokens for the shared
+blocks and runtime values — plus its structured-output schema and MCP tool
+parameters, so the response contract stays stable when models or providers
+change. :class:`PromptBuilder` (``builder``) is the single place placeholders
+are resolved; no prompt concatenation happens anywhere else.
+
 Names are re-exported here so callers can use ``from aeva.llm import prompts``
-and access ``prompts.SYSTEM_PROMPT``, ``prompts.PLAN_TURN_SCHEMA``, etc.
+and access ``prompts.WEB_SEARCH_TEMPLATE``, ``prompts.PLAN_TURN_SCHEMA``, etc.
 """
 
+from aeva.llm.prompts.blocks import user_profile_segment
+from aeva.llm.prompts.builder import (
+    PromptBuilder,
+    PromptError,
+    PromptTemplate,
+    RenderedPrompt,
+)
 from aeva.llm.prompts.flashcard import (
-    FLASHCARD_GENERATION_PROMPT,
     FLASHCARD_GENERATION_SCHEMA,
+    FLASHCARD_GENERATION_TEMPLATE,
     FLASHCARD_GENERATOR_PARAMS,
 )
 from aeva.llm.prompts.media import (
     MEDIA_PARAMS,
-    MEDIA_PROMPT,
+    MEDIA_TEMPLATE,
     NO_CONTEXT_MESSAGE,
     NO_MEDIA_MESSAGE,
 )
 from aeva.llm.prompts.orchestrator import (
-    PLAN_SYSTEM_PROMPT,
-    PLAN_TURN_PROMPT,
     PLAN_TURN_SCHEMA,
+    PLAN_TURN_TEMPLATE,
 )
-from aeva.llm.prompts.personalization import (
-    build_personalization_block,
-    personalize,
-)
+from aeva.llm.prompts.personalization import build_personalization_block
 from aeva.llm.prompts.quiz_analysis import (
-    QUIZ_ANALYSIS_PROMPT,
     QUIZ_ANALYSIS_SCHEMA,
+    QUIZ_ANALYSIS_TEMPLATE,
 )
 from aeva.llm.prompts.quiz_feedback import (
-    QUIZ_FEEDBACK_PROMPT,
     QUIZ_FEEDBACK_SCHEMA,
+    QUIZ_FEEDBACK_TEMPLATE,
 )
 from aeva.llm.prompts.quiz_generation import (
-    QUIZ_GENERATION_PROMPT,
     QUIZ_GENERATION_SCHEMA,
+    QUIZ_GENERATION_TEMPLATE,
     QUIZ_GENERATOR_PARAMS,
 )
-from aeva.llm.prompts.response_meta import (
-    ANSWER_META_INSTRUCTION,
-    META_SENTINEL,
-)
+from aeva.llm.prompts.response_meta import META_SENTINEL
 from aeva.llm.prompts.system import SYSTEM_PROMPT
-from aeva.llm.prompts.web_search import WEB_SEARCH_PARAMS, WEB_SEARCH_PROMPT
+from aeva.llm.prompts.web_search import (
+    WEB_SEARCH_PARAMS,
+    WEB_SEARCH_TEMPLATE,
+)
 
 __all__ = [
-    "ANSWER_META_INSTRUCTION",
-    "FLASHCARD_GENERATION_PROMPT",
     "FLASHCARD_GENERATION_SCHEMA",
+    "FLASHCARD_GENERATION_TEMPLATE",
     "FLASHCARD_GENERATOR_PARAMS",
     "MEDIA_PARAMS",
-    "MEDIA_PROMPT",
+    "MEDIA_TEMPLATE",
     "META_SENTINEL",
     "NO_CONTEXT_MESSAGE",
     "NO_MEDIA_MESSAGE",
-    "PLAN_SYSTEM_PROMPT",
-    "PLAN_TURN_PROMPT",
     "PLAN_TURN_SCHEMA",
-    "QUIZ_ANALYSIS_PROMPT",
+    "PLAN_TURN_TEMPLATE",
     "QUIZ_ANALYSIS_SCHEMA",
-    "QUIZ_FEEDBACK_PROMPT",
+    "QUIZ_ANALYSIS_TEMPLATE",
     "QUIZ_FEEDBACK_SCHEMA",
-    "QUIZ_GENERATION_PROMPT",
+    "QUIZ_FEEDBACK_TEMPLATE",
     "QUIZ_GENERATION_SCHEMA",
+    "QUIZ_GENERATION_TEMPLATE",
     "QUIZ_GENERATOR_PARAMS",
     "SYSTEM_PROMPT",
     "WEB_SEARCH_PARAMS",
-    "WEB_SEARCH_PROMPT",
+    "WEB_SEARCH_TEMPLATE",
+    "PromptBuilder",
+    "PromptError",
+    "PromptTemplate",
+    "RenderedPrompt",
     "build_personalization_block",
-    "personalize",
+    "user_profile_segment",
 ]

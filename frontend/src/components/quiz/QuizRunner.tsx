@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,15 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useSubmitQuiz } from "@/hooks/api";
 import { useSwipe } from "@/hooks/useSwipe";
+import { markingSummary } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
-import type { QuizContent, QuizSubmitResult } from "@/types";
+import { hasExamConfig, type QuizContent, type QuizSubmitResult } from "@/types";
+
+/** "12:05" clock from a whole number of seconds. */
+function clock(seconds: number): string {
+  const s = Math.max(0, seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 /**
  * The quiz-taking experience: one question at a time, single/true-false answers
@@ -33,10 +41,44 @@ export function QuizRunner({
   const startedAt = useRef(0);
   const submitMutation = useSubmitQuiz();
 
-  const questions = quiz.questions ?? [];
+  const questions = useMemo(() => quiz.questions ?? [], [quiz.questions]);
   const total = questions.length;
   const q = questions[idx];
   const answered = Object.values(answers).filter((a) => a.length).length;
+
+  // Exam Mode: countdown timer + a live exam info panel. Absent for ordinary
+  // practice quizzes, which render exactly as before.
+  const exam = hasExamConfig(quiz.exam_config) ? quiz.exam_config : null;
+  const timerSeconds = exam?.timer_seconds ?? 0;
+  const hasTimer = timerSeconds > 0;
+  const [remaining, setRemaining] = useState(timerSeconds);
+  const [expired, setExpired] = useState(false);
+  const deadlineRef = useRef(0);
+  const submittedRef = useRef(false);
+
+  // Track visited questions so "skipped" (visited but left unanswered) is a
+  // meaningful live stat distinct from "remaining" (not yet reached).
+  const [visited, setVisited] = useState<Set<number>>(() => new Set([0]));
+  useEffect(() => {
+    setVisited((prev) => {
+      if (prev.has(idx)) return prev;
+      const next = new Set(prev);
+      next.add(idx);
+      return next;
+    });
+  }, [idx]);
+
+  const skipped = useMemo(
+    () =>
+      [...visited].filter(
+        (i) => i !== idx && !(answers[questions[i]?.id]?.length),
+      ).length,
+    [visited, idx, answers, questions],
+  );
+
+  // Low-time warning under 10% of the limit (capped at 60s).
+  const warnThreshold = Math.min(60, Math.round(timerSeconds * 0.1));
+  const lowTime = hasTimer && remaining <= warnThreshold;
 
   // Touch: swipe left → next question, swipe right → previous. Mirrors the
   // arrow-key navigation and the on-screen Prev/Next buttons.
@@ -48,7 +90,24 @@ export function QuizRunner({
   // Start the timer when the runner mounts (i.e. a new attempt begins).
   useEffect(() => {
     startedAt.current = Date.now();
-  }, []);
+    deadlineRef.current = startedAt.current + timerSeconds * 1000;
+  }, [timerSeconds]);
+
+  // Countdown: tick once a second and auto-submit when it hits zero.
+  useEffect(() => {
+    if (!hasTimer) return;
+    const tick = () => {
+      const rem = Math.max(
+        0,
+        Math.round((deadlineRef.current - Date.now()) / 1000),
+      );
+      setRemaining(rem);
+      if (rem <= 0) setExpired(true);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [hasTimer]);
 
   // Arrow-key navigation between questions.
   useEffect(() => {
@@ -77,11 +136,14 @@ export function QuizRunner({
       };
     });
 
-  const submit = async () => {
+  const submit = async (auto = false) => {
+    // Guard against a double submit (e.g. manual click racing the timer).
+    if (submittedRef.current) return;
     if (!quiz.quiz_id) {
       toast.error("This quiz couldn't be identified. Please reopen it.");
       return;
     }
+    submittedRef.current = true;
     const timeTakenSeconds = Math.max(
       1,
       Math.round((Date.now() - startedAt.current) / 1000),
@@ -92,11 +154,19 @@ export function QuizRunner({
         answers,
         timeTakenSeconds,
       });
+      if (auto) toast.info("Time's up — your exam was submitted.");
       onSubmitted(res);
     } catch {
+      submittedRef.current = false;
       toast.error("Couldn't submit the quiz. Please try again.");
     }
   };
+
+  // Auto-submit once the countdown expires (reads the latest answers).
+  useEffect(() => {
+    if (expired) void submit(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expired]);
 
   return (
     <>
@@ -106,9 +176,51 @@ export function QuizRunner({
             <span>
               Question {idx + 1} of {total}
             </span>
-            <span>{answered} answered</span>
+            {hasTimer ? (
+              <span
+                className={cn(
+                  "flex items-center gap-1 font-mono font-semibold tabular-nums",
+                  lowTime
+                    ? "animate-pulse text-rose-600 dark:text-rose-400"
+                    : "text-foreground",
+                )}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                {clock(remaining)}
+              </span>
+            ) : (
+              <span>{answered} answered</span>
+            )}
           </div>
           <Progress value={((idx + 1) / total) * 100} className="mt-2 h-1" />
+          {exam && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+              <span>
+                Attempted{" "}
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                  {answered}
+                </span>
+              </span>
+              <span>
+                Remaining{" "}
+                <span className="font-semibold text-foreground">
+                  {total - answered}
+                </span>
+              </span>
+              <span>
+                Skipped{" "}
+                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                  {skipped}
+                </span>
+              </span>
+              <span className="ml-auto">
+                Marking{" "}
+                <span className="font-mono font-semibold text-foreground">
+                  {markingSummary(exam)}
+                </span>
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -192,7 +304,7 @@ export function QuizRunner({
         ) : (
           <Button
             size="sm"
-            onClick={submit}
+            onClick={() => submit()}
             disabled={submitMutation.isPending}
             className="gap-1.5 bg-brand-gradient text-white"
           >

@@ -1,6 +1,7 @@
 """Supabase service for DB, storage, and auth."""
 
 import logging
+import threading
 from typing import Any
 from urllib.parse import urlencode
 
@@ -26,18 +27,29 @@ def _vec_to_str(vector: list[float]) -> str:
 class SupabaseService:
     """Central Supabase client wrapper."""
 
-    _client: Client | None = None
+    _local = threading.local()
     _jwks_client: PyJWKClient | None = None
 
     @property
     def client(self) -> Client:
-        """Lazy-init Supabase client within app context."""
-        if SupabaseService._client is None:
-            SupabaseService._client = create_client(
+        """Lazy-init a per-thread Supabase client within app context.
+
+        The client is stored in thread-local storage because the
+        underlying postgrest/httpx client speaks HTTP/2, whose sync
+        state machine is not thread-safe: sharing one connection across
+        Flask worker threads corrupts the multiplexed stream state
+        (``StreamIDTooLowError``, ``SEND_HEADERS in state 5``). Giving
+        each thread its own client keeps every HTTP/2 connection
+        confined to a single thread.
+        """
+        client = getattr(SupabaseService._local, "client", None)
+        if client is None:
+            client = create_client(
                 current_app.config["SUPABASE_URL"],
                 current_app.config["SUPABASE_SERVICE_ROLE_KEY"],
             )
-        return SupabaseService._client
+            SupabaseService._local.client = client
+        return client
 
     # --- OAuth (server-side PKCE flow) ---
 

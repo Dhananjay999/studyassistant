@@ -58,13 +58,53 @@ class QuizEngine:
         key = {cls._normalize(a) for a in correct}
         return chosen != key and bool(chosen & key)
 
+    @staticmethod
+    def _exam_marks(
+        totals: dict[str, int],
+        marking: dict[str, float],
+    ) -> dict[str, float]:
+        """Marks-based breakdown for an exam attempt.
+
+        Partial multi-select answers count as wrong for exam marking (an exam
+        awards marks only for a fully correct answer), so every attempted but
+        not-fully-correct question draws the negative mark.
+        """
+        correct = float(marking.get("correct", 1.0))
+        negative = float(marking.get("negative", 0.0))
+        skip = float(marking.get("skip", 0.0))
+        exam_incorrect = totals["attempted_count"] - totals["correct_count"]
+        positive_marks = totals["correct_count"] * correct
+        negative_marks = exam_incorrect * negative
+        skip_marks = totals["unanswered_count"] * skip
+        return {
+            "positive_marks": round(positive_marks, 2),
+            "negative_marks": round(negative_marks, 2),
+            "skip_marks": round(skip_marks, 2),
+            "final_score": round(
+                positive_marks + negative_marks + skip_marks, 2
+            ),
+            "max_marks": round(totals["total"] * correct, 2),
+            "exam_incorrect": exam_incorrect,
+            "marking": {
+                "correct": correct,
+                "negative": negative,
+                "skip": skip,
+            },
+        }
+
     @classmethod
     def evaluate(
         cls,
         questions: list[dict[str, Any]],
         user_answers: dict[str, list[str]],
+        marking: dict[str, float] | None = None,
     ) -> dict[str, Any]:
-        """Evaluate answers and return score + per-question breakdown."""
+        """Evaluate answers and return score + per-question breakdown.
+
+        When ``marking`` (an exam scheme ``{correct, negative, skip}``) is
+        provided, the result also carries a marks-based breakdown; otherwise the
+        output is the accuracy-only shape unchanged.
+        """
         per_question: list[dict[str, Any]] = []
         correct_count = 0
         partial_count = 0
@@ -98,7 +138,7 @@ class QuizEngine:
         total = len(questions)
         score = (correct_count / total * 100) if total else 0.0
         incorrect_count = attempted_count - correct_count - partial_count
-        return {
+        result: dict[str, Any] = {
             "score": round(score, 1),
             "total": total,
             "correct_count": correct_count,
@@ -108,3 +148,14 @@ class QuizEngine:
             "unanswered_count": total - attempted_count,
             "per_question": per_question,
         }
+        if marking is not None:
+            result.update(cls._exam_marks(
+                {
+                    "total": total,
+                    "correct_count": correct_count,
+                    "attempted_count": attempted_count,
+                    "unanswered_count": total - attempted_count,
+                },
+                marking,
+            ))
+        return result

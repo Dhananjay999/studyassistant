@@ -103,17 +103,17 @@ class FlashcardGeneratorTool(BaseTool):
                 source_type = "media"
                 history = None
 
-        prompt = prompts.FLASHCARD_GENERATION_PROMPT.format(
-            topic=topic,
-            count=count,
-            context=ctx.enriched_message,
+        rendered = prompts.PromptBuilder.build(
+            prompts.FLASHCARD_GENERATION_TEMPLATE,
+            TOPIC=str(topic),
+            CARD_COUNT=str(count),
+            RECENT_CONTEXT=ctx.enriched_message,
+            USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
         data = self.llm.generate_structured(
-            prompt,
+            rendered.user_message,
             prompts.FLASHCARD_GENERATION_SCHEMA,
-            system_prompt=prompts.personalize(
-                prompts.SYSTEM_PROMPT, ctx.personalization
-            ),
+            system_prompt=rendered.system_prompt,
             history=history,
             attachments=attachments,
         )

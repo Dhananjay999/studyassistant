@@ -1,7 +1,7 @@
 import { ChevronRight, History, Loader2, Sparkles, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQuizAttempts } from "@/hooks/api";
-import { relativeDay } from "@/lib/quizFormat";
+import { formatMarks, relativeDay } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
 import { QuizAnalytics } from "@/components/quiz/QuizAnalytics";
 
@@ -54,6 +54,7 @@ export function QuizAttemptsTab({
       <div className="space-y-2">
         {attempts.map((a) => {
           const pct = Math.round(a.score);
+          const isExam = a.final_score !== undefined && a.final_score !== null;
           return (
             <button
               key={a.id}
@@ -67,8 +68,15 @@ export function QuizAttemptsTab({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-display text-lg font-bold tabular-nums">
-                    {pct}%
+                    {isExam
+                      ? formatMarks(a.final_score ?? 0, a.max_marks)
+                      : `${pct}%`}
                   </span>
+                  {isExam && (
+                    <span className="text-xs text-muted-foreground">
+                      {pct}%
+                    </span>
+                  )}
                   {a.is_best && (
                     <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
                       <Star className="h-3 w-3 fill-current" /> Best score

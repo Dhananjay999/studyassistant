@@ -13,31 +13,18 @@ import {
   Bookmark,
   FolderOpen,
   GraduationCap,
-  LogOut,
-  Menu,
-  Search,
   Sparkles,
   Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   Drawer,
   DrawerContent,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { Seo } from "@/components/common/Seo";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { BrandLogo } from "@/components/common/BrandLogo";
 import { GlassCard } from "@/components/common/GlassCard";
-import { AppSidebar } from "@/components/chat/AppSidebar";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { BookmarkPreview } from "@/components/chat/BookmarkPreview";
@@ -48,8 +35,8 @@ import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
-import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
-import { MobileNav } from "@/components/MobileNav";
+import { useShell } from "@/components/layout/AppLayout";
+import { useHeaderSlot } from "@/components/layout/HeaderSlot";
 import { OnboardingFlow } from "@/components/learning/OnboardingFlow";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -59,7 +46,6 @@ import {
 import { useIsDesktop } from "@/hooks/use-mobile";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
 import { useMediaProcessing } from "@/hooks/useMediaProcessing";
-import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { useSwipe } from "@/hooks/useSwipe";
 import type { ThinkingHint } from "@/lib/loadingMessages";
 import {
@@ -96,7 +82,7 @@ const PDFViewer = lazy(() => import("@/components/PDFViewer"));
 const uid = () => crypto.randomUUID();
 
 export default function ChatPage() {
-  const { user, logout, refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -125,14 +111,17 @@ export default function ChatPage() {
   );
   const [pendingQuiz, setPendingQuiz] = useState<PendingQuizSetup | null>(null);
   const [thinkingHint, setThinkingHint] = useState<ThinkingHint | undefined>();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+
+  // Shell coordination: open the persistent nav drawer, auto-collapse the rail
+  // while a document is docked, and own Cmd/Ctrl+/ for the composer.
+  const { setDocked, openMobileNav, registerSlashHandler } = useShell();
 
   // Touch navigation: swipe right opens the nav drawer, swipe left opens the
   // files sheet. Touch-only, so desktop pointer use is unaffected.
   const chatSwipe = useSwipe({
-    onSwipeRight: () => setSidebarOpen(true),
+    onSwipeRight: openMobileNav,
     onSwipeLeft: () => setMediaOpen(true),
   });
 
@@ -185,24 +174,12 @@ export default function ChatPage() {
     window.addEventListener("pointerup", onUp);
   };
 
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [seedBanner, setSeedBanner] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   // Read-only bookmark preview (no session is created until the user acts).
   const [preview, setPreview] = useState<BookmarkData | null>(null);
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem("aeva_sidebar_collapsed") === "1",
-  );
-  // The user's own collapse preference, kept separate from the automatic
-  // collapse we apply while a document is docked (so it can be restored).
-  const userCollapsedRef = useRef(collapsed);
-  const toggleCollapse = () =>
-    setCollapsed((c) => {
-      const next = !c;
-      localStorage.setItem("aeva_sidebar_collapsed", next ? "1" : "0");
-      userCollapsedRef.current = next;
-      return next;
-    });
+  // Message to scroll to + flash when opened from a bookmark ("Open convo").
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // Document viewer: docked beside the chat on desktop, full-screen on mobile
   // (or when the user expands it). State lives here so the layout can react —
@@ -234,11 +211,11 @@ export default function ChatPage() {
     window.addEventListener("pointerup", onUp);
   };
 
-  // Auto-collapse the nav sidebar while a document is docked, freeing width for
-  // the chat + PDF; restore the user's preference once it's closed/expanded.
+  // Auto-collapse the persistent nav rail while a document is docked, freeing
+  // width for the chat + PDF; the shell restores the user's preference after.
   useEffect(() => {
-    setCollapsed(pdfDocked ? true : userCollapsedRef.current);
-  }, [pdfDocked]);
+    setDocked(pdfDocked);
+  }, [pdfDocked, setDocked]);
 
   const { start, stop, streaming } = useAssistantStream();
   const processing = useMediaProcessing();
@@ -266,6 +243,18 @@ export default function ChatPage() {
     if (st?.previewBookmark) {
       setPreview(st.previewBookmark);
       setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+
+  /* --- scroll to a specific message when opened from a bookmark. Consume the
+     router state into local state and drop it (keeping ?sessionId) so a
+     refresh won't re-trigger the flash. --- */
+  useEffect(() => {
+    const st = location.state as { highlightMessageId?: string } | null;
+    if (st?.highlightMessageId) {
+      setHighlightId(st.highlightMessageId);
+      navigate(`${location.pathname}${location.search}`, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
@@ -477,6 +466,8 @@ export default function ChatPage() {
                 null,
               difficulty:
                 (data.difficulty as PendingQuizSetup["difficulty"]) ?? null,
+              examConfig:
+                (data.exam_config as PendingQuizSetup["examConfig"]) ?? null,
             });
           },
           onError: (msg) => {
@@ -731,9 +722,19 @@ export default function ChatPage() {
     setPendingClar(null);
     setPendingQuiz(null);
     setSearchParams({});
-    setSidebarOpen(false);
     composerRef.current?.focus();
   };
+
+  // "New chat" from the persistent sidebar navigates here with this flag; reset
+  // to a fresh, empty composer, then drop the flag so a refresh won't replay it.
+  useEffect(() => {
+    const st = location.state as { newChat?: boolean } | null;
+    if (st?.newChat) {
+      handleNewChat();
+      navigate("/chat", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const handleDeleteSession = async (id: string) => {
     await deleteSession.mutateAsync(id);
@@ -747,11 +748,12 @@ export default function ChatPage() {
   const openQuizSetup = () =>
     setPendingQuiz({ topic: "", mediaAvailable: selected.size > 0 });
 
-  useGlobalShortcuts({
-    onCommandPalette: () => setPaletteOpen((o) => !o),
-    onNewChat: handleNewChat,
-    onSlashMenu: () => composerRef.current?.openCommands(),
-  });
+  // The chat composer owns Cmd/Ctrl+/ (slash commands) while chat is active;
+  // the shell owns Cmd/Ctrl+F (search) and Cmd/Ctrl+N (new chat).
+  useEffect(() => {
+    registerSlashHandler(() => composerRef.current?.openCommands());
+    return () => registerSlashHandler(null);
+  }, [registerSlashHandler]);
 
   const toggleMedia = (id: string) =>
     setSelected((prev) => {
@@ -770,23 +772,53 @@ export default function ChatPage() {
       return next;
     });
 
-  const renderSidebar = (mobile: boolean) => (
-    <AppSidebar
-      collapsed={mobile ? false : collapsed}
-      canCollapse={!mobile}
-      onToggleCollapse={toggleCollapse}
-      onNewChat={handleNewChat}
-      onSearch={() => setPaletteOpen(true)}
-      onNavigate={mobile ? () => setSidebarOpen(false) : undefined}
-      sessions={sessions}
-      loading={sessionsQuery.isLoading}
-      activeId={activeId}
-      onSelectSession={(id) => {
-        setSearchParams({ sessionId: id });
-        setSidebarOpen(false);
-      }}
-      onDeleteSession={handleDeleteSession}
-    />
+  // Chat-specific header content published into the persistent AppHeader: the
+  // active session title (left) and the mobile/tablet Files & Tools toggles
+  // (right, before the shared controls). The shared controls never rebuild.
+  const filesCount = media.length;
+  const toolsCount = sessionQuizzes.length + sessionFlashcards.length;
+  const sessionTitle = activeSession?.title ?? "Aeva";
+  useHeaderSlot(
+    {
+      start: (
+        <span className="truncate text-sm font-medium">{sessionTitle}</span>
+      ),
+      end: (
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 xl:hidden"
+            onClick={() => setMediaOpen(true)}
+            aria-label="Your files"
+          >
+            <FolderOpen className="h-4 w-4" />
+            <span className="hidden sm:inline">Files</span>
+            {filesCount > 0 && (
+              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
+                {filesCount}
+              </Badge>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 xl:hidden"
+            onClick={() => setToolsOpen(true)}
+            aria-label="Learning tools"
+          >
+            <GraduationCap className="h-4 w-4" />
+            <span className="hidden sm:inline">Tools</span>
+            {toolsCount > 0 && (
+              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
+                {toolsCount}
+              </Badge>
+            )}
+          </Button>
+        </>
+      ),
+    },
+    [sessionTitle, filesCount, toolsCount],
   );
 
   const renderMediaSidebar = (section: "media" | "resources" | "both") => (
@@ -820,109 +852,10 @@ export default function ChatPage() {
     <DocumentViewerContext.Provider value={docViewer.value}>
       <Seo title="StudyAssistant — Chat with Aeva" noindex path="/chat" />
       <div
-        className="flex h-dvh flex-col bg-background"
+        className="relative flex h-full flex-col bg-background"
         style={pdfDocked ? { paddingRight: pdfWidth } : undefined}
       >
-        {/* Top bar */}
-        <header className="z-10 flex items-center gap-2 border-b border-border/50 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open sidebar"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <div className="flex flex-1 items-center gap-2 truncate">
-            <BrandLogo withWordmark={false} />
-            <span className="truncate text-sm font-medium">
-              {activeSession?.title ?? "Aeva"}
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 xl:hidden"
-            onClick={() => setMediaOpen(true)}
-            aria-label="Your files"
-          >
-            <FolderOpen className="h-4 w-4" />
-            <span className="hidden sm:inline">Files</span>
-            {media.length > 0 && (
-              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
-                {media.length}
-              </Badge>
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 xl:hidden"
-            onClick={() => setToolsOpen(true)}
-            aria-label="Learning tools"
-          >
-            <GraduationCap className="h-4 w-4" />
-            <span className="hidden sm:inline">Tools</span>
-            {sessionQuizzes.length + sessionFlashcards.length > 0 && (
-              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
-                {sessionQuizzes.length + sessionFlashcards.length}
-              </Badge>
-            )}
-          </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="hidden lg:inline-flex"
-                onClick={() => navigate("/bookmarks")}
-                aria-label="Bookmarks"
-              >
-                <Bookmark className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Bookmarks</TooltipContent>
-          </Tooltip>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setPaletteOpen(true)}
-            aria-label="Search"
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-          <div className="hidden lg:block">
-            <ThemeToggle />
-          </div>
-          <Avatar className="hidden h-8 w-8 lg:flex">
-            <AvatarImage src={user?.avatar_url || undefined} />
-            <AvatarFallback>
-              {user?.full_name?.[0] || user?.email?.[0] || "?"}
-            </AvatarFallback>
-          </Avatar>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden lg:inline-flex"
-            onClick={logout}
-            aria-label="Log out"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
-        </header>
-
         <div className="flex flex-1 overflow-hidden">
-          {/* Left session sidebar */}
-          <aside className="hidden shrink-0 border-r border-border/50 lg:block">
-            {renderSidebar(false)}
-          </aside>
-          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetContent side="left" className="w-72 p-0">
-              {renderSidebar(true)}
-            </SheetContent>
-          </Sheet>
-
           {/* Chat column */}
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden pb-bottomnav lg:pb-0">
             <div className="flex-1 overflow-y-auto" {...chatSwipe}>
@@ -956,6 +889,7 @@ export default function ChatPage() {
                   onCreateFlashcards={handleCreateFlashcards}
                   onOpenQuiz={openQuiz}
                   onOpenFlashcards={openFlashcards}
+                  highlightId={highlightId}
                 />
               )}
             </div>
@@ -981,6 +915,7 @@ export default function ChatPage() {
                     initialCount={pendingQuiz.questionCount}
                     initialTypes={pendingQuiz.questionTypes}
                     initialDifficulty={pendingQuiz.difficulty}
+                    initialExamConfig={pendingQuiz.examConfig}
                     mediaAvailable={pendingQuiz.mediaAvailable}
                     busy={streaming}
                     onGenerate={(opts) =>
@@ -1088,15 +1023,6 @@ export default function ChatPage() {
         onOpenChange={setFlashcardsOpen}
       />
 
-      <GlobalCommandPalette
-        open={paletteOpen}
-        onOpenChange={setPaletteOpen}
-        onNewChat={handleNewChat}
-        onSelectSession={(id) => setSearchParams({ sessionId: id })}
-      />
-
-      <MobileNav />
-
       <OnboardingFlow
         open={showOnboarding}
         onDone={() => {
@@ -1105,17 +1031,17 @@ export default function ChatPage() {
         }}
       />
 
-      {/* Single PDF instance. Docked = a resizable right column beside the chat
-         (the outer div's padding reserves its space); fullscreen = a top overlay
-         that takes over. Toggling only changes this wrapper, so the document
-         never reloads. */}
+      {/* Single PDF instance. Docked = a resizable right column beside the chat,
+         absolutely positioned within the chat area so it sits below the shell
+         header (the outer div's padding reserves its space); fullscreen = a
+         viewport overlay that takes over. Toggling only changes this wrapper, so
+         the document never reloads. */}
       {pdfOpen && (
         <div
           className={cn(
-            "fixed",
             pdfFullscreen
-              ? "inset-0 z-50"
-              : "right-0 top-0 z-40 h-dvh border-l border-border/50",
+              ? "fixed inset-0 z-50"
+              : "absolute right-0 top-0 z-40 h-full border-l border-border/50",
           )}
           style={pdfFullscreen ? undefined : { width: pdfWidth }}
         >

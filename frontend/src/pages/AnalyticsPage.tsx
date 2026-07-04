@@ -1,4 +1,5 @@
 import { format, parseISO } from "date-fns";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   BarChart3,
   Bookmark,
@@ -13,8 +14,14 @@ import {
   Target,
   TrendingUp,
 } from "lucide-react";
-import { AppShell } from "@/components/AppShell";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { GlassCard } from "@/components/common/GlassCard";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import { Progress } from "@/components/ui/progress";
 import { Seo } from "@/components/common/Seo";
 import { useAnalytics } from "@/hooks/api";
@@ -50,7 +57,7 @@ export default function AnalyticsPage() {
   const { data, isLoading } = useAnalytics();
 
   return (
-    <AppShell title="Analytics">
+    <PageContainer title="Analytics">
       <Seo title="Analytics — Aeva" noindex path="/analytics" />
       <div className="mx-auto max-w-6xl space-y-6 p-4">
         {isLoading || !data ? (
@@ -59,7 +66,7 @@ export default function AnalyticsPage() {
           <Dashboard data={data} />
         )}
       </div>
-    </AppShell>
+    </PageContainer>
   );
 }
 
@@ -292,68 +299,77 @@ function EmptyChart({ label }: { label: string }) {
   );
 }
 
+const trendConfig = {
+  score: { label: "Score", color: "hsl(var(--brand-1))" },
+} satisfies ChartConfig;
+
 /**
- * Lightweight score-trend chart (area + line) drawn as inline SVG — avoids
- * pulling a charting library into this route's bundle. The SVG stretches to
- * fill its container; strokes stay crisp via `vectorEffect`.
+ * Interactive score-trend chart (area + line) built on Recharts. Hovering any
+ * point reveals an animated tooltip with the full date and score; the fill
+ * gradient and line use the brand-1 accent (theme-aware via ChartStyle).
  */
 function TrendChart({ data }: { data: Array<{ date: string; score: number }> }) {
-  const W = 100;
-  const H = 100;
-  const n = data.length;
-  const x = (i: number) => (n === 1 ? W / 2 : (i / (n - 1)) * W);
-  const y = (s: number) => H - (Math.min(100, Math.max(0, s)) / 100) * H;
-
-  const line = data.map((d, i) => `${x(i).toFixed(2)},${y(d.score).toFixed(2)}`);
-  const area = `0,${H} ${line.join(" ")} ${W},${H}`;
-
   return (
-    <div className="flex gap-2">
-      <div className="flex h-[200px] flex-col justify-between py-0.5 text-[10px] tabular-nums text-muted-foreground">
-        <span>100</span>
-        <span>50</span>
-        <span>0</span>
-      </div>
-      <div className="flex-1">
-        <div className="relative h-[200px]">
-          {/* Gridlines at 0/50/100 */}
-          {[0, 50, 100].map((g) => (
-            <div
-              key={g}
-              className="absolute inset-x-0 border-t border-dashed border-border/60"
-              style={{ top: `${100 - g}%` }}
+    <ChartContainer
+      config={trendConfig}
+      className="h-[220px] w-full !aspect-auto"
+    >
+      <AreaChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+        <defs>
+          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-score)" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="var(--color-score)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} strokeDasharray="4 4" />
+        <XAxis
+          dataKey="date"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          minTickGap={24}
+          tickFormatter={(v) => shortDay(v as string)}
+        />
+        <YAxis
+          domain={[0, 100]}
+          ticks={[0, 50, 100]}
+          tickLine={false}
+          axisLine={false}
+          width={32}
+        />
+        <ChartTooltip
+          cursor={{ stroke: "hsl(var(--brand-1))", strokeOpacity: 0.35 }}
+          content={
+            <ChartTooltipContent
+              hideIndicator
+              labelFormatter={(_, payload) =>
+                fullDay((payload?.[0]?.payload as { date: string })?.date)
+              }
+              formatter={(value) => (
+                <div className="flex w-full items-center justify-between gap-3">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <span className="h-2.5 w-2.5 rounded-[2px] bg-[--color-score]" />
+                    Score
+                  </span>
+                  <span className="font-semibold tabular-nums text-foreground">
+                    {value}%
+                  </span>
+                </div>
+              )}
             />
-          ))}
-          <svg
-            viewBox={`0 0 ${W} ${H}`}
-            preserveAspectRatio="none"
-            className="absolute inset-0 h-full w-full text-brand-1"
-            aria-hidden
-          >
-            <defs>
-              <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="currentColor" stopOpacity={0.3} />
-                <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <polygon points={area} fill="url(#trendFill)" stroke="none" />
-            <polyline
-              points={line.join(" ")}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        </div>
-        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-          <span>{fullDay(data[0].date)}</span>
-          {n > 1 && <span>{fullDay(data[n - 1].date)}</span>}
-        </div>
-      </div>
-    </div>
+          }
+        />
+        <Area
+          dataKey="score"
+          type="monotone"
+          stroke="var(--color-score)"
+          strokeWidth={2}
+          fill="url(#trendFill)"
+          dot={false}
+          activeDot={{ r: 4 }}
+        />
+      </AreaChart>
+    </ChartContainer>
   );
 }
 

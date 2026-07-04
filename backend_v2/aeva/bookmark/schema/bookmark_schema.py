@@ -5,7 +5,7 @@ from typing import Any
 
 from marshmallow import Schema, fields, post_load, validate
 
-ITEM_TYPES = ["response", "quiz", "media", "note"]
+ITEM_TYPES = ["response", "quiz", "media", "note", "flashcard"]
 
 
 @dataclass

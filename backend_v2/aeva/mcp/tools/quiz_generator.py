@@ -14,6 +14,7 @@ from aeva.mcp.base import (
     ToolDefinition,
 )
 from aeva.media.attachments import download_attachments
+from aeva.quiz import exam_patterns
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
 
@@ -69,6 +70,16 @@ class QuizGeneratorTool(BaseTool):
         return [ACTION_OPEN_QUIZ]
 
     @staticmethod
+    def _pattern_default_type(exam_config: dict[str, Any]) -> str | None:
+        """Preset-suggested question type for a chosen exam pattern, if any."""
+        pattern = exam_config.get("pattern")
+        if not pattern:
+            return None
+        preset = exam_patterns.EXAM_PATTERNS.get(pattern) or {}
+        default_type = preset.get("default_type")
+        return default_type if isinstance(default_type, str) else None
+
+    @staticmethod
     def _wants_media(params: dict[str, Any], ctx: ToolContext) -> bool:
         """Decide whether to build the quiz from the uploaded material.
 
@@ -101,11 +112,19 @@ class QuizGeneratorTool(BaseTool):
             current_app.config.get("QUIZ_MAX_QUESTIONS", 10),
         )
         difficulty = params.get("difficulty", "medium")
-        types = params.get("question_types") or [
-            "single_select",
-            "multi_select",
-            "true_false",
-        ]
+        # Exam Mode config (normalized/validated; {} for an ordinary quiz). A
+        # preset can suggest a default question type when the user picked none.
+        exam_config = exam_patterns.normalize_exam_config(
+            params.get("exam_config")
+        )
+        default_type = self._pattern_default_type(exam_config)
+        types = params.get("question_types") or (
+            [default_type] if default_type else [
+                "single_select",
+                "multi_select",
+                "true_false",
+            ]
+        )
 
         attachments = None
         history: list[dict[str, str]] | None = ctx.history
@@ -121,26 +140,28 @@ class QuizGeneratorTool(BaseTool):
                 history = None
 
         instructions = params.get("additional_instructions") or "(none)"
-        prompt = prompts.QUIZ_GENERATION_PROMPT.format(
-            topic=topic,
-            count=count,
-            difficulty=difficulty,
-            types=", ".join(types),
-            context=ctx.enriched_message,
-            instructions=instructions,
+        rendered = prompts.PromptBuilder.build(
+            prompts.QUIZ_GENERATION_TEMPLATE,
+            TOPIC=str(topic),
+            QUESTION_COUNT=str(count),
+            DIFFICULTY=str(difficulty),
+            QUESTION_TYPES=", ".join(types),
+            RECENT_CONTEXT=ctx.enriched_message,
+            ADDITIONAL_INSTRUCTIONS=instructions,
+            USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
         quiz_data = self.llm.generate_structured(
-            prompt,
+            rendered.user_message,
             prompts.QUIZ_GENERATION_SCHEMA,
-            system_prompt=prompts.personalize(
-                prompts.SYSTEM_PROMPT, ctx.personalization
-            ),
+            system_prompt=rendered.system_prompt,
             history=history,
             attachments=attachments,
         )
-        # Carry the requested difficulty onto the persisted quiz row so the
-        # quizzes list can surface it (the LLM output itself omits it).
+        # Carry the requested difficulty + exam config onto the persisted quiz
+        # row so the quizzes list/cards can surface them (the LLM output itself
+        # omits both).
         quiz_data["difficulty"] = difficulty
+        quiz_data["exam_config"] = exam_config
         quiz = self.quiz_repo.create(
             user_id=ctx.user_id,
             session_id=ctx.session_id,
@@ -152,5 +173,6 @@ class QuizGeneratorTool(BaseTool):
             "topic": quiz["topic"],
             "questions": quiz["questions"],
             "difficulty": difficulty,
+            "exam_config": exam_config,
             "source": "Uploaded material" if from_media else quiz["topic"],
         }

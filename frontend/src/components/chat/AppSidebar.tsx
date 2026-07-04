@@ -204,17 +204,23 @@ export function AppSidebar({
         collapsed ? "w-16" : "w-64",
       )}
     >
-      {/* Brand: mobile only (desktop shows it in the top header).
-         The collapse toggle is the desktop-only control. */}
-      <div className="flex items-center gap-2 px-3 pt-3">
-        <BrandLogo withWordmark={!collapsed} className="lg:hidden" />
+      {/* Brand: app icon + name, always shown at the top of the sidebar.
+         Collapsed to just the icon on the desktop rail. The collapse toggle
+         is the desktop-only control (stacked under the icon when collapsed). */}
+      <div
+        className={cn(
+          "flex px-3 pt-3 pb-3",
+          collapsed ? "flex-col items-center gap-2" : "items-center gap-2",
+        )}
+      >
+        <BrandLogo withWordmark={!collapsed} />
         {canCollapse && (
           <IconBtn
             label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             onClick={onToggleCollapse}
             className={cn(
               "hidden lg:inline-flex",
-              collapsed ? "mx-auto" : "ml-auto",
+              collapsed ? "" : "ml-auto",
             )}
           >
             {collapsed ? (

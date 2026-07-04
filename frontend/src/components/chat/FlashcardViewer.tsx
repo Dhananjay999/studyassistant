@@ -11,7 +11,12 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +26,7 @@ import {
   useFlashcardSet,
   useRecordStudy,
 } from "@/hooks/api";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import type { ChatSeed, FlashcardAnalytics, StudyRating } from "@/types";
 
@@ -53,6 +59,7 @@ export function FlashcardViewer({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { data, isLoading } = useFlashcardSet(open ? setId : null);
   const recordStudy = useRecordStudy();
   const createSession = useCreateSession();
@@ -147,18 +154,29 @@ export function FlashcardViewer({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-xl"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={cn(
+          "flex flex-col gap-0 overflow-hidden p-0",
+          isMobile
+            ? "h-dvh w-screen max-w-none rounded-none border-0"
+            : "h-[85vh] w-[min(720px,95vw)] max-w-none rounded-2xl",
+        )}
       >
+        <DialogTitle className="sr-only">
+          {data?.title ?? "Flashcards"}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          Study the flashcard set: flip cards, rate your recall, and track
+          progress.
+        </DialogDescription>
         {isLoading || !data ? (
           <div className="grid flex-1 place-items-center">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         ) : (
           <>
-            <div className="border-b border-border/50 px-5 py-4">
+            <div className="border-b border-border/50 px-5 py-4 pr-12">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-brand-1" />
                 <h2 className="flex-1 truncate font-display text-lg font-bold">
@@ -231,7 +249,8 @@ export function FlashcardViewer({
                   <Button
                     onClick={() => resume("quiz")}
                     disabled={createSession.isPending}
-                    className="gap-2 bg-brand-gradient text-white"
+                    variant="brand"
+                    className="gap-2"
                   >
                     <ListChecks className="h-4 w-4" /> Generate Quiz
                   </Button>
@@ -379,7 +398,8 @@ export function FlashcardViewer({
                   size="sm"
                   onClick={() => resume("quiz")}
                   disabled={createSession.isPending}
-                  className="flex-1 gap-1.5 bg-brand-gradient text-white"
+                  variant="brand"
+                  className="flex-1 gap-1.5"
                 >
                   <ListChecks className="h-4 w-4" /> Create Quiz
                 </Button>
@@ -398,7 +418,7 @@ export function FlashcardViewer({
             )}
           </>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -15,9 +15,9 @@ META_SENTINEL = "@@AEVA_META@@"
 
 _ACTIONS = ", ".join(LEARNING_ACTIONS)
 
-# Appended to every text-answer prompt (web search, media). Kept brace-free
-# except the JSON example, which is fine because tools append this AFTER their
-# own str.format() call — it never itself passes through format().
+# The {ANSWER_META} shared block on every text-answer template (web search,
+# media). The JSON example's braces are safe: the builder only treats
+# {UPPER_SNAKE} tokens as placeholders, so the literal example passes through.
 ANSWER_META_INSTRUCTION = f"""
 After your answer, append this metadata trailer exactly:
 

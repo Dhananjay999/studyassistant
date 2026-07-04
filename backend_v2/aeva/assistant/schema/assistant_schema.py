@@ -53,6 +53,9 @@ class QuizOptionsSchema(Schema):
     question_types = fields.List(fields.Str(), load_default=None)
     use_media = fields.Bool(load_default=None)
     additional_instructions = fields.Str(load_default=None)
+    # Opaque Exam Mode config ({pattern, correct, negative, skip,
+    # timer_seconds}); normalized/validated server-side by exam_patterns.
+    exam_config = fields.Dict(load_default=None)
 
 
 class FlashcardOptionsSchema(Schema):
@@ -96,6 +99,7 @@ class AssistantRequestSchema(Schema):
                 question_types=opts.get("question_types"),
                 use_media=opts.get("use_media"),
                 additional_instructions=opts.get("additional_instructions"),
+                exam_config=opts.get("exam_config"),
             )
         fc = data.get("flashcard_options")
         if isinstance(fc, dict):

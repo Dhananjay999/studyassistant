@@ -33,6 +33,9 @@ class QuizOptions:
     use_media: bool | None = None
     # Free-text extra guidance the user typed in the form; passed to the tool.
     additional_instructions: str | None = None
+    # Exam Mode marking scheme + timer chosen in the form (empty/None = an
+    # ordinary practice quiz). Persisted with the quiz and reused every attempt.
+    exam_config: dict[str, Any] | None = None
 
 
 @dataclass

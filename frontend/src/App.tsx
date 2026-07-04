@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { PreferencesProvider } from "@/contexts/PreferencesContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { SigningInModal } from "@/components/auth/SigningInModal";
 import { SettingsExperience } from "@/components/settings/SettingsExperience";
 import { queryClient } from "@/lib/queryClient";
@@ -67,62 +68,26 @@ export default function App() {
                     <Route path="/privacy" element={<PrivacyPage />} />
                     <Route path="/terms" element={<TermsPage />} />
                     <Route path="/auth/callback" element={<AuthCallback />} />
+                    {/* Persistent app shell: header + sidebar mount once; only
+                       the routed content below swaps (with a crossfade). */}
                     <Route
-                      path="/chat"
                       element={
                         <ProtectedRoute>
-                          <ChatPage />
+                          <AppLayout />
                         </ProtectedRoute>
                       }
-                    />
-                    <Route
-                      path="/bookmarks"
-                      element={
-                        <ProtectedRoute>
-                          <BookmarksPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/bookmarks/:id"
-                      element={
-                        <ProtectedRoute>
-                          <BookmarkDetailPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/quizzes"
-                      element={
-                        <ProtectedRoute>
-                          <QuizzesPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/flashcards"
-                      element={
-                        <ProtectedRoute>
-                          <FlashcardsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/analytics"
-                      element={
-                        <ProtectedRoute>
-                          <AnalyticsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/files"
-                      element={
-                        <ProtectedRoute>
-                          <FilesPage />
-                        </ProtectedRoute>
-                      }
-                    />
+                    >
+                      <Route path="/chat" element={<ChatPage />} />
+                      <Route path="/bookmarks" element={<BookmarksPage />} />
+                      <Route
+                        path="/bookmarks/:id"
+                        element={<BookmarkDetailPage />}
+                      />
+                      <Route path="/quizzes" element={<QuizzesPage />} />
+                      <Route path="/flashcards" element={<FlashcardsPage />} />
+                      <Route path="/analytics" element={<AnalyticsPage />} />
+                      <Route path="/files" element={<FilesPage />} />
+                    </Route>
                     <Route path={ADMIN_ROUTE} element={<AdminApp />} />
                     <Route path="*" element={<NotFound />} />
                       </Routes>

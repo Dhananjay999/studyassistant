@@ -45,3 +45,21 @@ class QuizAnalyzeSchema(Schema):
     def make_data(self, data: dict, **_kwargs: object) -> QuizAnalyzeData:
         """Convert to dataclass."""
         return QuizAnalyzeData(**data)
+
+
+@dataclass
+class ExamConfigUpdateData:
+    """Payload to update a quiz's Exam Mode config."""
+
+    exam_config: dict
+
+
+class ExamConfigUpdateSchema(Schema):
+    """Update the marking scheme + timer stored on a quiz."""
+
+    exam_config = fields.Dict(required=True)
+
+    @post_load
+    def make_data(self, data: dict, **_kwargs: object) -> ExamConfigUpdateData:
+        """Convert to dataclass."""
+        return ExamConfigUpdateData(**data)

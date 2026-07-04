@@ -1,6 +1,12 @@
-import { Check, Monitor, Moon, Sun } from "lucide-react";
+import { Check, Monitor, Moon, Pipette, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
+import { HexColorInput, HexColorPicker } from "react-colorful";
 import { Badge } from "@/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -62,6 +68,8 @@ export function AppearanceSection() {
   const {
     colorTheme,
     setColorTheme,
+    customAccent,
+    setCustomAccent,
     fontSize,
     setFontSize,
     contentFont,
@@ -126,6 +134,11 @@ export function AppearanceSection() {
                   </button>
                 );
               })}
+              <CustomAccentSwatch
+                active={colorTheme === "custom"}
+                color={customAccent}
+                onChange={setCustomAccent}
+              />
             </div>
           </div>
         </div>
@@ -195,6 +208,73 @@ export function AppearanceSection() {
 
       <AppearancePreview />
     </div>
+  );
+}
+
+/**
+ * Seventh swatch in the accent grid: opens a color picker in a popover. When
+ * active it shows the chosen color; otherwise a rainbow hints "pick your own".
+ * Picking applies live (the app + preview recolor instantly).
+ */
+function CustomAccentSwatch({
+  active,
+  color,
+  onChange,
+}: {
+  active: boolean;
+  color: string;
+  onChange: (hex: string) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-pressed={active}
+          className={cn(
+            "flex flex-col items-center gap-1.5 rounded-xl border p-2 transition-colors",
+            active
+              ? "border-primary bg-primary/5"
+              : "border-border/60 hover:bg-accent/40",
+          )}
+        >
+          <span
+            className="flex h-7 w-7 items-center justify-center rounded-full ring-1 ring-inset ring-black/10"
+            style={{
+              background: active
+                ? color
+                : "conic-gradient(from 90deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)",
+            }}
+          >
+            {active ? (
+              <Check className="h-4 w-4 text-white" strokeWidth={3} />
+            ) : (
+              <Pipette className="h-3.5 w-3.5 text-white drop-shadow" />
+            )}
+          </span>
+          <span className="text-[11px] font-medium">Custom</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="center"
+        className="w-auto space-y-3 p-3 accent-picker"
+      >
+        <HexColorPicker color={color} onChange={onChange} />
+        <div className="flex items-center gap-2">
+          <span
+            className="h-8 w-8 shrink-0 rounded-md border border-border/60"
+            style={{ background: color }}
+          />
+          <HexColorInput
+            color={color}
+            onChange={onChange}
+            prefixed
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm uppercase outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Accent color hex value"
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
