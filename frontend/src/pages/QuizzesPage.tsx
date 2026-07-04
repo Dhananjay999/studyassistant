@@ -77,9 +77,11 @@ function buildQuizConfig(patterns: ExamPattern[]): ListConfig<QuizListItem> {
         label: "Difficulty",
         kind: "multi",
         options: [
+          { value: "beginner", label: "Beginner" },
           { value: "easy", label: "Easy" },
           { value: "medium", label: "Medium" },
           { value: "hard", label: "Hard" },
+          { value: "expert", label: "Expert" },
         ],
         predicate: (q, sel) => sel.includes((q.difficulty ?? "").toLowerCase()),
       },

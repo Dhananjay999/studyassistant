@@ -140,6 +140,14 @@ export function QuizDrawer({
     setTab("attempts");
   };
 
+  // Retake: start a fresh attempt, keeping the quiz and all prior attempts. The
+  // runner remounts clean, and submitting appends a new row to the history.
+  const retake = () => {
+    setFreshResult(null);
+    setOpenAttemptId(null);
+    setView(takeView);
+  };
+
   // Guard against losing progress: closing mid-attempt asks first.
   const requestClose = (next: boolean) => {
     if (!next && view === "run") {
@@ -177,6 +185,7 @@ export function QuizDrawer({
               attemptId={freshResult.attempt_id}
               onClose={() => onOpenChange(false)}
               onBack={backToAttempts}
+              onRetake={retake}
             />
           ) : detail ? (
             <QuizAttemptReport
@@ -187,6 +196,7 @@ export function QuizDrawer({
               initialAnalysis={detail.ai_analysis}
               onClose={() => onOpenChange(false)}
               onBack={backToAttempts}
+              onRetake={retake}
             />
           ) : (
             <div className="grid flex-1 place-items-center">

@@ -38,13 +38,23 @@ Requirements:
 
 If the topic is an **exam** (SSC CGL, UPSC, NEET, JEE, CAT, GATE, etc.), generate questions that match the exam's syllabus, section, pattern, and requested difficulty—not generic school GK.
 
-Difficulty is relative to the target exam:
+Difficulty is relative to the target level (higher = harder, more reasoning, more distractor subtlety):
 
-* Easy = basic exam-level recall
-* Medium = application
-* Hard = reasoning
+* beginner = gentle, foundational recall for someone new to the topic
+* easy = basic exam-level recall
+* medium = application of concepts
+* hard = multi-step reasoning
+* expert = advanced synthesis, subtle traps, exam-topper level
 
-Generate exactly the requested number of questions using only the requested question type(s). Cover the topic broadly, use plausible distractors, include a brief explanation for each question, and ensure every `correct_answers` value exactly matches an option.
+**Question type rules (MUST hold for every question):**
+
+* `single_select` — `options` has 3–5 choices; `correct_answers` MUST contain EXACTLY ONE value. Never mark two options correct for this type.
+* `multi_select` — `options` has 3–6 choices; `correct_answers` contains ONE OR MORE values, and should genuinely have more than one where the material supports it. If only one answer is correct, use `single_select` instead.
+* `true_false` — `options` MUST be exactly `["True", "False"]`; `correct_answers` MUST be exactly one of them (`["True"]` or `["False"]`).
+
+Generate exactly the requested number of questions using only the requested question type(s). Cover the topic broadly, use plausible distractors, and include a brief explanation for each question.
+
+Before returning, VERIFY each question: every `correct_answers` value exactly matches one of its `options`, and the count of correct answers obeys the type rule above (single_select and true_false have exactly one). Fix any violations before responding.
 """,
     defaults={"SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK},
     optional=("USER_PROFILE",),
@@ -121,7 +131,7 @@ QUIZ_GENERATOR_PARAMS: dict = {
         },
         "difficulty": {
             "type": "string",
-            "enum": ["easy", "medium", "hard"],
+            "enum": ["beginner", "easy", "medium", "hard", "expert"],
         },
         "question_types": {
             "type": "array",

@@ -1,11 +1,13 @@
 """Chat controller."""
 
+from collections.abc import Generator
 from typing import Any
 
 from flask import Response, current_app
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
+from aeva.assistant.assistant_controller import sse_error_for
 from aeva.chat.chat_repository import ChatRepository
 from aeva.chat.schema.chat_schema import ChatRequestSchema
 from aeva.common.decorators import user_required
@@ -47,11 +49,17 @@ class ChatStreamEndpoint(MethodView):
         """Stream a chat response via SSE."""
         app = current_app._get_current_object()  # noqa: SLF001
 
-        def generate():
+        def generate() -> Generator[str, None, None]:
             with app.app_context():
-                yield from ChatRepository.process_chat_stream(
-                    current_user, request_data
-                )
+                try:
+                    yield from ChatRepository.process_chat_stream(
+                        current_user, request_data
+                    )
+                except Exception as exc:  # don't drop the stream
+                    # Response already committed as 200; surface a terminal SSE
+                    # error frame instead of dropping the connection.
+                    app.logger.exception("Chat stream failed")
+                    yield sse_error_for(exc)
 
         return Response(
             generate(),

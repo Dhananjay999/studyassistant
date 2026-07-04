@@ -4,17 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { ExamSettingsFields } from "@/components/quiz/ExamSettingsFields";
 import { useAppConfig } from "@/hooks/api";
 import { cn } from "@/lib/utils";
-import { isExamConfig, NEUTRAL_EXAM_CONFIG } from "@/lib/quizFormat";
+import {
+  difficultyMeta,
+  difficultyToLevel,
+  isExamConfig,
+  levelToDifficulty,
+  NEUTRAL_EXAM_CONFIG,
+} from "@/lib/quizFormat";
 import type { Difficulty, ExamConfig, QuestionType, QuizOptions } from "@/types";
 
 const TYPE_OPTIONS: { value: QuestionType; label: string }[] = [
@@ -51,9 +51,11 @@ export function QuizSetupForm({
 
   const [topic, setTopic] = useState(initialTopic);
   const [count, setCount] = useState(String(initialCount ?? 5));
-  const [difficulty, setDifficulty] = useState<Difficulty>(
-    initialDifficulty ?? "medium",
+  // Difficulty is chosen on a 1–10 slider and mapped to a 5-band label.
+  const [level, setLevel] = useState<number>(
+    difficultyToLevel(initialDifficulty ?? "medium"),
   );
+  const difficulty: Difficulty = levelToDifficulty(level);
   // Prefill detected types; default to Mixed (all) when none were specified.
   const [types, setTypes] = useState<QuestionType[]>(
     initialTypes && initialTypes.length > 0 ? initialTypes : ALL_TYPES,
@@ -102,42 +104,50 @@ export function QuizSetupForm({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs">Questions</Label>
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={maxQuestions}
-            value={count}
-            onChange={(e) => setCount(e.target.value)}
-            className={cn("h-9", !countValid && "border-destructive")}
-          />
-          <p
+      <div className="space-y-1.5">
+        <Label className="text-xs">Questions</Label>
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={maxQuestions}
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+          className={cn("h-9", !countValid && "border-destructive")}
+        />
+        <p
+          className={cn(
+            "text-[10px]",
+            countValid ? "text-muted-foreground" : "text-destructive",
+          )}
+        >
+          1–{maxQuestions} questions
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Difficulty</Label>
+          <span
             className={cn(
-              "text-[10px]",
-              countValid ? "text-muted-foreground" : "text-destructive",
+              "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+              difficultyMeta(difficulty).className,
             )}
           >
-            1–{maxQuestions} questions
-          </p>
+            {difficultyMeta(difficulty).label} · {level}/10
+          </span>
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Difficulty</Label>
-          <Select
-            value={difficulty}
-            onValueChange={(v) => setDifficulty(v as Difficulty)}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="easy">Easy</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="hard">Hard</SelectItem>
-            </SelectContent>
-          </Select>
+        <Slider
+          value={[level]}
+          onValueChange={([v]) => setLevel(v)}
+          min={1}
+          max={10}
+          step={1}
+          aria-label="Difficulty"
+        />
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>Beginner</span>
+          <span>Expert</span>
         </div>
       </div>
 

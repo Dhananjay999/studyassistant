@@ -4,6 +4,7 @@ import { Bot, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { QuizCard } from "@/components/chat/QuizCard";
 import { FlashcardCard } from "@/components/chat/FlashcardCard";
+import { ChatErrorCard } from "@/components/chat/ChatErrorCard";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { SourceCards } from "@/components/chat/SourceCards";
 import { SuggestedActions } from "@/components/chat/SuggestedActions";
@@ -30,6 +31,7 @@ export function ChatMessages({
   onCreateFlashcards,
   onOpenQuiz,
   onOpenFlashcards,
+  onRetry,
   highlightId,
 }: {
   messages: Message[];
@@ -46,6 +48,8 @@ export function ChatMessages({
   onCreateFlashcards: (sourceContent: string) => void;
   onOpenQuiz: (quiz: QuizContent) => void;
   onOpenFlashcards: (setId: string) => void;
+  /** Re-send a failed turn (by its message id) from its error card. */
+  onRetry: (messageId: string) => void;
   /** Message to scroll to and flash-highlight (e.g. opened from a bookmark). */
   highlightId?: string | null;
 }) {
@@ -158,7 +162,12 @@ export function ChatMessages({
               )}
 
               {msg.role === "assistant" ? (
-                msg.streaming && !msg.content ? (
+                msg.meta?.error ? (
+                  <ChatErrorCard
+                    error={msg.meta.error}
+                    onRetry={() => onRetry(msg.id)}
+                  />
+                ) : msg.streaming && !msg.content ? (
                   <ThinkingIndicator hint={thinkingHint} />
                 ) : (
                   <div

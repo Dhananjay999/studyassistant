@@ -59,6 +59,7 @@ import {
   useSessions,
 } from "@/hooks/api";
 import { getMessages, getQuiz, uploadFileWithProgress } from "@/lib/api";
+import { friendlyErrorMessage } from "@/lib/errorMessage";
 import { compressFiles } from "@/utils/compress";
 import type {
   Bookmark as BookmarkData,
@@ -227,6 +228,9 @@ export default function ChatPage() {
   // Saved-content context to fold into the next message (resume-from-bookmark).
   const seedContextRef = useRef<string | null>(null);
   const seedAppliedRef = useRef<string | null>(null);
+  // Retry closures for failed turns, keyed by the failed message id. Populated
+  // in send()'s onError so its error card can re-run the exact same request.
+  const retryHandlers = useRef<Map<string, () => void>>(new Map());
 
   // Only show a loader when the URL names a session we're still fetching.
   // No sessionId in the URL = a fresh new chat → empty screen, never a loader.
@@ -276,11 +280,22 @@ export default function ChatPage() {
     // here, so a user's selection survives across their questions.
     setSelected(new Set());
     setMessages([]);
+    // A "resume" seed (from flashcards/bookmarks) creates a brand-new empty
+    // session and immediately drives a send() below. Skip the history fetch:
+    // its async empty result would otherwise resolve AFTER the seed's
+    // optimistic/streaming messages and wipe them (the quiz/flashcard then only
+    // reappears on refresh).
+    const seed = (location.state as { seed?: ChatSeed } | null)?.seed;
+    if (seed) {
+      setHistoryLoading(false);
+      return;
+    }
     setHistoryLoading(true);
     getMessages(activeId)
       .then(setMessages)
       .catch(() => toast.error("Failed to load chat"))
       .finally(() => setHistoryLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
   const upsertStreaming = (delta: string) =>
@@ -471,8 +486,32 @@ export default function ChatPage() {
             });
           },
           onError: (msg) => {
-            removeStreaming();
-            toast.error(msg);
+            // Keep the turn in the thread as a friendly, AI-styled error card
+            // (with retry) instead of dropping it to a transient toast.
+            const friendly = friendlyErrorMessage(msg);
+            retryHandlers.current.set(streamId, () => {
+              retryHandlers.current.delete(streamId);
+              setMessages((prev) =>
+                prev.filter((m) => m.id !== streamId && m.id !== userMsgId),
+              );
+              void send(text, opts);
+            });
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamId
+                  ? {
+                      ...m,
+                      content: "",
+                      streaming: false,
+                      meta: {
+                        ...m.meta,
+                        error: { message: friendly, prompt: display },
+                      },
+                    }
+                  : m,
+              ),
+            );
+            setThinkingHint(undefined);
           },
         },
       );
@@ -889,6 +928,7 @@ export default function ChatPage() {
                   onCreateFlashcards={handleCreateFlashcards}
                   onOpenQuiz={openQuiz}
                   onOpenFlashcards={openFlashcards}
+                  onRetry={(id) => retryHandlers.current.get(id)?.()}
                   highlightId={highlightId}
                 />
               )}

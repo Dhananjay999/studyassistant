@@ -1,6 +1,10 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { FileText } from "lucide-react";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import { ExternalLink, FileText } from "lucide-react";
+import "katex/dist/katex.min.css";
+import "katex/dist/contrib/mhchem";
 import { useDocumentViewer } from "@/contexts/DocumentViewerContext";
 import {
   citationUrlTransform,
@@ -8,6 +12,11 @@ import {
   preprocessCitations,
 } from "@/lib/citations";
 import type { SourceInfo } from "@/types";
+
+/** Filename/title comparison key: lowercased, extension + surrounding space stripped. */
+function citeKey(value?: string): string {
+  return (value ?? "").toLowerCase().replace(/\.[a-z0-9]+$/i, "").trim();
+}
 
 /** Compact, ChatGPT-style inline citation chip that opens the cited page. */
 function CitationChip({
@@ -22,13 +31,24 @@ function CitationChip({
   sources?: SourceInfo[];
 }) {
   const viewer = useDocumentViewer();
-  const lname = name.toLowerCase();
+  const target = citeKey(name);
+  // Only document sources (those with a media id) can be opened. Match the
+  // marker name resiliently: the model often drops the extension, re-cases, or
+  // truncates the filename, so exact equality alone leaves the chip dead.
+  const docSources = sources?.filter((s) => s.media_id) ?? [];
   const match =
-    sources?.find(
+    docSources.find(
       (s) =>
-        s.document_name?.toLowerCase() === lname &&
+        citeKey(s.document_name) === target &&
         (page == null || s.page_number == null || s.page_number === page),
-    ) ?? sources?.find((s) => s.document_name?.toLowerCase() === lname);
+    ) ??
+    docSources.find((s) => citeKey(s.document_name) === target) ??
+    docSources.find((s) => {
+      const key = citeKey(s.document_name);
+      return key !== "" && (key.includes(target) || target.includes(key));
+    }) ??
+    // Last resort: a single attached document is unambiguous — use it.
+    (docSources.length === 1 ? docSources[0] : undefined);
   const mediaId = match?.media_id;
 
   return (
@@ -36,7 +56,11 @@ function CitationChip({
       type="button"
       disabled={!mediaId}
       onClick={() =>
-        mediaId && viewer.openDocumentByMediaId(mediaId, page ?? undefined)
+        mediaId &&
+        viewer.openDocumentByMediaId(
+          mediaId,
+          page ?? match?.page_number ?? undefined,
+        )
       }
       title={mediaId ? "Open the cited page" : undefined}
       className="mx-0.5 inline-flex max-w-[16rem] items-center gap-1 rounded-md border border-brand-1/30 bg-brand-1/5 px-1.5 py-px align-baseline text-[0.72em] font-medium leading-tight text-brand-1 no-underline transition-colors hover:bg-brand-1/15 disabled:cursor-default disabled:opacity-70"
@@ -96,7 +120,8 @@ export function MarkdownContent({
 }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       urlTransform={citationUrlTransform}
       components={{
         ...MARKDOWN_COMPONENTS,
@@ -115,9 +140,17 @@ export function MarkdownContent({
               />
             );
           }
+          // External links (typically inline web-source citations) render as a
+          // compact chip so citations read as citations without disrupting flow.
           return (
-            <a href={href} target="_blank" rel="noreferrer">
-              {children}
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="mx-0.5 inline-flex max-w-[16rem] items-center gap-1 rounded-md border border-brand-1/30 bg-brand-1/5 px-1.5 py-px align-baseline text-[0.85em] font-medium leading-tight text-brand-1 no-underline transition-colors hover:bg-brand-1/15"
+            >
+              <span className="truncate">{children}</span>
+              <ExternalLink className="h-3 w-3 shrink-0" />
             </a>
           );
         },

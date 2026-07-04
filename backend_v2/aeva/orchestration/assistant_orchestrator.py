@@ -80,17 +80,16 @@ class AssistantOrchestrator:
             self._setup_and_plan(ctx)
         )
 
-        # Quiz requested but not yet configured -> open the setup popover ONLY
-        # when required fields are missing. If the message already carries the
-        # topic, count, and type, generate straight away. A forced/planned
-        # flashcard turn never diverts here — its injected source content may
-        # merely mention "quiz" without being a quiz request.
+        # Quiz requested but not yet configured -> ALWAYS open the setup popover
+        # first, pre-filled with whatever the planner detected. The user then
+        # confirms or edits and submits, which comes back with quiz_options set.
+        # A forced/planned flashcard turn never diverts here — its injected
+        # source content may merely mention "quiz" without being a quiz request.
         if (
             ctx.quiz_options is None
             and ctx.flashcard_options is None
             and (plan.get("tool") or {}).get("name") != "flashcard_generator"
             and self._is_quiz_intent(plan, enriched_message)
-            and not self._quiz_ready(plan, ctx)
         ):
             return self._quiz_setup_result(plan, ctx)
 
@@ -139,8 +138,9 @@ class AssistantOrchestrator:
             (plan.get("tool") or {}).get("name"),
         )
 
-        # Quiz requested but not yet configured -> open the setup popover ONLY
-        # when required fields are missing; otherwise fall through and generate.
+        # Quiz requested but not yet configured -> ALWAYS open the setup popover
+        # first, pre-filled with whatever the planner detected; the user
+        # confirms or edits and submits (which returns with quiz_options set).
         # A forced/planned flashcard turn never diverts here — its injected
         # source content may merely mention "quiz" without being a quiz request.
         if (
@@ -148,9 +148,8 @@ class AssistantOrchestrator:
             and ctx.flashcard_options is None
             and (plan.get("tool") or {}).get("name") != "flashcard_generator"
             and self._is_quiz_intent(plan, enriched_message)
-            and not self._quiz_ready(plan, ctx)
         ):
-            logger.info("Turn → quiz setup popover (missing quiz fields)")
+            logger.info("Turn → quiz setup popover (pre-filled)")
             yield self._quiz_setup_frame(plan, ctx)
             return
 
@@ -651,28 +650,6 @@ class AssistantOrchestrator:
             return True
         text = message.lower()
         return any(w in text for w in ("quiz", "practice test", "test me"))
-
-    @staticmethod
-    def _quiz_ready(plan: dict[str, Any], ctx: AssistantContext) -> bool:
-        """Whether every required quiz field is already known from context.
-
-        When the planner has extracted a topic (or the user pointed at their
-        uploaded material), a question count, and at least one question type,
-        the form adds nothing — we generate directly. Difficulty is optional
-        (defaults to medium), so it is not required.
-        """
-        if (plan.get("tool") or {}).get("name") != "quiz_generator":
-            return False
-        params = (plan.get("tool") or {}).get("params") or {}
-        has_topic = bool(params.get("topic")) or (
-            bool(params.get("use_media")) and bool(ctx.media_ids)
-        )
-        has_count = params.get("question_count") is not None
-        has_types = bool(params.get("question_types"))
-        ready = has_topic and has_count and has_types
-        if ready:
-            logger.info("Quiz fields complete → generating without the form")
-        return ready
 
     def _quiz_setup_data(
         self, plan: dict[str, Any], ctx: AssistantContext

@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { getMediaStatus } from "@/lib/api";
 import { qk } from "@/hooks/api";
 import type { MediaItem } from "@/types";
@@ -78,6 +79,10 @@ export function useDocumentViewerController(): DocumentViewerController {
       }
       if (item?.signed_url) {
         setViewer({ url: item.signed_url, fileName: item.file_name, page });
+      } else {
+        // Don't leave the click silently dead — the document couldn't be
+        // resolved (deleted, or no signed URL available).
+        toast.error("Couldn't open that document");
       }
     },
     [qc],

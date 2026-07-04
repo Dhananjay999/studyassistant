@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion, type PanInfo } from "framer-motion";
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  Layers,
   ListChecks,
   Loader2,
   RotateCcw,
@@ -18,24 +21,49 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { BookmarkButton } from "@/components/BookmarkButton";
+import { FlashcardAnalytics } from "@/components/flashcard/FlashcardAnalytics";
 import {
   useCreateSession,
   useFlashcardSet,
   useRecordStudy,
 } from "@/hooks/api";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { formatDuration } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
-import type { ChatSeed, FlashcardAnalytics, StudyRating } from "@/types";
+import type {
+  ChatSeed,
+  FlashcardAnalytics as Analytics,
+  StudyRating,
+} from "@/types";
 
 const RATINGS: Array<{ value: StudyRating; label: string; cls: string }> = [
-  { value: "easy", label: "Easy", cls: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" },
-  { value: "medium", label: "Medium", cls: "border-amber-500/40 text-amber-600 dark:text-amber-400" },
-  { value: "hard", label: "Hard", cls: "border-orange-500/40 text-orange-600 dark:text-orange-400" },
-  { value: "needs_revision", label: "Needs Revision", cls: "border-red-500/40 text-red-600 dark:text-red-400" },
+  {
+    value: "easy",
+    label: "Easy",
+    cls: "border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400",
+  },
+  {
+    value: "medium",
+    label: "Good",
+    cls: "border-amber-500/40 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400",
+  },
+  {
+    value: "hard",
+    label: "Hard",
+    cls: "border-orange-500/40 text-orange-600 hover:bg-orange-500/10 dark:text-orange-400",
+  },
+  {
+    value: "needs_revision",
+    label: "Again",
+    cls: "border-red-500/40 text-red-600 hover:bg-red-500/10 dark:text-red-400",
+  },
 ];
+
+// Swipe commit tuned like SwipeableRow: a decisive drag OR a fast flick.
+const SWIPE_DISTANCE = 90;
+const SWIPE_VELOCITY = 500;
 
 function shuffle<T>(arr: T[], seed: number): T[] {
   // Deterministic shuffle (no Math.random) so renders stay stable.
@@ -65,10 +93,16 @@ export function FlashcardViewer({
   const createSession = useCreateSession();
 
   const [index, setIndex] = useState(0);
+  // Direction the deck is moving (1 = forward, -1 = back) for slide transitions.
+  const [dir, setDir] = useState(1);
   const [flipped, setFlipped] = useState(false);
   const [shuffleSeed, setShuffleSeed] = useState(0);
   const [completed, setCompleted] = useState(false);
-  const [analytics, setAnalytics] = useState<FlashcardAnalytics | null>(null);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  // Study time, measured client-side (no server field): started on open, frozen
+  // into `elapsed` when the deck is finished.
+  const startedAtRef = useRef<number>(0);
+  const [elapsed, setElapsed] = useState(0);
 
   const cards = useMemo(() => data?.cards ?? [], [data?.cards]);
   const order = useMemo(
@@ -83,32 +117,49 @@ export function FlashcardViewer({
   );
   const total = cards.length;
   const card = total > 0 ? cards[order[index] ?? 0] : null;
+  const progress = total > 0 ? ((index + 1) / total) * 100 : 0;
 
   // Reset when a different set opens; seed analytics from the server.
   useEffect(() => {
     setIndex(0);
+    setDir(1);
     setFlipped(false);
     setShuffleSeed(0);
     setCompleted(false);
+    setElapsed(0);
+    startedAtRef.current = Date.now();
   }, [setId, open]);
   useEffect(() => {
     if (data?.analytics) setAnalytics(data.analytics);
   }, [data?.analytics]);
 
-  const restart = () => {
+  const finish = useCallback(() => {
+    setElapsed((Date.now() - startedAtRef.current) / 1000);
+    setCompleted(true);
+  }, []);
+
+  const reviewAgain = () => {
     setIndex(0);
+    setDir(1);
     setFlipped(false);
+    setShuffleSeed(0);
     setCompleted(false);
+    setElapsed(0);
+    startedAtRef.current = Date.now();
   };
 
-  const go = (delta: number) => {
-    setFlipped(false);
-    if (delta > 0 && index >= total - 1) {
-      setCompleted(true);
-      return;
-    }
-    setIndex((i) => Math.min(total - 1, Math.max(0, i + delta)));
-  };
+  const go = useCallback(
+    (delta: number) => {
+      setFlipped(false);
+      if (delta > 0 && index >= total - 1) {
+        finish();
+        return;
+      }
+      setDir(delta >= 0 ? 1 : -1);
+      setIndex((i) => Math.min(total - 1, Math.max(0, i + delta)));
+    },
+    [index, total, finish],
+  );
 
   const rate = async (rating: StudyRating) => {
     if (!setId || !card) return;
@@ -123,12 +174,21 @@ export function FlashcardViewer({
       /* ignore — rating is best-effort */
     }
     if (index < total - 1) go(1);
-    else setCompleted(true);
+    else finish();
+  };
+
+  const onDragEnd = (_e: unknown, info: PanInfo) => {
+    const forward =
+      info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY;
+    const back =
+      info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY;
+    if (forward) go(1);
+    else if (back) go(-1);
   };
 
   // Keyboard navigation.
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || completed) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") go(1);
       else if (e.key === "ArrowLeft") go(-1);
@@ -139,8 +199,7 @@ export function FlashcardViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, total]);
+  }, [open, completed, go]);
 
   const resume = async (mode: ChatSeed["mode"]) => {
     if (!data) return;
@@ -153,14 +212,22 @@ export function FlashcardViewer({
     navigate(`/chat?sessionId=${session.id}`, { state: { seed } });
   };
 
+  const bookmarkItem = data && {
+    item_type: "flashcard" as const,
+    item_ref: data.set_id,
+    title: data.title,
+    content: data.topic || data.title,
+    metadata: { set_id: data.set_id, topic: data.topic },
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "flex flex-col gap-0 overflow-hidden p-0",
+          "flex flex-col gap-0 overflow-hidden bg-gradient-to-b from-background to-muted/30 p-0",
           isMobile
             ? "h-dvh w-screen max-w-none rounded-none border-0"
-            : "h-[85vh] w-[min(720px,95vw)] max-w-none rounded-2xl",
+            : "h-[86vh] w-[min(760px,95vw)] max-w-none rounded-3xl",
         )}
       >
         <DialogTitle className="sr-only">
@@ -176,249 +243,333 @@ export function FlashcardViewer({
           </div>
         ) : (
           <>
-            <div className="border-b border-border/50 px-5 py-4 pr-12">
+            {/* Header */}
+            <div className="border-b border-border/40 px-5 py-4 pr-12">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-brand-1" />
-                <h2 className="flex-1 truncate font-display text-lg font-bold">
-                  {data.title}
-                </h2>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setShuffleSeed((s) => (s ? 0 : Date.parse(data.created_at) || 7))}
-                  aria-label="Shuffle"
-                  title="Shuffle"
-                >
-                  <Shuffle
-                    className={cn("h-4 w-4", shuffleSeed && "text-brand-1")}
-                  />
-                </Button>
-                <BookmarkButton
-                  item={{
-                    item_type: "flashcard",
-                    item_ref: data.set_id,
-                    title: data.title,
-                    content: data.topic || data.title,
-                    metadata: { set_id: data.set_id, topic: data.topic },
-                  }}
-                />
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow">
+                  <Layers className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate font-display text-base font-bold leading-tight">
+                    {data.title}
+                  </h2>
+                  {data.topic && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {data.topic}
+                    </p>
+                  )}
+                </div>
+                {!completed && total > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() =>
+                      setShuffleSeed((s) =>
+                        s ? 0 : Date.parse(data.created_at) || 7,
+                      )
+                    }
+                    aria-label="Shuffle"
+                    title="Shuffle"
+                  >
+                    <Shuffle
+                      className={cn("h-4 w-4", shuffleSeed && "text-brand-1")}
+                    />
+                  </Button>
+                )}
+                {bookmarkItem && <BookmarkButton item={bookmarkItem} />}
               </div>
-              {total > 0 && (
-                <>
-                  <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
-                      Card {index + 1} of {total}
+              {!completed && total > 0 && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="tabular-nums text-muted-foreground">
+                      Card{" "}
+                      <span className="text-foreground">{index + 1}</span> of{" "}
+                      {total}
                     </span>
-                    {analytics && (
-                      <span>{analytics.completion}% complete</span>
-                    )}
+                    <span className="tabular-nums text-brand-1">
+                      {Math.round(progress)}%
+                    </span>
                   </div>
-                  <Progress
-                    value={((index + 1) / total) * 100}
-                    className="mt-2 h-1"
-                  />
-                </>
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <motion.div
+                      className="h-full rounded-full bg-brand-gradient"
+                      animate={{ width: `${progress}%` }}
+                      transition={{ type: "spring", stiffness: 260, damping: 32 }}
+                    />
+                  </div>
+                </div>
               )}
             </div>
 
             {completed ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 py-8 text-center">
-                <div className="grid h-16 w-16 place-items-center rounded-2xl bg-brand-gradient text-white">
-                  <Trophy className="h-8 w-8" />
-                </div>
-                <div>
-                  <h3 className="font-display text-xl font-bold">
-                    Flashcards Completed
-                  </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Total cards reviewed: {total}
-                  </p>
-                  {analytics && (
-                    <div className="mt-2 flex justify-center gap-3 text-xs">
-                      <span className="text-emerald-600 dark:text-emerald-400">
-                        Mastered {analytics.mastered}
+              /* ---------- Completion screen ---------- */
+              <div className="flex-1 overflow-y-auto px-5 py-8">
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mx-auto flex max-w-sm flex-col items-center gap-5 text-center"
+                >
+                  <motion.div
+                    initial={{ scale: 0.6, rotate: -12 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: "spring", stiffness: 240, damping: 14 }}
+                    className="grid h-20 w-20 place-items-center rounded-3xl bg-brand-gradient text-white shadow-glow"
+                  >
+                    <Trophy className="h-10 w-10" />
+                  </motion.div>
+                  <div>
+                    <h3 className="font-display text-2xl font-extrabold">
+                      🎉 Great job!
+                    </h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      You completed{" "}
+                      <span className="font-medium text-foreground">
+                        {data.title}
                       </span>
-                      <span className="text-red-600 dark:text-red-400">
-                        Needs revision {analytics.needs_revision}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex w-full max-w-sm flex-col gap-2">
-                  <Button
-                    onClick={() => resume("quiz")}
-                    disabled={createSession.isPending}
-                    variant="brand"
-                    className="gap-2"
-                  >
-                    <ListChecks className="h-4 w-4" /> Generate Quiz
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={restart}
-                    className="gap-2"
-                  >
-                    <RotateCcw className="h-4 w-4" /> Restart Flashcards
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => resume("continue")}
-                    disabled={createSession.isPending}
-                    className="gap-2"
-                  >
-                    <Sparkles className="h-4 w-4" /> Continue Learning
-                  </Button>
-                  <div className="flex justify-center pt-1">
-                    <BookmarkButton
-                      label
-                      item={{
-                        item_type: "flashcard",
-                        item_ref: data.set_id,
-                        title: data.title,
-                        content: data.topic || data.title,
-                        metadata: { set_id: data.set_id, topic: data.topic },
-                      }}
+                      .
+                    </p>
+                  </div>
+
+                  {/* Session stats */}
+                  <div className="grid w-full grid-cols-3 gap-2.5">
+                    <StatTile
+                      icon={Layers}
+                      label="Reviewed"
+                      value={String(total)}
+                    />
+                    <StatTile
+                      icon={Clock}
+                      label="Time"
+                      value={formatDuration(elapsed)}
+                    />
+                    <StatTile
+                      icon={Sparkles}
+                      label="Complete"
+                      value={`${analytics?.completion ?? 100}%`}
                     />
                   </div>
-                </div>
+
+                  {analytics && (
+                    <FlashcardAnalytics
+                      analytics={analytics}
+                      className="w-full"
+                    />
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex w-full flex-col gap-2">
+                    <Button onClick={reviewAgain} variant="brand" className="gap-2">
+                      <RotateCcw className="h-4 w-4" /> Review Again
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => resume("quiz")}
+                      disabled={createSession.isPending}
+                      className="gap-2"
+                    >
+                      <ListChecks className="h-4 w-4" /> Generate Quiz
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => onOpenChange(false)}
+                      className="gap-2 text-muted-foreground"
+                    >
+                      <ArrowLeft className="h-4 w-4" /> Back to Chat
+                    </Button>
+                  </div>
+                </motion.div>
               </div>
             ) : (
+              /* ---------- Study view ---------- */
               <>
-                <div className="flex flex-1 flex-col items-center justify-center gap-4 px-5 py-6">
+                <div className="flex flex-1 flex-col items-center justify-center gap-5 px-5 py-6">
                   {card ? (
-                    <motion.div
-                      drag="x"
-                      dragSnapToOrigin
-                      dragConstraints={{ left: 0, right: 0 }}
-                      dragElastic={0.5}
-                      onDragEnd={(_e, info) => {
-                        if (info.offset.x < -80) go(1);
-                        else if (info.offset.x > 80) go(-1);
-                      }}
-                      onTap={() => setFlipped((f) => !f)}
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Flip card; swipe left or right to navigate"
-                      className="relative h-72 w-full max-w-md cursor-grab touch-pan-y [perspective:1200px] active:cursor-grabbing"
-                    >
-                  <motion.div
-                    className="pointer-events-none relative h-full w-full [transform-style:preserve-3d]"
-                    animate={{ rotateY: flipped ? 180 : 0 }}
-                    transition={{ duration: 0.5 }}
-                  >
-                    <div className="absolute inset-0 grid place-items-center rounded-2xl border border-border/60 bg-card p-6 text-center [backface-visibility:hidden]">
-                      <div className="learning-content">
-                        <Badge variant="secondary" className="mb-3">
-                          Question
-                        </Badge>
-                        <p className="text-lg font-semibold">{card.front}</p>
-                        <p className="mt-4 text-xs text-muted-foreground">
-                          Tap or press Space to flip
-                        </p>
-                      </div>
+                    <div className="relative w-full max-w-md [perspective:1600px]">
+                      <AnimatePresence mode="popLayout" custom={dir}>
+                        <motion.div
+                          key={index}
+                          custom={dir}
+                          initial={{ opacity: 0, x: dir * 60, scale: 0.96 }}
+                          animate={{ opacity: 1, x: 0, scale: 1 }}
+                          exit={{ opacity: 0, x: dir * -60, scale: 0.96 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 320,
+                            damping: 34,
+                          }}
+                          drag="x"
+                          dragSnapToOrigin
+                          dragConstraints={{ left: 0, right: 0 }}
+                          dragElastic={0.4}
+                          onDragEnd={onDragEnd}
+                          onTap={() => setFlipped((f) => !f)}
+                          role="button"
+                          tabIndex={0}
+                          aria-label="Flip card; swipe left or right to navigate"
+                          className="cursor-grab touch-pan-y active:cursor-grabbing"
+                        >
+                          <motion.div
+                            className="pointer-events-none relative h-80 w-full [transform-style:preserve-3d]"
+                            animate={{ rotateY: flipped ? 180 : 0 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 260,
+                              damping: 26,
+                            }}
+                          >
+                            {/* Front (question) */}
+                            <div className="absolute inset-0 flex flex-col rounded-3xl border border-border/60 bg-card p-7 shadow-lg [backface-visibility:hidden]">
+                              <Badge
+                                variant="secondary"
+                                className="self-start text-[10px] font-semibold uppercase tracking-wider"
+                              >
+                                Question
+                              </Badge>
+                              <div className="learning-content flex flex-1 items-center justify-center">
+                                <p className="text-balance text-center text-xl font-semibold leading-snug">
+                                  {card.front}
+                                </p>
+                              </div>
+                              <p className="text-center text-xs text-muted-foreground">
+                                Tap to reveal answer
+                              </p>
+                            </div>
+                            {/* Back (answer) */}
+                            <div className="absolute inset-0 flex flex-col overflow-auto rounded-3xl border border-brand-1/40 bg-gradient-to-br from-brand-1/[0.06] to-brand-2/[0.1] p-7 shadow-glow [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                              <Badge className="self-start bg-brand-gradient text-[10px] font-semibold uppercase tracking-wider text-white">
+                                Answer
+                              </Badge>
+                              <div className="learning-content flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                                <p className="text-balance text-lg font-medium leading-snug">
+                                  {card.back}
+                                </p>
+                                {card.example && (
+                                  <p className="rounded-xl bg-background/60 p-3 text-sm text-muted-foreground">
+                                    <span className="font-medium text-foreground">
+                                      Example:{" "}
+                                    </span>
+                                    {card.example}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        </motion.div>
+                      </AnimatePresence>
                     </div>
-                    <div className="absolute inset-0 grid place-items-center overflow-auto rounded-2xl border border-brand-1/30 bg-card p-6 text-center [backface-visibility:hidden] [transform:rotateY(180deg)]">
-                      <div className="learning-content">
-                        <Badge className="mb-3 bg-brand-gradient text-white">
-                          Answer
-                        </Badge>
-                        <p className="text-base font-medium">{card.back}</p>
-                        {card.example && (
-                          <p className="mt-3 rounded-lg bg-muted/50 p-2 text-sm text-muted-foreground">
-                            <span className="font-medium">Example: </span>
-                            {card.example}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </motion.div>
-                    </motion.div>
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       This set has no cards.
                     </p>
                   )}
+
+                  {/* Self-rating */}
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {RATINGS.map((r) => (
+                      <Button
+                        key={r.value}
+                        variant="outline"
+                        size="sm"
+                        disabled={!card || recordStudy.isPending}
+                        onClick={() => rate(r.value)}
+                        className={cn("h-9 rounded-full px-4 text-xs", r.cls)}
+                      >
+                        {r.label}
+                      </Button>
+                    ))}
+                  </div>
                   <p className="text-xs text-muted-foreground sm:hidden">
                     Swipe to move • tap to flip
                   </p>
+                </div>
 
-              {/* Study rating */}
-              <div className="flex flex-wrap justify-center gap-2">
-                {RATINGS.map((r) => (
-                  <Button
-                    key={r.value}
-                    variant="outline"
-                    size="sm"
-                    disabled={!card || recordStudy.isPending}
-                    onClick={() => rate(r.value)}
-                    className={cn("h-8 text-xs", r.cls)}
-                  >
-                    {r.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            {/* Nav + analytics + flow actions */}
-            <div className="border-t border-border/50 px-5 py-3">
-              <div className="mb-3 flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={index === 0}
-                  onClick={() => go(-1)}
-                  className="gap-1"
-                >
-                  <ChevronLeft className="h-4 w-4" /> Prev
-                </Button>
-                {analytics && (
-                  <div className="flex gap-3 text-[11px] text-muted-foreground">
-                    <span>Studied {analytics.studied}/{analytics.total}</span>
-                    <span className="text-emerald-600 dark:text-emerald-400">
-                      Mastered {analytics.mastered}
-                    </span>
-                    <span className="text-red-600 dark:text-red-400">
-                      Revise {analytics.needs_revision}
-                    </span>
+                {/* Footer nav + flow actions */}
+                <div className="border-t border-border/40 px-5 py-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      disabled={index === 0}
+                      onClick={() => go(-1)}
+                      aria-label="Previous card"
+                      className="h-9 w-9 shrink-0 rounded-full"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    {analytics && (
+                      <div className="flex gap-3 text-[11px] text-muted-foreground">
+                        <span>
+                          Studied {analytics.studied}/{analytics.total}
+                        </span>
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          Mastered {analytics.mastered}
+                        </span>
+                        <span className="text-red-600 dark:text-red-400">
+                          Revise {analytics.needs_revision}
+                        </span>
+                      </div>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => go(1)}
+                      aria-label={
+                        index >= total - 1 ? "Finish deck" : "Next card"
+                      }
+                      className="h-9 w-9 shrink-0 rounded-full"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
                   </div>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={index >= total - 1}
-                  onClick={() => go(1)}
-                  className="gap-1"
-                >
-                  Next <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => resume("quiz")}
-                  disabled={createSession.isPending}
-                  variant="brand"
-                  className="flex-1 gap-1.5"
-                >
-                  <ListChecks className="h-4 w-4" /> Create Quiz
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => resume("continue")}
-                  disabled={createSession.isPending}
-                  className="flex-1 gap-1.5"
-                >
-                  <Sparkles className="h-4 w-4" /> Continue Learning
-                </Button>
-              </div>
-            </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => resume("quiz")}
+                      disabled={createSession.isPending}
+                      variant="brand"
+                      className="flex-1 gap-1.5"
+                    >
+                      <ListChecks className="h-4 w-4" /> Create Quiz
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => resume("continue")}
+                      disabled={createSession.isPending}
+                      className="flex-1 gap-1.5"
+                    >
+                      <Sparkles className="h-4 w-4" /> Continue Learning
+                    </Button>
+                  </div>
+                </div>
               </>
             )}
           </>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function StatTile({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Layers;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card/60 p-3 text-center">
+      <Icon className="mx-auto h-4 w-4 text-brand-1" />
+      <p className="mt-1.5 font-display text-lg font-bold tabular-nums leading-none">
+        {value}
+      </p>
+      <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+    </div>
   );
 }

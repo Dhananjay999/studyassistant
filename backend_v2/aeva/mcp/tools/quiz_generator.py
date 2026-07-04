@@ -18,6 +18,59 @@ from aeva.quiz import exam_patterns
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
 
+# Types that must resolve to exactly one correct answer.
+_SINGLE_ANSWER_TYPES = frozenset({"single_select", "true_false"})
+
+
+def _normalize_questions(
+    questions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Repair per-type answer invariants the LLM may violate.
+
+    Guarantees, regardless of what the model returned:
+
+    * ``true_false`` questions expose exactly the ``["True", "False"]`` options.
+    * ``correct_answers`` only contains values present in ``options``.
+    * ``single_select`` / ``true_false`` end with EXACTLY ONE correct answer
+      (extras are dropped, keeping the first valid one).
+    * Every question keeps at least one correct answer (falls back to the
+      first option when the model left none valid).
+
+    Malformed questions are logged (not raised) so a single bad item never
+    fails the whole generation.
+    """
+    normalized: list[dict[str, Any]] = []
+    for question in questions:
+        qtype = question.get("type", "single_select")
+        options = [str(o) for o in question.get("options") or []]
+
+        if qtype == "true_false":
+            options = ["True", "False"]
+
+        raw_correct = question.get("correct_answers") or []
+        correct = [c for c in raw_correct if c in options]
+        if not correct and options:
+            current_app.logger.warning(
+                "Quiz question had no valid correct answer; defaulting to the "
+                "first option (type=%s)",
+                qtype,
+            )
+            correct = [options[0]]
+        if qtype in _SINGLE_ANSWER_TYPES and len(correct) > 1:
+            current_app.logger.warning(
+                "Quiz %s question had %d correct answers; keeping the first",
+                qtype,
+                len(correct),
+            )
+            correct = correct[:1]
+
+        normalized.append({
+            **question,
+            "options": options,
+            "correct_answers": correct,
+        })
+    return normalized
+
 
 class QuizGeneratorTool(BaseTool):
     """Generate a dynamic quiz and persist it."""
@@ -156,6 +209,11 @@ class QuizGeneratorTool(BaseTool):
             system_prompt=rendered.system_prompt,
             history=history,
             attachments=attachments,
+        )
+        # Repair per-type answer invariants (e.g. a single_select the model
+        # marked with two correct options) before anything is persisted.
+        quiz_data["questions"] = _normalize_questions(
+            quiz_data.get("questions") or []
         )
         # Carry the requested difficulty + exam config onto the persisted quiz
         # row so the quizzes list/cards can surface them (the LLM output itself

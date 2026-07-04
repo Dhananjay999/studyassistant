@@ -11,6 +11,7 @@ import {
   ListChecks,
   Loader2,
   MinusCircle,
+  RotateCcw,
   Sparkles,
   Target,
   Trophy,
@@ -41,6 +42,7 @@ export function QuizAttemptReport({
   initialAnalysis = null,
   onClose,
   onBack,
+  onRetake,
 }: {
   quiz: QuizContent;
   evaluation: QuizEvaluation;
@@ -49,6 +51,7 @@ export function QuizAttemptReport({
   initialAnalysis?: QuizAnalysis | null;
   onClose: () => void;
   onBack?: () => void;
+  onRetake?: () => void;
 }) {
   const navigate = useNavigate();
   const createSession = useCreateSession();
@@ -255,6 +258,16 @@ export function QuizAttemptReport({
             />
           </div>
 
+          {/* Retake — primary next action */}
+          {onRetake && (
+            <Button
+              onClick={onRetake}
+              className="w-full gap-1.5 bg-brand-gradient text-white shadow-glow"
+            >
+              <RotateCcw className="h-4 w-4" /> Retake quiz
+            </Button>
+          )}
+
           {/* Actions */}
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button
@@ -307,7 +320,7 @@ export function QuizAttemptReport({
           {/* Keep learning */}
           <div className="space-y-2 border-t border-border/50 pt-4">
             <p className="text-sm font-semibold">Keep learning</p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 align-item-center">
               <Button
                 size="sm"
                 onClick={makeFlashcards}

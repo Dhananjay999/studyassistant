@@ -12,19 +12,12 @@ WEB_SEARCH_TEMPLATE = PromptTemplate(
     name="web_search",
     system="{SYSTEM_PROMPT}{USER_PROFILE}",
     user="""{CONVERSATION_CONTEXT}
-Answer the student's question as Aeva.
+Answer the student's question as Aeva, grounded in web search.
 
-Google Search is available. Use it only when it improves the answer.
+This is a web-search answer: search the web for the question and base your answer on what you find. Prefer reliable, authoritative sources.
 
-Search for:
-- Current, time-sensitive, or changing information (e.g. news, prices, dates, statistics, "latest", "current").
-- Facts that require verification.
-
-Answer directly from your knowledge for well-known concepts (e.g. recursion, photosynthesis), using search only to verify details if helpful.
-
-When using search results:
-- Prefer reliable, authoritative sources.
-- Mention the source naturally when citing information.
+When writing the answer:
+- Cite inline: right after a fact that came from the web, add a Markdown link to the source, e.g. "India's population is ~1.43 billion ([Worldometer](https://www.worldometers.info/...))". Use the real source URL, keep the link text short (site or source name), and only cite claims that actually came from a source.
 - If reliable sources disagree or remain uncertain, say so instead of guessing.
 
 Student question:

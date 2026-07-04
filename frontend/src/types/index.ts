@@ -9,7 +9,12 @@ export type ToolUsed =
   | "quiz_generator"
   | "flashcard_generator";
 export type QuestionType = "single_select" | "multi_select" | "true_false";
-export type Difficulty = "easy" | "medium" | "hard";
+export type Difficulty =
+  | "beginner"
+  | "easy"
+  | "medium"
+  | "hard"
+  | "expert";
 
 export type PersonalizationStatus = "pending" | "completed" | "skipped";
 
@@ -242,6 +247,16 @@ export interface MessageMeta {
   /** AI-generated next questions: display title + richer hidden prompt. */
   suggested_followups?: SuggestedFollowup[];
   response_type?: string;
+  /** Set when the turn failed: renders an AI-style error card (with retry). */
+  error?: ChatError;
+}
+
+/** A failed turn, surfaced as a friendly in-thread error card. */
+export interface ChatError {
+  /** Student-facing message (already friendly, not a raw error string). */
+  message: string;
+  /** The original prompt the user sent, for retry / copy. */
+  prompt: string;
 }
 
 /** One AI-suggested follow-up: `title` is shown, `prompt` is what gets sent. */

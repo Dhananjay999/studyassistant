@@ -12,11 +12,13 @@ from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.llm.providers.base import LLMProvider
 from aeva.llm.providers.gemini import GeminiProvider
 from aeva.llm.providers.groq import GroqProvider
+from aeva.llm.providers.openai_provider import OpenAIProvider
 
 # Registry of available providers keyed by their config name.
 PROVIDERS: dict[str, type[LLMProvider]] = {
     "gemini": GeminiProvider,
     "groq": GroqProvider,
+    "openai": OpenAIProvider,
 }
 
 

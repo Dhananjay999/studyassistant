@@ -71,6 +71,25 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["GROQ_REASONING_EFFORT"] = os.environ.get(
         "GROQ_REASONING_EFFORT", "low"
     )
+    # OpenAI. Optional like Groq: leave OPENAI_API_KEY blank to keep OpenAI
+    # disabled. To use it, set a capability's LLM_*_PROVIDER (or LLM_PROVIDER)
+    # to "openai" and its model (LLM_*_MODEL / LLM_MODEL) to an OpenAI model,
+    # e.g. gpt-4o-mini (or text-embedding-3-small for LLM_EMBEDDING_MODEL).
+    app.config["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
+    # Blank uses the SDK default endpoint; set it to target Azure OpenAI or an
+    # OpenAI-compatible gateway.
+    app.config["OPENAI_BASE_URL"] = os.environ.get("OPENAI_BASE_URL", "")
+    # Cap on completion tokens per OpenAI call. 0 (the default) lets OpenAI
+    # size the completion itself; set a positive value to bound cost/latency.
+    app.config["OPENAI_MAX_TOKENS"] = int(
+        os.environ.get("OPENAI_MAX_TOKENS", "0")
+    )
+    # Reasoning effort for reasoning-capable OpenAI models
+    # ("minimal"/"low"/"medium"/"high"). Blank omits the parameter, which
+    # non-reasoning models require.
+    app.config["OPENAI_REASONING_EFFORT"] = os.environ.get(
+        "OPENAI_REASONING_EFFORT", ""
+    )
     default_model = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
     app.config["LLM_MODEL"] = default_model
     # Per-capability models (fall back to LLM_MODEL when unset).

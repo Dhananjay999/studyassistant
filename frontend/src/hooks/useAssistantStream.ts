@@ -87,6 +87,19 @@ export function useAssistantStream() {
               continue;
             }
 
+            // A terminal error frame: the turn failed after streaming began
+            // (e.g. an LLM/API-key/rate-limit error). The backend can't change
+            // the already-sent 200 status, so it signals failure in-band here.
+            if (parsed.type === "error") {
+              if (rafRef.current) cancelAnimationFrame(rafRef.current);
+              cb.onError(
+                typeof parsed.error === "string" && parsed.error
+                  ? parsed.error
+                  : "Stream error",
+              );
+              setStreaming(false);
+              return;
+            }
             if (parsed.type === "clarification") {
               cb.onClarification(parsed.data as Record<string, unknown>);
               setStreaming(false);

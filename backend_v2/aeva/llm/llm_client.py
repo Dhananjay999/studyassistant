@@ -310,3 +310,14 @@ class LLMClient:
         if extra:
             payload.update(extra)
         return f"data: {json.dumps(payload)}\n\n"
+
+    @staticmethod
+    def format_sse_error(message: str, code: str = "INTERNAL_ERROR") -> str:
+        """Format a terminal error as an SSE frame.
+
+        Emitted when a turn fails after streaming has started (a 200 response is
+        already committed, so an HTTP error status is no longer possible). The
+        client watches for ``type == "error"`` and surfaces a friendly card.
+        """
+        payload = {"type": "error", "error": message, "code": code}
+        return f"data: {json.dumps(payload)}\n\n"
