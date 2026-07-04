@@ -44,7 +44,10 @@ Available tools:
 Student message:
 {USER_MESSAGE}
 
-Use the recent conversation to resolve follow-up references such as "explain more", "quiz me", "summarize this", or "in simpler terms". The current message has highest priority, followed by recent conversation and selected media.
+The conversation above is in chronological order (oldest first). Every assistant turn that ran a tool is tagged `[tool: NAME]` at the start of its content, naming the tool that produced that answer — e.g. `[tool: quiz_generator]` or `[tool: media_llm]`. Use these tags to self-determine the tool for the current message:
+- Resolve follow-up references ("explain more", "quiz me", "summarize this", "in simpler terms", "another one", "again") against the most recent tagged turns.
+- A keyword-less continuation ("do that again", "one more", "another") should reuse the tool of the most recent tagged assistant turn unless the current message clearly asks for something else.
+- The current message has highest priority, then the recent tagged conversation, then selected media. When the message itself is explicit, follow it even if earlier turns used a different tool.
 
 ================ DECISION =================
 

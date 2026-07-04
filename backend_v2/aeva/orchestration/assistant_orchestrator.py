@@ -40,6 +40,19 @@ _REFERENCE_RE = re.compile(
     r"\b(this|that|these|those|the above|the following)\b",
 )
 
+# Repeat cues in a keyword-less follow-up ("create again", "another one",
+# "one more") that mean "do the last thing again" rather than start a web
+# search. Resolved against the previous turn's tool by _continuation_plan.
+_REPEAT_RE = re.compile(
+    r"\b(again|another|one more|once more|redo|re-?generate|"
+    r"do it again|same (?:again|thing)|more of (?:these|those|them))\b",
+)
+
+# Tools whose "do it again" is unambiguous — a fresh quiz / flashcard set.
+# web_search / media_llm are excluded: repeating them verbatim is rarely
+# what the user means, so those fall through to normal routing.
+_REPEATABLE_TOOLS = frozenset({"quiz_generator", "flashcard_generator"})
+
 
 class AssistantOrchestrator:
     """Single coordinator: plan → clarify or run tool → respond."""
@@ -271,6 +284,13 @@ class AssistantOrchestrator:
                     session, history, enriched_message, decision,
                     personalization,
                 )
+
+        # "Create again" / "another one" -> repeat the last generator tool
+        # instead of falling through to a web search.
+        cont = self._continuation_plan(ctx, enriched_message)
+        if cont is not None:
+            logger.info("Turn → continuation of last tool: %s", cont["tool"])
+            return session, history, enriched_message, cont, personalization
 
         # Deterministic outcome -> skip the planner LLM call entirely.
         fast = self._fast_path_plan(ctx, enriched_message, history)
@@ -717,13 +737,46 @@ class AssistantOrchestrator:
     def _get_history(
         self, session_id: str, limit: int = 10
     ) -> list[dict[str, str]]:
-        """Recent message history."""
+        """Recent message history, in chronological order.
+
+        Each assistant turn also carries the ``tool`` that produced it (from the
+        persisted ``metadata.tool_used``) so the planner can route follow-ups by
+        which tool answered each earlier turn. The extra key is ignored by the
+        LLM providers (they read only ``role``/``content``), so the same list
+        doubles as the untagged history handed to the answer model.
+        """
         messages = self.supabase.get_messages(session_id)
         recent = messages[-limit:] if len(messages) > limit else messages
-        return [
-            {"role": m["role"], "content": m["content"]}
-            for m in recent
-        ]
+        history: list[dict[str, str]] = []
+        for m in recent:
+            item = {"role": m["role"], "content": m["content"]}
+            tool = (m.get("metadata") or {}).get("tool_used")
+            if m["role"] == "assistant" and tool:
+                item["tool"] = tool
+            history.append(item)
+        return history
+
+    @staticmethod
+    def _history_for_planner(
+        history: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        """Annotate assistant turns with the tool that produced them.
+
+        The planner routes follow-ups ("another one", "explain more", "quiz me
+        on that") by pattern, so it needs to see which tool answered each
+        earlier turn, in order. Each assistant turn is tagged ``[tool: NAME]``
+        ahead of its content so the model can self-determine the right tool from
+        the conversation itself. These tags are for planning only — the answer
+        model receives the untagged ``history``.
+        """
+        annotated: list[dict[str, str]] = []
+        for item in history:
+            content = item["content"]
+            tool = item.get("tool")
+            if item["role"] == "assistant" and tool:
+                content = f"[tool: {tool}]\n{content}"
+            annotated.append({"role": item["role"], "content": content})
+        return annotated
 
     def _fast_path_plan(
         self,
@@ -801,7 +854,7 @@ class AssistantOrchestrator:
         return self.llm.generate_structured(
             rendered.user_message,
             prompts.PLAN_TURN_SCHEMA,
-            history=history,
+            history=self._history_for_planner(history),
             system_prompt=rendered.system_prompt,
         )
 
@@ -912,6 +965,57 @@ class AssistantOrchestrator:
             "action": "run_tool",
             "tool": {"name": "web_search", "params": {"query": message}},
         }
+
+    def _continuation_plan(
+        self,
+        ctx: AssistantContext,
+        message: str,
+    ) -> dict[str, Any] | None:
+        """Repeat the last generator tool for a keyword-less "again" follow-up.
+
+        A short reply like "create again" / "another one" carries a repeat cue
+        but no "quiz"/"flashcard" keyword, so it would otherwise fall through to
+        web_search. When the previous assistant turn produced a quiz or
+        flashcard set, inherit that tool so the follow-up repeats the actual
+        last action (a quiz still routes through the setup popover downstream).
+        Messages that already name a tool, carry media, or answer a
+        clarification keep their normal routing.
+        """
+        if ctx.clarification is not None or ctx.media_ids:
+            return None
+        text = message.lower()
+        if any(
+            w in text
+            for w in ("quiz", "practice test", "test me", "flashcard",
+                      "flash card")
+        ):
+            return None
+        if not _REPEAT_RE.search(text):
+            return None
+        last_tool = self._last_generator_tool(ctx.session_id)
+        if last_tool is None:
+            return None
+        return {
+            "action": "run_tool",
+            "tool": {"name": last_tool, "params": {"topic": message}},
+        }
+
+    def _last_generator_tool(self, session_id: str) -> str | None:
+        """Name of the most recent assistant turn's repeatable generator tool.
+
+        Scans messages newest-first and returns the first assistant
+        ``tool_used`` that is a quiz/flashcard generator, or None when the last
+        tool-bearing turn used something else (so "again" does not silently
+        repeat an unrelated web search).
+        """
+        for msg in reversed(self.supabase.get_messages(session_id)):
+            if msg.get("role") != "assistant":
+                continue
+            tool_used = (msg.get("metadata") or {}).get("tool_used")
+            if not tool_used:
+                continue
+            return tool_used if tool_used in _REPEATABLE_TOOLS else None
+        return None
 
     def _handle_clarification(
         self,

@@ -258,18 +258,16 @@ export function QuizAttemptReport({
             />
           </div>
 
-          {/* Retake — primary next action */}
-          {onRetake && (
-            <Button
-              onClick={onRetake}
-              className="w-full gap-1.5 bg-brand-gradient text-white shadow-glow"
-            >
-              <RotateCcw className="h-4 w-4" /> Retake quiz
-            </Button>
-          )}
-
           {/* Actions */}
           <div className="flex flex-col gap-2 sm:flex-row">
+            {onRetake && (
+              <Button
+                onClick={onRetake}
+                className="flex-1 gap-1.5 bg-brand-gradient text-white shadow-glow"
+              >
+                <RotateCcw className="h-4 w-4" /> Retake quiz
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => setReviewOpen((o) => !o)}
