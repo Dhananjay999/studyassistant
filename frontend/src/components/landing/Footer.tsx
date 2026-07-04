@@ -13,7 +13,12 @@ export function Footer() {
   return (
     <footer className="border-t border-border/60 py-10">
       <div className="container flex flex-col items-center justify-between gap-4 sm:flex-row">
-        <BrandLogo />
+        <div className="flex flex-col items-center gap-1 sm:items-start">
+          <BrandLogo />
+          <p className="text-xs text-muted-foreground">
+            The free AI study assistant for students.
+          </p>
+        </div>
         <nav
           aria-label="Footer"
           className="flex items-center gap-5 text-sm text-muted-foreground"
@@ -25,7 +30,7 @@ export function Footer() {
           ))}
         </nav>
         <p className="text-xs text-muted-foreground">
-          © {year} Aeva. Study smarter.
+          © {year} StudyAssistant. Study smarter.
         </p>
       </div>
     </footer>

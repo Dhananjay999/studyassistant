@@ -1,114 +1,41 @@
 /**
  * Central SEO configuration and structured-data helpers.
  *
- * Single source of truth for site-wide constants, per-page metadata, and the
- * JSON-LD builders used by the `Seo` component. Public routes listed here should
- * mirror the sitemap route list in `vite.config.ts` (kept in sync by hand — a
- * new public page needs an entry in both places).
+ * Site-wide constants, per-page metadata, and the JSON-LD builders used by the
+ * `Seo` component. Route metadata itself lives in `seo-routes.ts` (a pure,
+ * env-free module) so `vite.config.ts` can share it for the sitemap,
+ * robots.txt, llms.txt, and the prerender route list.
  */
+
+import { PAGES, SITE_NAME } from "@/lib/seo-routes";
+
+export {
+  BRAND,
+  CORE_KEYWORDS,
+  PAGES,
+  PUBLIC_ROUTES,
+  SITE_NAME,
+  TWITTER_HANDLE,
+  type PageMeta,
+} from "@/lib/seo-routes";
 
 /** Canonical origin (no trailing slash). Override with VITE_SITE_URL. */
 export const SITE_URL = (
   import.meta.env.VITE_SITE_URL ?? "https://studyassistant.app"
 ).replace(/\/$/, "");
 
-export const SITE_NAME = "StudyAssistant";
-export const BRAND = "Aeva";
-export const TWITTER_HANDLE = "@studyassistant";
+/** Default social preview image (absolute URL, 1200×630 PNG). */
+export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`;
 
-/** Default social preview image (absolute URL). */
-export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.svg`;
+/** Default alt text for the social preview image. */
+export const DEFAULT_OG_IMAGE_ALT =
+  "StudyAssistant — a complete AI learning system for students";
 
 /** Absolute URL for a site-relative path. */
 export function absoluteUrl(path = "/"): string {
   const clean = path.startsWith("/") ? path : `/${path}`;
   return `${SITE_URL}${clean === "/" ? "/" : clean.replace(/\/$/, "")}`;
 }
-
-/** Shape of the per-page metadata used across public pages. */
-export interface PageMeta {
-  path: string;
-  title: string;
-  description: string;
-  keywords?: string[];
-  /** Sitemap change frequency + priority hints. */
-  changefreq?: "daily" | "weekly" | "monthly" | "yearly";
-  priority?: number;
-}
-
-/** Keyword clusters we want the landing/product to rank for. */
-export const CORE_KEYWORDS = [
-  "AI study assistant",
-  "AI learning platform",
-  "AI homework helper",
-  "AI quiz generator",
-  "AI flashcards",
-  "study with AI",
-  "PDF AI chat",
-  "student AI assistant",
-  "AI tutor",
-  "exam prep",
-];
-
-/**
- * Per-page SEO metadata for every public, indexable page. Authenticated app
- * pages are intentionally absent — they render `<Seo noindex />` instead.
- */
-export const PAGES = {
-  home: {
-    path: "/",
-    title: `${SITE_NAME} — a complete AI learning system, not just a chatbot`,
-    description:
-      "StudyAssistant (meet Aeva) is a complete AI learning system for students: chat with web search and your PDFs, auto-generate flashcards and quizzes, get AI performance analysis, and save everything with bookmarks and global search. Free to start.",
-    keywords: CORE_KEYWORDS,
-    changefreq: "weekly",
-    priority: 1.0,
-  },
-  features: {
-    path: "/features",
-    title: `Features — ${SITE_NAME} AI study tools for students`,
-    description:
-      "Explore StudyAssistant's features: AI chat over your PDFs and notes, live web search, one-click quiz and flashcard generation, performance analytics, bookmarks, and global search.",
-    keywords: [
-      "AI study tools",
-      "AI quiz generator",
-      "AI flashcards",
-      "PDF AI chat",
-      "study analytics",
-      ...CORE_KEYWORDS,
-    ],
-    changefreq: "weekly",
-    priority: 0.9,
-  },
-  about: {
-    path: "/about",
-    title: `About ${SITE_NAME} — the AI study buddy for students`,
-    description:
-      "Learn about StudyAssistant and Aeva, the AI study buddy built to help students actually learn — not just get answers. Our mission, approach, and how we handle your data.",
-    keywords: ["about StudyAssistant", "AI study buddy", "student AI assistant"],
-    changefreq: "monthly",
-    priority: 0.6,
-  },
-  privacy: {
-    path: "/privacy",
-    title: `Privacy Policy — ${SITE_NAME}`,
-    description:
-      "How StudyAssistant collects, uses, and protects your data. Your sessions, uploads, quizzes, and flashcards are tied to your account and only accessible to you.",
-    changefreq: "yearly",
-    priority: 0.3,
-  },
-  terms: {
-    path: "/terms",
-    title: `Terms of Service — ${SITE_NAME}`,
-    description:
-      "The terms that govern your use of StudyAssistant. Read our acceptable-use policy, account rules, and service terms.",
-    changefreq: "yearly",
-    priority: 0.3,
-  },
-} satisfies Record<string, PageMeta>;
-
-/** Every public, indexable route (for internal use / cross-checks). */
-export const PUBLIC_ROUTES: PageMeta[] = Object.values(PAGES);
 
 /* --------------------------------------------------------------------------
  * JSON-LD structured-data builders.
@@ -123,14 +50,19 @@ export function organizationSchema(): Record<string, unknown> {
     "@id": `${SITE_URL}/#organization`,
     name: SITE_NAME,
     url: SITE_URL,
-    logo: `${SITE_URL}/favicon.svg`,
+    // Google wants a raster logo of at least 112×112px.
+    logo: {
+      "@type": "ImageObject",
+      url: `${SITE_URL}/icon-512.png`,
+      width: 512,
+      height: 512,
+    },
     description:
       "AI study assistant for students: chat with your PDFs, search the web, and auto-generate quizzes and flashcards.",
-    sameAs: [] as string[],
   };
 }
 
-/** WebSite node — enables the sitelinks search box and site identity. */
+/** WebSite node — site identity for search engines. */
 export function websiteSchema(): Record<string, unknown> {
   return {
     "@context": "https://schema.org",
@@ -156,6 +88,33 @@ export function softwareApplicationSchema(): Record<string, unknown> {
     description:
       "AI study buddy for students: ask questions, upload notes/PDFs for instant answers, search the web, and generate practice quizzes and flashcards.",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    screenshot: `${SITE_URL}/og-image.png`,
+    featureList: [
+      "AI chat with web search and cited sources",
+      "Chat with PDFs, notes, and images (page-level citations)",
+      "AI quiz generator with instant grading and feedback",
+      "AI flashcard generator with mastery tracking",
+      "Learning analytics and AI performance analysis",
+      "Personalized explanations from your learning profile",
+      "Bookmarks, folders, and global search",
+    ],
+  };
+}
+
+/** WebPage node — identifies a specific public page within the site graph. */
+export function webPageSchema(opts: {
+  title: string;
+  description: string;
+  path: string;
+}): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "@id": `${absoluteUrl(opts.path)}#webpage`,
+    url: absoluteUrl(opts.path),
+    name: opts.title,
+    description: opts.description,
+    isPartOf: { "@id": `${SITE_URL}/#website` },
   };
 }
 
@@ -174,7 +133,7 @@ export function faqSchema(
   };
 }
 
-/** BreadcrumbList node (future-ready, e.g. for blog articles). */
+/** BreadcrumbList node — used on every public subpage. */
 export function breadcrumbSchema(
   items: { name: string; path: string }[],
 ): Record<string, unknown> {
@@ -206,12 +165,10 @@ export function articleSchema(opts: {
     headline: opts.title,
     description: opts.description,
     image: opts.image ?? DEFAULT_OG_IMAGE,
-    author: { "@type": "Person", name: opts.author ?? SITE_NAME },
-    publisher: {
-      "@type": "Organization",
-      name: SITE_NAME,
-      logo: { "@type": "ImageObject", url: `${SITE_URL}/favicon.svg` },
-    },
+    author: opts.author
+      ? { "@type": "Person", name: opts.author }
+      : { "@type": "Organization", name: SITE_NAME },
+    publisher: { "@id": `${SITE_URL}/#organization` },
     datePublished: opts.publishedAt,
     dateModified: opts.updatedAt ?? opts.publishedAt,
     mainEntityOfPage: { "@type": "WebPage", "@id": absoluteUrl(opts.path) },

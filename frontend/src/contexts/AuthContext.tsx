@@ -56,7 +56,20 @@ export function useAuth(): AuthContextValue {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Only block on "loading" when a stored session might actually resolve —
+  // brand-new visitors (and the build-time prerenderer) get the landing page
+  // on the very first render instead of a loader frame.
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return Boolean(
+        localStorage.getItem(STORAGE.access) ||
+          localStorage.getItem(STORAGE.refresh),
+      );
+    } catch {
+      return false;
+    }
+  });
   const [signingIn, setSigningIn] = useState(false);
   const tokenRef = useRef<string | null>(null);
   const refreshTimer = useRef<number>();

@@ -1,7 +1,13 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { HelmetProvider } from "react-helmet-async";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import { AppLoader } from "@/components/common/AppLoader";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,9 +20,17 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { SigningInModal } from "@/components/auth/SigningInModal";
 import { SettingsExperience } from "@/components/settings/SettingsExperience";
 import { queryClient } from "@/lib/queryClient";
+import { trackPageview } from "@/lib/analytics";
 import LandingPage from "@/pages/LandingPage";
 import AuthCallback from "@/pages/AuthCallback";
 import NotFound from "@/pages/NotFound";
+// Public, indexable pages are eager: they're prerendered to static HTML at
+// build time, and a lazy chunk would flash a loader over that real content.
+// They share almost all of their code with the landing page anyway.
+import FeaturesPage from "@/pages/FeaturesPage";
+import AboutPage from "@/pages/AboutPage";
+import PrivacyPage from "@/pages/PrivacyPage";
+import TermsPage from "@/pages/TermsPage";
 
 // Heavy app (markdown/KaTeX/PDF) is split out of the landing's initial load.
 const ChatPage = lazy(() => import("@/pages/ChatPage"));
@@ -26,11 +40,6 @@ const QuizzesPage = lazy(() => import("@/pages/QuizzesPage"));
 const FlashcardsPage = lazy(() => import("@/pages/FlashcardsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
-// Public, indexable marketing/legal pages (kept out of the landing's initial JS).
-const FeaturesPage = lazy(() => import("@/pages/FeaturesPage"));
-const AboutPage = lazy(() => import("@/pages/AboutPage"));
-const PrivacyPage = lazy(() => import("@/pages/PrivacyPage"));
-const TermsPage = lazy(() => import("@/pages/TermsPage"));
 // Hidden Super Admin panel. The path is an unguessable secret AND the panel
 // has its own server-verified auth — the URL is never trusted on its own.
 const AdminApp = lazy(() => import("@/pages/admin/AdminApp"));
@@ -38,6 +47,15 @@ const ADMIN_ROUTE = "/admin/0670246c/no-access/b7bb2c4485f1/82cacc27d7";
 
 function RouteFallback() {
   return <AppLoader />;
+}
+
+/** Reports SPA route changes to GA4 (no-op unless configured). */
+function AnalyticsTracker() {
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    trackPageview(pathname + search);
+  }, [pathname, search]);
+  return null;
 }
 
 function HomeRoute() {
@@ -60,6 +78,7 @@ export default function App() {
                   <SigningInModal />
                   <SettingsExperience />
                   <BrowserRouter>
+                    <AnalyticsTracker />
                     <Suspense fallback={<RouteFallback />}>
                       <Routes>
                     <Route path="/" element={<HomeRoute />} />

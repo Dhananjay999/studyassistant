@@ -1,6 +1,6 @@
 import { Seo } from "@/components/common/Seo";
 import { PublicPage } from "@/components/landing/PublicPage";
-import { PAGES, breadcrumbSchema } from "@/lib/seo";
+import { PAGES, breadcrumbSchema, webPageSchema } from "@/lib/seo";
 
 export default function TermsPage() {
   return (
@@ -9,10 +9,17 @@ export default function TermsPage() {
         title={PAGES.terms.title}
         description={PAGES.terms.description}
         path={PAGES.terms.path}
-        jsonLd={breadcrumbSchema([
-          { name: "Home", path: "/" },
-          { name: "Terms of Service", path: "/terms" },
-        ])}
+        jsonLd={[
+          webPageSchema({
+            title: PAGES.terms.title,
+            description: PAGES.terms.description,
+            path: PAGES.terms.path,
+          }),
+          breadcrumbSchema([
+            { name: "Home", path: "/" },
+            { name: "Terms of Service", path: "/terms" },
+          ]),
+        ]}
       />
       <PublicPage
         title="Terms of Service"

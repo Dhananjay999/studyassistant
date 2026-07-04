@@ -26,12 +26,13 @@ export function RotatingWords({
     return () => window.clearInterval(id);
   }, [reduce, words.length, intervalMs]);
 
-  if (reduce) {
+  // Reduced motion and build-time prerender both get plain static text.
+  if (reduce || typeof window === "undefined") {
     return <span className={className}>{words[0]}</span>;
   }
 
   return (
-    <span className={`relative inline-grid mt-8 ${className ?? ""}`}>
+    <span className={`relative inline-grid ${className ?? ""}`}>
       {/* Invisible widest word reserves height/width to avoid layout shift. */}
       <span className="invisible col-start-1 row-start-1" aria-hidden>
         {words.reduce((a, b) => (a.length >= b.length ? a : b), "")}

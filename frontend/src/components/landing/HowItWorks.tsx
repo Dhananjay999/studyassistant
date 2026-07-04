@@ -43,10 +43,13 @@ const STEPS = [
 
 export function HowItWorks() {
   return (
-    <section id="how" className="relative py-24">
+    <section id="how" aria-labelledby="how-heading" className="relative py-24">
       <div className="container">
         <Reveal className="mx-auto max-w-2xl text-center">
-          <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
+          <h2
+            id="how-heading"
+            className="font-display text-3xl font-bold tracking-tight sm:text-4xl"
+          >
             The complete <span className="text-gradient">learning journey</span>
           </h2>
           <p className="mt-4 text-muted-foreground">
@@ -60,8 +63,11 @@ export function HowItWorks() {
             <Reveal key={s.title} delay={i * 0.08}>
               <div className="flex h-full items-start gap-4 rounded-2xl border border-border/60 bg-card/40 p-5">
                 <div className="relative grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-gradient text-white">
-                  <s.icon className="h-5 w-5" />
-                  <span className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full bg-background text-[11px] font-bold text-foreground ring-1 ring-border">
+                  <s.icon className="h-5 w-5" aria-hidden="true" />
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full bg-background text-[11px] font-bold text-foreground ring-1 ring-border"
+                  >
                     {i + 1}
                   </span>
                 </div>

@@ -1,9 +1,10 @@
 import { Seo } from "@/components/common/Seo";
-import { IntroLoader } from "@/components/common/IntroLoader";
+import { SkipToContent } from "@/components/common/SkipToContent";
 import { Navbar } from "@/components/landing/Navbar";
 import { Hero } from "@/components/landing/Hero";
 import { Features } from "@/components/landing/Features";
 import { HowItWorks } from "@/components/landing/HowItWorks";
+import { WhatIs } from "@/components/landing/WhatIs";
 import { Faq, FAQS } from "@/components/landing/Faq";
 import { CtaBand } from "@/components/landing/CtaBand";
 import { Footer } from "@/components/landing/Footer";
@@ -30,13 +31,14 @@ export default function LandingPage() {
           faqSchema(FAQS),
         ]}
       />
-      <IntroLoader onDone={() => undefined} />
       <div className="relative min-h-dvh bg-background">
+        <SkipToContent />
         <Navbar />
-        <main>
+        <main id="main">
           <Hero />
           <Features />
           <HowItWorks />
+          <WhatIs />
           <Faq />
           <CtaBand />
         </main>

@@ -1,6 +1,7 @@
 import { Helmet } from "react-helmet-async";
 import {
   DEFAULT_OG_IMAGE,
+  DEFAULT_OG_IMAGE_ALT,
   SITE_NAME,
   TWITTER_HANDLE,
   absoluteUrl,
@@ -18,6 +19,8 @@ interface SeoProps {
   noindex?: boolean;
   /** Absolute (or site-relative) social preview image URL. */
   image?: string;
+  /** Alt text for the social preview image. */
+  imageAlt?: string;
   /** Open Graph type — "website" (default) or "article" for the blog. */
   type?: "website" | "article";
   /** Article-only metadata (future blog support). */
@@ -36,6 +39,8 @@ interface SeoProps {
  * Single source of truth for a page's head tags: title, description, canonical,
  * robots, Open Graph, Twitter cards, and JSON-LD structured data. Overrides the
  * static defaults in index.html on a per-route basis via react-helmet-async.
+ * Public routes additionally get these tags baked into their static HTML at
+ * build time by `scripts/prerender.mjs`, so non-JS crawlers see them too.
  */
 export function Seo({
   title,
@@ -44,6 +49,7 @@ export function Seo({
   path = "/",
   noindex,
   image,
+  imageAlt = DEFAULT_OG_IMAGE_ALT,
   type = "website",
   article,
   jsonLd,
@@ -54,6 +60,11 @@ export function Seo({
       ? image
       : absoluteUrl(image)
     : DEFAULT_OG_IMAGE;
+  const ogImageType = ogImage.endsWith(".svg")
+    ? "image/svg+xml"
+    : ogImage.endsWith(".jpg") || ogImage.endsWith(".jpeg")
+      ? "image/jpeg"
+      : "image/png";
   const blocks = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
 
   return (
@@ -63,7 +74,8 @@ export function Seo({
       {keywords && keywords.length > 0 && (
         <meta name="keywords" content={keywords.join(", ")} />
       )}
-      <link rel="canonical" href={url} />
+      {/* No canonical on noindex pages — the two signals contradict. */}
+      {!noindex && <link rel="canonical" href={url} />}
       <meta
         name="robots"
         content={noindex ? "noindex, nofollow" : "index, follow"}
@@ -72,12 +84,15 @@ export function Seo({
       {/* Open Graph */}
       <meta property="og:type" content={type} />
       <meta property="og:site_name" content={SITE_NAME} />
+      <meta property="og:locale" content="en_US" />
       <meta property="og:title" content={title} />
       {description && <meta property="og:description" content={description} />}
-      <meta property="og:url" content={url} />
+      {!noindex && <meta property="og:url" content={url} />}
       <meta property="og:image" content={ogImage} />
+      <meta property="og:image:type" content={ogImageType} />
       <meta property="og:image:width" content="1200" />
       <meta property="og:image:height" content="630" />
+      <meta property="og:image:alt" content={imageAlt} />
 
       {/* Article-specific OG (blog) */}
       {type === "article" && article?.publishedTime && (
@@ -103,6 +118,7 @@ export function Seo({
       <meta name="twitter:title" content={title} />
       {description && <meta name="twitter:description" content={description} />}
       <meta name="twitter:image" content={ogImage} />
+      <meta name="twitter:image:alt" content={imageAlt} />
 
       {/* JSON-LD structured data */}
       {blocks.map((block, i) => (

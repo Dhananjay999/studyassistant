@@ -1,7 +1,12 @@
 import { Seo } from "@/components/common/Seo";
 import { PublicPage } from "@/components/landing/PublicPage";
 import { GoogleButton } from "@/components/landing/GoogleButton";
-import { PAGES, breadcrumbSchema, organizationSchema } from "@/lib/seo";
+import {
+  PAGES,
+  breadcrumbSchema,
+  organizationSchema,
+  webPageSchema,
+} from "@/lib/seo";
 
 export default function AboutPage() {
   return (
@@ -12,6 +17,11 @@ export default function AboutPage() {
         keywords={PAGES.about.keywords}
         path={PAGES.about.path}
         jsonLd={[
+          webPageSchema({
+            title: PAGES.about.title,
+            description: PAGES.about.description,
+            path: PAGES.about.path,
+          }),
           organizationSchema(),
           breadcrumbSchema([
             { name: "Home", path: "/" },
@@ -44,10 +54,11 @@ export default function AboutPage() {
 
           <h2>Built for students</h2>
           <p>
-            Whether you're preparing for exams, working through homework, or
-            reviewing lecture notes, StudyAssistant adapts to how you learn — your
-            education level, preferred language, and explanation style shape every
-            answer.
+            StudyAssistant is an AI homework helper, exam-preparation coach, and
+            revision tool in one. Whether you're preparing for exams, working
+            through homework, or reviewing lecture notes, it adapts to how you
+            learn — your education level, preferred language, and explanation
+            style shape every answer.
           </p>
 
           <h2>Your data</h2>

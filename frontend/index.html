@@ -3,20 +3,49 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#7c3aed" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0b13" media="(prefers-color-scheme: dark)" />
 
-    <!-- Primary SEO -->
-    <title>StudyAssistant — AI study buddy that turns notes into answers & quizzes</title>
+    <!-- Per-route SEO tags. scripts/prerender.mjs replaces everything between
+         the seo markers with react-helmet output for each public route at
+         build time; at runtime the <Seo> component keeps them in sync on
+         client-side navigations. Do not add head tags that must vary per page
+         outside these markers. -->
+    <!-- seo:start -->
+    <title>StudyAssistant — Free AI Study Assistant & Study Buddy</title>
     <meta
       name="description"
-      content="StudyAssistant is an AI study buddy (meet Aeva). Ask any question, upload your PDFs and notes for instant answers, search the web, and auto-generate practice quizzes. Free to start."
+      content="StudyAssistant is a free AI study assistant for students. Chat with your PDFs, search the web, and turn any topic into quizzes, flashcards, and study plans."
     />
-    <meta name="keywords" content="AI study assistant, study buddy, quiz generator, PDF question answering, exam prep, AI tutor, flashcards, practice quiz" />
     <meta name="robots" content="index, follow" />
     <link rel="canonical" href="https://studyassistant.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="StudyAssistant" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="StudyAssistant — Free AI Study Assistant & Study Buddy" />
+    <meta
+      property="og:description"
+      content="Ask anything, chat with your PDFs and notes, and generate practice quizzes and flashcards with Aeva, your AI study buddy."
+    />
+    <meta property="og:url" content="https://studyassistant.app/" />
+    <meta property="og:image" content="https://studyassistant.app/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="StudyAssistant — a complete AI learning system for students" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="StudyAssistant — Free AI Study Assistant & Study Buddy" />
+    <meta
+      name="twitter:description"
+      content="Ask anything, chat with your PDFs and notes, and generate practice quizzes and flashcards with Aeva, your AI study buddy."
+    />
+    <meta name="twitter:image" content="https://studyassistant.app/og-image.png" />
+    <meta name="twitter:image:alt" content="StudyAssistant — a complete AI learning system for students" />
+    <!-- seo:end -->
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" href="/favicon.ico" sizes="any" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="mask-icon" href="/favicon.svg" color="#7c3aed" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
@@ -38,69 +67,44 @@
       />
     </noscript>
 
-    <!-- Open Graph -->
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="StudyAssistant" />
-    <meta property="og:title" content="StudyAssistant — AI Study Buddy" />
-    <meta
-      property="og:description"
-      content="Ask anything, upload your notes, and generate practice quizzes with Aeva, your AI study buddy."
-    />
-    <meta property="og:url" content="https://studyassistant.app/" />
-    <meta property="og:image" content="https://studyassistant.app/og-image.svg" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="StudyAssistant — AI Study Buddy" />
-    <meta
-      name="twitter:description"
-      content="Ask anything, upload your notes, and generate practice quizzes with Aeva, your AI study buddy."
-    />
-    <meta name="twitter:image" content="https://studyassistant.app/og-image.svg" />
-
     <!-- PWA / mobile -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Aeva" />
-
-    <!-- Structured data (Organization / WebSite / SoftwareApplication / FAQ)
-         is injected per-route by the app's <Seo> component so it stays in sync
-         with each page. -->
   </head>
 
   <body>
-    <!-- Branded first-paint splash. Lives inside #root so React replaces it
-         automatically on mount — no blank/white flash before the app loads. -->
-    <style>
-      #app-splash {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        background: #0b0b13;
-        z-index: 9999;
-      }
-      #app-splash .mark {
-        width: 64px;
-        height: 64px;
-        border-radius: 18px;
-        background: linear-gradient(135deg, #7c3aed, #4f46e5, #06b6d4);
-        box-shadow: 0 10px 40px -10px rgba(124, 58, 237, 0.6);
-        display: grid;
-        place-items: center;
-        animation: appSplashPulse 1.6s ease-in-out infinite;
-      }
-      @keyframes appSplashPulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.08); }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        #app-splash .mark { animation: none; }
-      }
-    </style>
-    <div id="root">
+    <div id="root"><!-- app:start -->
+      <!-- Branded first-paint splash for non-prerendered (app) routes. Lives
+           inside #root so React replaces it automatically on mount. On public
+           routes the prerenderer swaps this whole block for real page HTML. -->
+      <style>
+        #app-splash {
+          position: fixed;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          background: #0b0b13;
+          z-index: 9999;
+        }
+        #app-splash .mark {
+          width: 64px;
+          height: 64px;
+          border-radius: 18px;
+          background: linear-gradient(135deg, #7c3aed, #4f46e5, #06b6d4);
+          box-shadow: 0 10px 40px -10px rgba(124, 58, 237, 0.6);
+          display: grid;
+          place-items: center;
+          animation: appSplashPulse 1.6s ease-in-out infinite;
+        }
+        @keyframes appSplashPulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.08); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          #app-splash .mark { animation: none; }
+        }
+      </style>
       <div id="app-splash">
         <div class="mark" aria-label="Loading Aeva">
           <svg width="30" height="30" viewBox="0 0 24 24" fill="none"
@@ -110,7 +114,7 @@
           </svg>
         </div>
       </div>
-    </div>
+    <!-- app:end --></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

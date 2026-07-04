@@ -8,7 +8,7 @@ export default function NotFound() {
   return (
     <>
       <Seo title="Page not found — Aeva" noindex path="/404" />
-      <div className="relative grid h-dvh place-items-center overflow-hidden bg-background">
+      <main className="relative grid h-dvh place-items-center overflow-hidden bg-background">
         <AuroraBackground />
         <div className="text-center">
           <BrandLogo className="mb-6 justify-center" />
@@ -22,7 +22,7 @@ export default function NotFound() {
             <Link to="/">Back home</Link>
           </Button>
         </div>
-      </div>
+      </main>
     </>
   );
 }

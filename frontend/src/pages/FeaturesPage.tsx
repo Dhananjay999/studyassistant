@@ -6,18 +6,25 @@ import {
   Layers,
   ListChecks,
   MessageSquare,
+  NotebookPen,
   Search,
+  UserRound,
 } from "lucide-react";
 import { Seo } from "@/components/common/Seo";
 import { PublicPage } from "@/components/landing/PublicPage";
 import { GoogleButton } from "@/components/landing/GoogleButton";
-import { PAGES, breadcrumbSchema, softwareApplicationSchema } from "@/lib/seo";
+import {
+  PAGES,
+  breadcrumbSchema,
+  softwareApplicationSchema,
+  webPageSchema,
+} from "@/lib/seo";
 
 const FEATURES = [
   {
     icon: MessageSquare,
     title: "AI chat that understands your material",
-    body: "Ask Aeva anything and get clear, sourced answers grounded in your own notes, PDFs, and images — not generic guesses.",
+    body: "Ask Aeva anything and get clear, sourced answers grounded in your own notes, PDFs, and images — not generic guesses. It's an AI tutor that helps with homework at any level.",
   },
   {
     icon: FileText,
@@ -31,18 +38,28 @@ const FEATURES = [
   },
   {
     icon: ListChecks,
-    title: "One-click quiz generator",
-    body: "Turn any answer or document into a graded practice quiz. Pick the topic, difficulty, and question types; get instant AI feedback.",
+    title: "One-click AI quiz generator",
+    body: "Turn any answer or document into a graded practice quiz. Pick the topic, difficulty, and question types — MCQ, multi-select, or true/false — and get instant AI feedback.",
   },
   {
     icon: Layers,
-    title: "Automatic flashcards",
+    title: "Automatic AI flashcards",
     body: "Generate flashcard decks from your material, then flip, shuffle, and rate each card to track your mastery over time.",
+  },
+  {
+    icon: NotebookPen,
+    title: "Summaries and study notes",
+    body: "Condense chapters, lectures, and long documents into revision-ready notes and summaries — ideal for exam preparation.",
   },
   {
     icon: BarChart3,
     title: "Performance analytics",
     body: "See how you're doing across quizzes and topics, and get AI analysis of exactly what to revise next.",
+  },
+  {
+    icon: UserRound,
+    title: "Personalized learning",
+    body: "Set your education level, language, and explanation style once — every answer adapts to how you learn.",
   },
   {
     icon: Bookmark,
@@ -65,6 +82,11 @@ export default function FeaturesPage() {
         keywords={PAGES.features.keywords}
         path={PAGES.features.path}
         jsonLd={[
+          webPageSchema({
+            title: PAGES.features.title,
+            description: PAGES.features.description,
+            path: PAGES.features.path,
+          }),
           softwareApplicationSchema(),
           breadcrumbSchema([
             { name: "Home", path: "/" },
@@ -73,12 +95,12 @@ export default function FeaturesPage() {
         ]}
       />
       <PublicPage
-        title="Everything you need to study smarter"
-        intro="StudyAssistant is a complete AI learning system — chat, quizzes, flashcards, and analytics working together, not a collection of disconnected tools."
+        title="AI study tools for everything you're learning"
+        intro="StudyAssistant is a complete AI study assistant — chat, PDF analysis, quizzes, flashcards, and analytics working together, not a collection of disconnected tools."
       >
         <div className="grid gap-6 sm:grid-cols-2">
           {FEATURES.map((f) => (
-            <div
+            <article
               key={f.title}
               className="flex h-full flex-col gap-3 rounded-2xl border border-border/60 bg-card/40 p-6"
             >
@@ -87,7 +109,7 @@ export default function FeaturesPage() {
               </span>
               <h2 className="font-display text-lg font-semibold">{f.title}</h2>
               <p className="text-sm text-muted-foreground">{f.body}</p>
-            </div>
+            </article>
           ))}
         </div>
         <div className="mt-12 flex justify-center">

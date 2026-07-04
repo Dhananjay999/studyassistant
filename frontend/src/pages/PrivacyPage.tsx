@@ -1,6 +1,6 @@
 import { Seo } from "@/components/common/Seo";
 import { PublicPage } from "@/components/landing/PublicPage";
-import { PAGES, breadcrumbSchema } from "@/lib/seo";
+import { PAGES, breadcrumbSchema, webPageSchema } from "@/lib/seo";
 
 export default function PrivacyPage() {
   return (
@@ -9,10 +9,17 @@ export default function PrivacyPage() {
         title={PAGES.privacy.title}
         description={PAGES.privacy.description}
         path={PAGES.privacy.path}
-        jsonLd={breadcrumbSchema([
-          { name: "Home", path: "/" },
-          { name: "Privacy Policy", path: "/privacy" },
-        ])}
+        jsonLd={[
+          webPageSchema({
+            title: PAGES.privacy.title,
+            description: PAGES.privacy.description,
+            path: PAGES.privacy.path,
+          }),
+          breadcrumbSchema([
+            { name: "Home", path: "/" },
+            { name: "Privacy Policy", path: "/privacy" },
+          ]),
+        ]}
       />
       <PublicPage
         title="Privacy Policy"

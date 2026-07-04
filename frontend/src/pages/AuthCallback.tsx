@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppLoader } from "@/components/common/AppLoader";
+import { Seo } from "@/components/common/Seo";
 import { AUTH_MESSAGES } from "@/lib/loadingMessages";
 
 export default function AuthCallback() {
@@ -46,5 +47,10 @@ export default function AuthCallback() {
     }
   }, [setSession, navigate]);
 
-  return <AppLoader aurora messages={AUTH_MESSAGES} />;
+  return (
+    <>
+      <Seo title="Signing you in — StudyAssistant" noindex path="/auth/callback" />
+      <AppLoader aurora messages={AUTH_MESSAGES} />
+    </>
+  );
 }
