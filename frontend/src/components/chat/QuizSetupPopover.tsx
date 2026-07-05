@@ -1,23 +1,10 @@
 import { useState, type ReactNode } from "react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  ResponsiveModal,
-  ResponsiveModalContent,
-  ResponsiveModalHeader,
-  ResponsiveModalTitle,
-  ResponsiveModalTrigger,
-} from "@/components/ui/responsive-modal";
-import { QuizSetupForm } from "@/components/chat/QuizSetupForm";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { QuizSetup } from "@/components/chat/QuizSetup";
 import type { QuizOptions } from "@/types";
 
-/** "Generate Quiz" entry point on an answer card. Anchored popover on desktop,
- * a drag-dismissable bottom sheet on mobile (more room for the form + thumb
- * reach). */
+/** "Generate Quiz" chip entry point. A thin trigger wrapper around the shared
+ * {@link QuizSetup} — the single Quiz Configuration UI — so every entry point
+ * opens the exact same bottom sheet (mobile) / dialog (desktop). */
 export function QuizSetupPopover({
   children,
   initialTopic,
@@ -32,49 +19,16 @@ export function QuizSetupPopover({
   onGenerate: (options: QuizOptions) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const isMobile = useIsMobile();
-
-  const handleGenerate = (opts: QuizOptions) => {
-    setOpen(false);
-    onGenerate(opts);
-  };
-
-  if (isMobile) {
-    return (
-      <ResponsiveModal open={open} onOpenChange={setOpen}>
-        <ResponsiveModalTrigger asChild>{children}</ResponsiveModalTrigger>
-        <ResponsiveModalContent className="h-[90dvh] max-h-[90dvh]">
-          <ResponsiveModalHeader>
-            <ResponsiveModalTitle className="font-display">
-              Set up your quiz
-            </ResponsiveModalTitle>
-          </ResponsiveModalHeader>
-          <QuizSetupForm
-            layout="sheet"
-            initialTopic={initialTopic}
-            mediaAvailable={mediaAvailable}
-            busy={busy}
-            onGenerate={handleGenerate}
-          />
-        </ResponsiveModalContent>
-      </ResponsiveModal>
-    );
-  }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent align="start" className="w-80">
-        <p className="mb-3 font-display text-sm font-semibold">
-          Set up your quiz
-        </p>
-        <QuizSetupForm
-          initialTopic={initialTopic}
-          mediaAvailable={mediaAvailable}
-          busy={busy}
-          onGenerate={handleGenerate}
-        />
-      </PopoverContent>
-    </Popover>
+    <QuizSetup
+      open={open}
+      onOpenChange={setOpen}
+      trigger={children}
+      initialTopic={initialTopic}
+      mediaAvailable={mediaAvailable}
+      busy={busy}
+      onGenerate={onGenerate}
+    />
   );
 }

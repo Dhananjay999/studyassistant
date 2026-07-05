@@ -23,6 +23,10 @@ from aeva.llm.prompts.flashcard import (
     FLASHCARD_GENERATION_TEMPLATE,
     FLASHCARD_GENERATOR_PARAMS,
 )
+from aeva.llm.prompts.general import (
+    GENERAL_ANSWER_PARAMS,
+    GENERAL_ANSWER_TEMPLATE,
+)
 from aeva.llm.prompts.media import (
     MEDIA_PARAMS,
     MEDIA_TEMPLATE,
@@ -58,6 +62,8 @@ __all__ = [
     "FLASHCARD_GENERATION_SCHEMA",
     "FLASHCARD_GENERATION_TEMPLATE",
     "FLASHCARD_GENERATOR_PARAMS",
+    "GENERAL_ANSWER_PARAMS",
+    "GENERAL_ANSWER_TEMPLATE",
     "MEDIA_PARAMS",
     "MEDIA_TEMPLATE",
     "META_SENTINEL",

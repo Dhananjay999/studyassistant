@@ -13,7 +13,6 @@ import {
   Bookmark,
   FolderOpen,
   GraduationCap,
-  Sparkles,
   Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,13 +23,12 @@ import {
 } from "@/components/ui/drawer";
 import { Badge } from "@/components/ui/badge";
 import { Seo } from "@/components/common/Seo";
-import { GlassCard } from "@/components/common/GlassCard";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { BookmarkPreview } from "@/components/chat/BookmarkPreview";
 import { ChatComposer, type ChatComposerHandle } from "@/components/chat/ChatComposer";
 import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
-import { QuizSetupForm } from "@/components/chat/QuizSetupForm";
+import { QuizSetup } from "@/components/chat/QuizSetup";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
@@ -973,26 +971,23 @@ export default function ChatPage() {
                 />
               </div>
             )}
+            {/* A quiz requested in chat opens the SAME setup UI as the chip —
+               one component, one behaviour, everywhere. */}
             {pendingQuiz && (
-              <div className="mx-auto w-full max-w-4xl px-4 pb-2">
-                <GlassCard className="p-4">
-                  <p className="mb-3 flex items-center gap-1.5 font-display text-sm font-semibold">
-                    <Sparkles className="h-4 w-4 text-brand-1" /> Set up your quiz
-                  </p>
-                  <QuizSetupForm
-                    initialTopic={pendingQuiz.topic}
-                    initialCount={pendingQuiz.questionCount}
-                    initialTypes={pendingQuiz.questionTypes}
-                    initialDifficulty={pendingQuiz.difficulty}
-                    initialExamConfig={pendingQuiz.examConfig}
-                    mediaAvailable={pendingQuiz.mediaAvailable}
-                    busy={streaming}
-                    onGenerate={(opts) =>
-                      handleGenerateQuiz(pendingQuiz.topic, opts)
-                    }
-                  />
-                </GlassCard>
-              </div>
+              <QuizSetup
+                open
+                onOpenChange={(next) => {
+                  if (!next) setPendingQuiz(null);
+                }}
+                initialTopic={pendingQuiz.topic}
+                initialCount={pendingQuiz.questionCount}
+                initialTypes={pendingQuiz.questionTypes}
+                initialDifficulty={pendingQuiz.difficulty}
+                initialExamConfig={pendingQuiz.examConfig}
+                mediaAvailable={pendingQuiz.mediaAvailable}
+                busy={streaming}
+                onGenerate={(opts) => handleGenerateQuiz(pendingQuiz.topic, opts)}
+              />
             )}
 
             {seedBanner && (

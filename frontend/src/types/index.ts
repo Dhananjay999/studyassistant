@@ -4,6 +4,7 @@
 export type MessageRole = "user" | "assistant";
 export type ChatMode = "media" | "web_search";
 export type ToolUsed =
+  | "general"
   | "web_search"
   | "media_llm"
   | "quiz_generator"

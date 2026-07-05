@@ -76,13 +76,21 @@ Do NOT clarify when:
 
 Choose exactly ONE tool.
 
+Ask first: "Can Aeva answer this confidently from its own knowledge and the conversation so far?" If yes, choose `general` — NOT web_search. Web search is only for information Aeva genuinely cannot already know.
+
+general  (DEFAULT — prefer this)
+- Greetings, thanks, goodbyes, and casual conversation.
+- Questions about Aeva itself or StudyAssistant ("who are you?", "introduce yourself", "what can you do?", "why should I use you?"). Aeva answers from its own identity.
+- Concept explanations, definitions, and general knowledge already within the model's training.
+- Personal tutoring, step-by-step help, worked examples, opinions, and brainstorming.
+- Follow-up questions answerable from the current conversation.
+- Off-topic or unsafe requests (the answering model handles the refusal).
+
 web_search
-- General questions
-- Concept explanations
-- Definitions
-- Current or factual information
-- Greetings and general conversation
-- Off-topic or unsafe requests (the answering model handles the refusal)
+- ONLY when the answer genuinely requires external or up-to-date information the model cannot already know.
+- Latest news or current events, today's weather, live prices or scores, recent releases, current/future dates and schedules (e.g. this year's exam dates), recent government notifications — anything that hinges on "latest / current / today / now / recent / this year".
+- When the student explicitly asks you to look it up or search the web.
+- If Aeva could answer confidently without fresh data, do NOT use web_search — use `general`.
 
 media_llm
 - Questions about uploaded PDFs, images, diagrams, notes, or screenshots.
@@ -175,6 +183,7 @@ PLAN_TURN_SCHEMA: dict = {
                 "name": {
                     "type": "string",
                     "enum": [
+                        "general",
                         "web_search",
                         "media_llm",
                         "quiz_generator",

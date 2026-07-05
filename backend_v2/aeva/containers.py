@@ -5,6 +5,7 @@ from dependency_injector import containers, providers
 from aeva.llm.llm_client import LLMClient
 from aeva.mcp.registry import ToolRegistry
 from aeva.mcp.tools.flashcard_generator import FlashcardGeneratorTool
+from aeva.mcp.tools.general import GeneralAnswerTool
 from aeva.mcp.tools.media_llm import MediaLLMTool
 from aeva.mcp.tools.quiz_generator import QuizGeneratorTool
 from aeva.mcp.tools.web_search import WebSearchTool
@@ -23,6 +24,8 @@ def build_tool_registry(
 ) -> ToolRegistry:
     """Create registry with per-tool LLM clients."""
     registry = ToolRegistry()
+    # Default text answerer (no web grounding); shares the web-search model.
+    registry.register(GeneralAnswerTool(llm=web_search_llm))
     registry.register(WebSearchTool(llm=web_search_llm))
     registry.register(
         MediaLLMTool(llm=media_llm, supabase=supabase, embed_llm=embed_llm)

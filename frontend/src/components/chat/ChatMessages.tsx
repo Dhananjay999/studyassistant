@@ -14,7 +14,9 @@ import { copyRich, markdownToPlainText } from "@/lib/clipboard";
 import type { ThinkingHint } from "@/lib/loadingMessages";
 import type { Message, QuizContent, QuizOptions, ToolUsed } from "@/types";
 
-const TOOL_LABEL: Record<ToolUsed, string> = {
+// Only tools worth surfacing get a source badge. `general` is a plain
+// conversational answer (no badge), and anything unlisted is skipped too.
+const TOOL_LABEL: Partial<Record<ToolUsed, string>> = {
   web_search: "Web",
   media_llm: "Notes",
   quiz_generator: "Quiz",
@@ -69,8 +71,9 @@ export function ChatMessages({
   // Identifies the loaded conversation; when it changes we've switched threads
   // (or loaded history), so re-arm the auto-scroll to land at the bottom.
   const convoKeyRef = useRef<string | null>(null);
-  // Last message id, to tell a brand-new turn from a streaming content update.
-  const lastIdRef = useRef<string | null>(null);
+  // Last user-message id, to tell a brand-new user turn (which always scrolls
+  // into view) from an assistant streaming update (which respects scroll pos).
+  const lastUserIdRef = useRef<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
 
   // Track whether the user is near the bottom of the scroll container. A user
@@ -103,11 +106,16 @@ export function ChatMessages({
       convoKeyRef.current = convoKey;
       nearBottomRef.current = true;
     }
-    // A brand-new turn the user just sent always scrolls into view; assistant
-    // streaming (same last id growing) instead respects the near-bottom gate.
-    const last = messages[messages.length - 1];
-    const userSent = last?.id !== lastIdRef.current && last?.role === "user";
-    lastIdRef.current = last?.id ?? null;
+    // A turn the user just sent always scrolls into view — even though it's
+    // immediately followed by the assistant placeholder, so the newest *user*
+    // message (not the last message) is the signal. Assistant streaming keeps
+    // the same user id, so it instead respects the near-bottom gate.
+    const lastUser = messages.reduce<string | null>(
+      (id, m) => (m.role === "user" ? m.id : id),
+      null,
+    );
+    const userSent = lastUser !== null && lastUser !== lastUserIdRef.current;
+    lastUserIdRef.current = lastUser;
 
     if (highlightId && appliedHighlight.current !== highlightId) return;
     if (!userSent && !nearBottomRef.current) return;
@@ -196,12 +204,12 @@ export function ChatMessages({
                   "ring-2 ring-brand-1 ring-offset-2 ring-offset-background",
               )}
             >
-              {msg.meta?.tool_used && (
+              {msg.meta?.tool_used && TOOL_LABEL[msg.meta.tool_used] && (
                 <Badge
                   variant="secondary"
                   className="mb-2 gap-1 text-[10px] font-medium"
                 >
-                  {TOOL_LABEL[msg.meta.tool_used] ?? msg.meta.tool_used}
+                  {TOOL_LABEL[msg.meta.tool_used]}
                 </Badge>
               )}
 

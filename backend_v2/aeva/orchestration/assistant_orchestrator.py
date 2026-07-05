@@ -53,6 +53,28 @@ _REPEAT_RE = re.compile(
 # what the user means, so those fall through to normal routing.
 _REPEATABLE_TOOLS = frozenset({"quiz_generator", "flashcard_generator"})
 
+# Cues that a question hinges on external, up-to-date information Aeva cannot
+# already know — the only case the deterministic fast path routes to
+# web_search. Everything else answers from Aeva's own knowledge (`general`),
+# so greetings, identity questions, and concept explanations never search.
+# Ambiguous cases still fall through to the planner, which weighs freshness
+# with full context.
+_FRESH_INFO_RE = re.compile(
+    r"\b(latest|newest|current(?:ly)?|today|tonight|right now|as of|"
+    r"recent(?:ly)?|up[- ]?to[- ]?date|this (?:week|month|year)|"
+    r"news|headlines?|weather|forecast|temperature|"
+    r"stock|share price|price of|exchange rate|score|standings|"
+    r"who won|winner of|release date|released|launching|"
+    r"schedule|deadline|exam date|admit card|result date|notification)\b"
+    r"|\b20\d{2}\b|\bsearch (?:the web|online|for)\b",
+    re.IGNORECASE,
+)
+
+
+def _needs_fresh_info(text: str) -> bool:
+    """True when a message clearly depends on external/up-to-date information."""
+    return bool(_FRESH_INFO_RE.search(text))
+
 
 class AssistantOrchestrator:
     """Single coordinator: plan → clarify or run tool → respond."""
@@ -374,7 +396,7 @@ class AssistantOrchestrator:
     def _resolve_tool(plan: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         """Pull the tool name and params from a run_tool plan."""
         tool_info = plan.get("tool") or {}
-        return tool_info.get("name", "web_search"), tool_info.get("params") or {}
+        return tool_info.get("name", "general"), tool_info.get("params") or {}
 
     def _attach_actions(
         self,
@@ -787,12 +809,14 @@ class AssistantOrchestrator:
         """Deterministic plan that makes the planner LLM call unnecessary.
 
         For a no-media turn that is not a quiz/flashcard request (which needs
-        parameter extraction), the only sensible tool is ``web_search``. When
-        clarification is also provably unnecessary and no unresolved reference
-        forces one, the refined plan is exactly what the planner would resolve
-        to — a run_tool(web_search) — so we skip a full LLM call and return it
-        directly. Anything ambiguous (media attached, quiz/flashcard, a bare
-        "explain this", a long open-ended message) falls through to the planner.
+        parameter extraction), the tool is settled: ``general`` answers from
+        Aeva's own knowledge, and ``web_search`` only when the message carries a
+        clear freshness cue (``_needs_fresh_info``). When clarification is also
+        provably unnecessary and no unresolved reference forces one, that is
+        exactly what the planner would resolve to, so we skip a full LLM call
+        and return it directly. Anything ambiguous (media attached,
+        quiz/flashcard, a bare "explain this", a long open-ended message) falls
+        through to the planner.
         """
         text = message.lower()
         needs_planner = (
@@ -961,9 +985,13 @@ class AssistantOrchestrator:
                 "tool": {"name": "media_llm", "params": {"query": message}},
             }
 
+        # Only reach for the web when the message clearly needs fresh, external
+        # facts; otherwise Aeva answers from its own knowledge (no needless
+        # search on greetings, identity questions, or concept explanations).
+        tool_name = "web_search" if _needs_fresh_info(text) else "general"
         return {
             "action": "run_tool",
-            "tool": {"name": "web_search", "params": {"query": message}},
+            "tool": {"name": tool_name, "params": {"query": message}},
         }
 
     def _continuation_plan(
