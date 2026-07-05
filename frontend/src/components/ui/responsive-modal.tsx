@@ -99,7 +99,7 @@ const ResponsiveModalContent = React.forwardRef<
         <DrawerPrimitive.Content
           ref={ref}
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 mt-24 flex max-h-[94vh] flex-col gap-3 rounded-t-2xl border border-border/50 bg-background px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] outline-none",
+            "fixed inset-x-0 bottom-0 z-50 mt-24 flex max-h-[94dvh] flex-col gap-3 rounded-t-2xl border border-border/50 bg-background px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] outline-none",
             className,
           )}
           {...props}

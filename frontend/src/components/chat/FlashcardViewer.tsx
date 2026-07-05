@@ -1,6 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
-import { AnimatePresence, motion, type PanInfo } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useIsPresent,
+  type PanInfo,
+} from "framer-motion";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -35,6 +47,7 @@ import { formatDuration } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
 import type {
   ChatSeed,
+  Flashcard,
   FlashcardAnalytics as Analytics,
   StudyRating,
 } from "@/types";
@@ -99,7 +112,6 @@ export function FlashcardViewer({
   const [index, setIndex] = useState(0);
   // Direction the deck is moving (1 = forward, -1 = back) for slide transitions.
   const [dir, setDir] = useState(1);
-  const [flipped, setFlipped] = useState(false);
   const [shuffleSeed, setShuffleSeed] = useState(0);
   const [completed, setCompleted] = useState(false);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
@@ -123,11 +135,12 @@ export function FlashcardViewer({
   const card = total > 0 ? cards[order[index] ?? 0] : null;
   const progress = total > 0 ? ((index + 1) / total) * 100 : 0;
 
-  // Reset when a different set opens; seed analytics from the server.
+  // Reset when a different set opens; seed analytics from the server. Each card
+  // owns its own flip state and remounts on navigation, so there's nothing to
+  // reset here — a fresh card always starts on its question side.
   useEffect(() => {
     setIndex(0);
     setDir(1);
-    setFlipped(false);
     setShuffleSeed(0);
     setCompleted(false);
     setElapsed(0);
@@ -145,7 +158,6 @@ export function FlashcardViewer({
   const reviewAgain = () => {
     setIndex(0);
     setDir(1);
-    setFlipped(false);
     setShuffleSeed(0);
     setCompleted(false);
     setElapsed(0);
@@ -154,7 +166,6 @@ export function FlashcardViewer({
 
   const go = useCallback(
     (delta: number) => {
-      setFlipped(false);
       if (delta > 0 && index >= total - 1) {
         finish();
         return;
@@ -181,25 +192,12 @@ export function FlashcardViewer({
     else finish();
   };
 
-  const onDragEnd = (_e: unknown, info: PanInfo) => {
-    const forward =
-      info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY;
-    const back =
-      info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY;
-    if (forward) go(1);
-    else if (back) go(-1);
-  };
-
-  // Keyboard navigation.
+  // Keyboard navigation. Space/Enter (flip) is owned by the on-screen card.
   useEffect(() => {
     if (!open || completed) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") go(1);
       else if (e.key === "ArrowLeft") go(-1);
-      else if (e.key === " " || e.key === "Enter") {
-        e.preventDefault();
-        setFlipped((f) => !f);
-      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -391,75 +389,15 @@ export function FlashcardViewer({
                   {card ? (
                     <div className="relative w-full max-w-md [perspective:1600px]">
                       <AnimatePresence mode="popLayout" custom={dir}>
-                        <motion.div
-                          key={index}
-                          custom={dir}
-                          initial={{ opacity: 0, x: dir * 60, scale: 0.96 }}
-                          animate={{ opacity: 1, x: 0, scale: 1 }}
-                          exit={{ opacity: 0, x: dir * -60, scale: 0.96 }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 320,
-                            damping: 34,
-                          }}
-                          drag="x"
-                          dragSnapToOrigin
-                          dragConstraints={{ left: 0, right: 0 }}
-                          dragElastic={0.4}
-                          onDragEnd={onDragEnd}
-                          onTap={() => setFlipped((f) => !f)}
-                          role="button"
-                          tabIndex={0}
-                          aria-label="Flip card; swipe left or right to navigate"
-                          className="cursor-grab touch-pan-y active:cursor-grabbing"
-                        >
-                          <motion.div
-                            className="pointer-events-none relative h-80 w-full [transform-style:preserve-3d]"
-                            animate={{ rotateY: flipped ? 180 : 0 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 260,
-                              damping: 26,
-                            }}
-                          >
-                            {/* Front (question) */}
-                            <div className="absolute inset-0 flex flex-col rounded-3xl border border-border/60 bg-card p-7 shadow-lg [backface-visibility:hidden]">
-                              <Badge
-                                variant="secondary"
-                                className="self-start text-[10px] font-semibold uppercase tracking-wider"
-                              >
-                                Question
-                              </Badge>
-                              <div className="learning-content flex flex-1 items-center justify-center">
-                                <p className="text-balance text-center text-xl font-semibold leading-snug">
-                                  {card.front}
-                                </p>
-                              </div>
-                              <p className="text-center text-xs text-muted-foreground">
-                                Tap to reveal answer
-                              </p>
-                            </div>
-                            {/* Back (answer) */}
-                            <div className="absolute inset-0 flex flex-col overflow-auto rounded-3xl border border-brand-1/40 bg-gradient-to-br from-brand-1/[0.06] to-brand-2/[0.1] p-7 shadow-glow [backface-visibility:hidden] [transform:rotateY(180deg)]">
-                              <Badge className="self-start bg-brand-gradient text-[10px] font-semibold uppercase tracking-wider text-white">
-                                Answer
-                              </Badge>
-                              <div className="learning-content flex flex-1 flex-col items-center justify-center gap-3 text-center">
-                                <p className="text-balance text-lg font-medium leading-snug">
-                                  {card.back}
-                                </p>
-                                {card.example && (
-                                  <p className="rounded-xl bg-background/60 p-3 text-sm text-muted-foreground">
-                                    <span className="font-medium text-foreground">
-                                      Example:{" "}
-                                    </span>
-                                    {card.example}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </motion.div>
-                        </motion.div>
+                        {/* Keyed by card id so every navigation remounts a fresh
+                           card that starts on its question side — flip state can
+                           never carry over from the previous card. */}
+                        <StudyCard
+                          key={card.id}
+                          card={card}
+                          dir={dir}
+                          onSwipe={go}
+                        />
                       </AnimatePresence>
                     </div>
                   ) : (
@@ -555,6 +493,109 @@ export function FlashcardViewer({
     </Dialog>
   );
 }
+
+/**
+ * A single flashcard: slides in/out with the deck and owns its own flip state.
+ * Because each card is a distinct, id-keyed instance it always mounts on the
+ * question side, and its flip can never leak into the next or previous card.
+ *
+ * The forwarded ref lands on the root motion element so AnimatePresence's
+ * `popLayout` can measure the outgoing card and pop it out of layout flow —
+ * without it the exiting and entering cards briefly stack in normal flow, which
+ * jolts the surrounding layout (the footer flicker) during a swipe.
+ */
+const StudyCard = forwardRef<
+  HTMLDivElement,
+  { card: Flashcard; dir: number; onSwipe: (delta: number) => void }
+>(function StudyCard({ card, dir, onSwipe }, ref) {
+  const [flipped, setFlipped] = useState(false);
+  // Only the card actually on screen (the present one) reacts to Space/Enter,
+  // so a keypress mid-swipe doesn't flip the card that's leaving.
+  const isPresent = useIsPresent();
+
+  useEffect(() => {
+    if (!isPresent) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        setFlipped((f) => !f);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isPresent]);
+
+  const onDragEnd = (_e: unknown, info: PanInfo) => {
+    const forward =
+      info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY;
+    const back =
+      info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY;
+    if (forward) onSwipe(1);
+    else if (back) onSwipe(-1);
+  };
+
+  return (
+    <motion.div
+      ref={ref}
+      custom={dir}
+      initial={{ opacity: 0, x: dir * 60, scale: 0.96 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: dir * -60, scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 320, damping: 34 }}
+      drag="x"
+      dragSnapToOrigin
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.4}
+      onDragEnd={onDragEnd}
+      onTap={() => setFlipped((f) => !f)}
+      role="button"
+      tabIndex={0}
+      aria-label="Flip card; swipe left or right to navigate"
+      className="cursor-grab touch-pan-y active:cursor-grabbing"
+    >
+      <motion.div
+        className="pointer-events-none relative h-80 w-full [transform-style:preserve-3d]"
+        animate={{ rotateY: flipped ? 180 : 0 }}
+        transition={{ type: "spring", stiffness: 260, damping: 26 }}
+      >
+        {/* Front (question) */}
+        <div className="absolute inset-0 flex flex-col rounded-3xl border border-border/60 bg-card p-7 shadow-lg [backface-visibility:hidden]">
+          <Badge
+            variant="secondary"
+            className="self-start text-[10px] font-semibold uppercase tracking-wider"
+          >
+            Question
+          </Badge>
+          <div className="learning-content flex flex-1 items-center justify-center">
+            <p className="text-balance text-center text-xl font-semibold leading-snug">
+              {card.front}
+            </p>
+          </div>
+          <p className="text-center text-xs text-muted-foreground">
+            Tap to reveal answer
+          </p>
+        </div>
+        {/* Back (answer) */}
+        <div className="absolute inset-0 flex flex-col overflow-auto rounded-3xl border border-brand-1/40 bg-gradient-to-br from-brand-1/[0.06] to-brand-2/[0.1] p-7 shadow-glow [backface-visibility:hidden] [transform:rotateY(180deg)]">
+          <Badge className="self-start bg-brand-gradient text-[10px] font-semibold uppercase tracking-wider text-white">
+            Answer
+          </Badge>
+          <div className="learning-content flex flex-1 flex-col items-center justify-center gap-3 text-center">
+            <p className="text-balance text-lg font-medium leading-snug">
+              {card.back}
+            </p>
+            {card.example && (
+              <p className="rounded-xl bg-background/60 p-3 text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">Example: </span>
+                {card.example}
+              </p>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+});
 
 function StatTile({
   icon: Icon,

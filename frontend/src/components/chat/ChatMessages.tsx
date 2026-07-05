@@ -60,13 +60,57 @@ export function ChatMessages({
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // The highlight we've already scrolled to, so it fires once per target.
   const appliedHighlight = useRef<string | null>(null);
+  // Whether the viewport is currently pinned near its bottom. Refreshed on every
+  // scroll so we can read the user's intent *before* new content pushes the
+  // bottom down — streaming only follows when they were already at the bottom.
+  // Defaults to true (and is reset to true on a conversation switch) so the very
+  // first render still lands on the newest message.
+  const nearBottomRef = useRef(true);
+  // Identifies the loaded conversation; when it changes we've switched threads
+  // (or loaded history), so re-arm the auto-scroll to land at the bottom.
+  const convoKeyRef = useRef<string | null>(null);
+  // Last message id, to tell a brand-new turn from a streaming content update.
+  const lastIdRef = useRef<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
 
-  // Auto-scroll to the newest message. Suppressed while a highlight target is
-  // still pending so it never yanks the view away from the message we're about
-  // to jump to (opened from a bookmark).
+  // Track whether the user is near the bottom of the scroll container. A user
+  // scroll up disables auto-follow; scrolling back to the bottom re-enables it.
   useEffect(() => {
+    let el: HTMLElement | null = bottomRef.current?.parentElement ?? null;
+    while (el) {
+      const oy = getComputedStyle(el).overflowY;
+      if (oy === "auto" || oy === "scroll") break;
+      el = el.parentElement;
+    }
+    if (!el) return undefined;
+    const NEAR_BOTTOM_PX = 120;
+    const onScroll = () => {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      nearBottomRef.current = gap < NEAR_BOTTOM_PX;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Follow the newest content only when the user is already near the bottom, so
+  // streaming never yanks the viewport down while they read earlier messages. A
+  // conversation switch re-arms the follow so a freshly opened thread still
+  // starts at its newest message. Suppressed while a highlight target is pending
+  // so it doesn't fight the jump-to-message scroll (opened from a bookmark).
+  useEffect(() => {
+    const convoKey = messages[0]?.id ?? null;
+    if (convoKey !== convoKeyRef.current) {
+      convoKeyRef.current = convoKey;
+      nearBottomRef.current = true;
+    }
+    // A brand-new turn the user just sent always scrolls into view; assistant
+    // streaming (same last id growing) instead respects the near-bottom gate.
+    const last = messages[messages.length - 1];
+    const userSent = last?.id !== lastIdRef.current && last?.role === "user";
+    lastIdRef.current = last?.id ?? null;
+
     if (highlightId && appliedHighlight.current !== highlightId) return;
+    if (!userSent && !nearBottomRef.current) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, highlightId]);
 

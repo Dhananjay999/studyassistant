@@ -142,6 +142,10 @@ export default function ChatPage() {
   const media = mediaQuery.data ?? [];
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
+  // While an upload batch is in flight the media panel is auto-opened to show
+  // live progress, then auto-closed once every file finishes cleanly. The ref
+  // gates the close so it only fires after a batch we opened for.
+  const uploadWatchRef = useRef(false);
   const deleteMedia = useDeleteMedia();
 
   // Session workspace: quizzes & flashcards generated in THIS chat, shown in
@@ -732,6 +736,10 @@ export default function ChatPage() {
   };
 
   const handleUpload = async (files: FileList) => {
+    // Show progress right away: open the media panel on layouts where the
+    // sidebar isn't already persistent (below Tailwind's `xl` breakpoint).
+    uploadWatchRef.current = true;
+    if (!window.matchMedia("(min-width: 1280px)").matches) setMediaOpen(true);
     const list = await compressFiles(files);
     await Promise.all(list.map((file) => startUpload(file)));
   };
@@ -757,6 +765,20 @@ export default function ChatPage() {
   };
 
   const handleDismissUpload = (rowId: string) => dropUpload(rowId);
+
+  // Auto-close the media panel once an upload batch finishes cleanly; keep it
+  // open (showing the failing card with Retry / Remove) if anything errored.
+  useEffect(() => {
+    if (!uploadWatchRef.current) return;
+    const active = uploads.some(
+      (u) => u.status === "uploading" || u.status === "processing",
+    );
+    const failed = uploads.some((u) => u.status === "error");
+    // Wait for in-flight work to settle; a failure holds the panel open.
+    if (active || failed) return;
+    uploadWatchRef.current = false;
+    setMediaOpen(false);
+  }, [uploads]);
 
   const handleNewChat = () => {
     // Land on a fresh, empty composer — the session is created only when the

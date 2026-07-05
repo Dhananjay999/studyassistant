@@ -269,10 +269,13 @@ export function QuizSetupForm({
   if (layout === "sheet") {
     return (
       <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-3">
+        {/* `overscroll-contain` keeps the fields scrolling inside the sheet
+           instead of the gesture bubbling up and drag-dismissing the drawer,
+           which is what left the lower fields unreachable on some phones. */}
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-3">
           {fields}
         </div>
-        <div className="sticky bottom-0 -mx-4 border-t border-border/50 bg-background px-4 pb-[calc(env(safe-area-inset-bottom))] pt-3">
+        <div className="-mx-4 border-t border-border/50 bg-background px-4 pt-3">
           {submitButton}
         </div>
       </div>

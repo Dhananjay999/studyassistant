@@ -43,7 +43,7 @@ export function QuizSetupPopover({
     return (
       <ResponsiveModal open={open} onOpenChange={setOpen}>
         <ResponsiveModalTrigger asChild>{children}</ResponsiveModalTrigger>
-        <ResponsiveModalContent className="h-[92vh] max-h-[92vh]">
+        <ResponsiveModalContent className="h-[90dvh] max-h-[90dvh]">
           <ResponsiveModalHeader>
             <ResponsiveModalTitle className="font-display">
               Set up your quiz
