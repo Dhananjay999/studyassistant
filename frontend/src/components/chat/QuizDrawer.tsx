@@ -252,12 +252,18 @@ export function QuizDrawer({
             onValueChange={(v) => setTab(v as Tab)}
             className="flex flex-1 flex-col overflow-hidden"
           >
-            <header className="space-y-3 border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
-              <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
-              <TabsList className="grid w-full grid-cols-2 sm:grid sm:w-full">
-                <TabsTrigger value="take">Take Quiz</TabsTrigger>
-                <TabsTrigger value="attempts">Attempts</TabsTrigger>
-              </TabsList>
+            <header className="space-y-3 border-b border-border/50 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
+              {/* Title keeps the close-button gutter; the tabs span full width
+                 (symmetric px-4) so there's no dead space on the right. */}
+              <h2 className="px-5 pr-12 font-display text-lg font-bold">
+                {quiz.title}
+              </h2>
+              <div className="px-4">
+                <TabsList className="grid h-11 w-full grid-cols-2 sm:grid sm:w-full">
+                  <TabsTrigger value="take">Take Quiz</TabsTrigger>
+                  <TabsTrigger value="attempts">Attempts</TabsTrigger>
+                </TabsList>
+              </div>
             </header>
 
             <div className="flex-1 overflow-y-auto px-5 py-6" {...tabSwipe}>
