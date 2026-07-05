@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Any, cast
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
@@ -13,6 +14,7 @@ from aeva.quiz.schema.quiz_schema import (
     QuizAnalyzeSchema,
     QuizSubmitSchema,
 )
+from aeva.quiz.share_service import QuizShareService
 
 if TYPE_CHECKING:
     from aeva.quiz.schema.quiz_schema import (
@@ -60,6 +62,30 @@ class QuizDetailEndpoint(MethodView):
     def get(current_user: UserData, quiz_id: str) -> dict[str, Any]:
         """Fetch quiz questions (no correct answers)."""
         return QuizService().get_quiz(quiz_id, current_user.id)
+
+
+class QuizExportEndpoint(MethodView):
+    """Get a quiz with correct answers for the owner's PDF export."""
+
+    @staticmethod
+    @blueprint.response(200)
+    @user_required
+    def get(current_user: UserData, quiz_id: str) -> dict[str, Any]:
+        """Fetch quiz questions incl. correct answers (owner only)."""
+        return QuizService().get_quiz_for_export(quiz_id, current_user.id)
+
+
+class QuizShareEndpoint(MethodView):
+    """Create (or reuse) a public share link for a quiz."""
+
+    @staticmethod
+    @blueprint.response(200)
+    @user_required
+    def post(current_user: UserData, quiz_id: str) -> dict[str, Any]:
+        """Mint/return the owner's stable public share link for a quiz."""
+        return QuizShareService().create_share(
+            quiz_id, current_user.id, request.url_root
+        )
 
 
 class QuizAttemptsEndpoint(MethodView):
@@ -167,6 +193,16 @@ blueprint.add_url_rule(
     "/<quiz_id>",
     view_func=QuizDetailEndpoint,
     endpoint="quiz_detail",
+)
+blueprint.add_url_rule(
+    "/<quiz_id>/export",
+    view_func=QuizExportEndpoint,
+    endpoint="quiz_export",
+)
+blueprint.add_url_rule(
+    "/<quiz_id>/share",
+    view_func=QuizShareEndpoint,
+    endpoint="quiz_share",
 )
 blueprint.add_url_rule(
     "/<quiz_id>/attempts",

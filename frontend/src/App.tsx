@@ -9,6 +9,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AppLoader } from "@/components/common/AppLoader";
+import { ConfirmProvider } from "@/components/common/ConfirmProvider";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -40,6 +41,8 @@ const QuizzesPage = lazy(() => import("@/pages/QuizzesPage"));
 const FlashcardsPage = lazy(() => import("@/pages/FlashcardsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
+// Public, no-login guest quiz attempt reached from a share link.
+const QuizSharePage = lazy(() => import("@/pages/QuizSharePage"));
 // Hidden Super Admin panel. The path is an unguessable secret AND the panel
 // has its own server-verified auth — the URL is never trusted on its own.
 const AdminApp = lazy(() => import("@/pages/admin/AdminApp"));
@@ -74,6 +77,7 @@ export default function App() {
             <AuthProvider>
               <SettingsProvider>
                 <TooltipProvider delayDuration={200}>
+                  <ConfirmProvider>
                   <Sonner position="top-center" />
                   <SigningInModal />
                   <SettingsExperience />
@@ -87,6 +91,11 @@ export default function App() {
                     <Route path="/privacy" element={<PrivacyPage />} />
                     <Route path="/terms" element={<TermsPage />} />
                     <Route path="/auth/callback" element={<AuthCallback />} />
+                    {/* Public guest quiz attempt (no auth, no app shell). */}
+                    <Route
+                      path="/quiz/share/:shareId"
+                      element={<QuizSharePage />}
+                    />
                     {/* Persistent app shell: header + sidebar mount once; only
                        the routed content below swaps (with a crossfade). */}
                     <Route
@@ -112,6 +121,7 @@ export default function App() {
                       </Routes>
                     </Suspense>
                   </BrowserRouter>
+                  </ConfirmProvider>
                 </TooltipProvider>
               </SettingsProvider>
             </AuthProvider>

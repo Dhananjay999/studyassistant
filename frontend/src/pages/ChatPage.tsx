@@ -44,6 +44,7 @@ import {
   useDocumentViewerController,
 } from "@/contexts/DocumentViewerContext";
 import { useIsDesktop } from "@/hooks/use-mobile";
+import { useBackClose } from "@/hooks/useBackClose";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
 import { useMediaProcessing } from "@/hooks/useMediaProcessing";
 import { useSwipe } from "@/hooks/useSwipe";
@@ -130,6 +131,12 @@ export default function ChatPage() {
   const [quizOpen, setQuizOpen] = useState(false);
   const [activeFlashcards, setActiveFlashcards] = useState<string | null>(null);
   const [flashcardsOpen, setFlashcardsOpen] = useState(false);
+
+  // Native back gesture/button dismisses these mobile overlays instead of
+  // leaving the chat. (The quiz dashboard and flashcard viewer bind their own
+  // back handlers inside their components, covering every call site.)
+  useBackClose(mediaOpen, () => setMediaOpen(false));
+  useBackClose(toolsOpen, () => setToolsOpen(false));
 
   const mediaQuery = useMedia();
   const media = mediaQuery.data ?? [];

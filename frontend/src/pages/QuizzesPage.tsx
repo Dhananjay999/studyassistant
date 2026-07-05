@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import {
   BarChart3,
   Clock,
+  FileDown,
   Gauge,
   GraduationCap,
   HelpCircle,
   History,
+  Share2,
   ListChecks,
   Loader2,
   Play,
@@ -22,6 +24,8 @@ import { ListToolbar } from "@/components/common/list";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import type { QuizInitialView } from "@/components/chat/QuizDrawer";
 import { BookmarkButton } from "@/components/BookmarkButton";
+import { QuizExportButton } from "@/components/quiz/QuizExportButton";
+import { ShareQuizButton } from "@/components/quiz/ShareQuizButton";
 import { useExamPatterns, useQuizzes } from "@/hooks/api";
 import { getQuiz } from "@/lib/api";
 import { useListQuery } from "@/hooks/useListQuery";
@@ -357,6 +361,22 @@ function QuizGridCard({
           <History className="h-4 w-4" />
           Attempts
         </Button>
+        <ShareQuizButton
+          quizId={q.quiz_id}
+          quizTitle={q.title}
+          variant="outline"
+          size="icon"
+        >
+          <Share2 className="h-4 w-4" />
+        </ShareQuizButton>
+        <QuizExportButton
+          quizId={q.quiz_id}
+          quizTitle={q.title}
+          variant="outline"
+          size="icon"
+        >
+          <FileDown className="h-4 w-4" />
+        </QuizExportButton>
       </div>
     </GlassCard>
   );

@@ -52,6 +52,19 @@ class QuizService:
             raise CustomError(ERROR_CODES["QUIZ_NOT_FOUND"])
         return success_response("Quiz loaded", quiz)
 
+    def get_quiz_for_export(
+        self, quiz_id: str, user_id: str
+    ) -> dict[str, Any]:
+        """Return the quiz *with* correct answers, for the owner's PDF export.
+
+        Unlike get_quiz (which hides answers so a taker can't cheat), the export
+        is owner-only and needs the answers to build the optional answer key.
+        """
+        quiz = self.repo.get_quiz(quiz_id, user_id, include_answers=True)
+        if not quiz:
+            raise CustomError(ERROR_CODES["QUIZ_NOT_FOUND"])
+        return success_response("Quiz export loaded", quiz)
+
     def list_quizzes(self, user_id: str) -> dict[str, Any]:
         """List the user's quizzes."""
         return success_response(

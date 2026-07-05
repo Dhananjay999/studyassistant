@@ -1,15 +1,7 @@
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmModal } from "@/components/common/ConfirmModal";
 
-/** Confirmation shown when leaving a settings section with unsaved edits. */
+/** Confirmation shown when leaving a settings section with unsaved edits.
+ * Built on ConfirmModal so it's a native-style bottom sheet on mobile. */
 export function DiscardGuardDialog({
   open,
   onConfirm,
@@ -20,25 +12,15 @@ export function DiscardGuardDialog({
   onCancel: () => void;
 }) {
   return (
-    <AlertDialog open={open} onOpenChange={(o) => !o && onCancel()}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-          <AlertDialogDescription>
-            You have unsaved changes to your learning profile. If you leave now,
-            they'll be lost.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Keep editing</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            Discard
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmModal
+      open={open}
+      onOpenChange={(o) => !o && onCancel()}
+      title="Discard unsaved changes?"
+      description="You have unsaved changes to your learning profile. If you leave now, they'll be lost."
+      confirmText="Discard"
+      cancelText="Keep editing"
+      destructive
+      onConfirm={onConfirm}
+    />
   );
 }

@@ -30,6 +30,7 @@ import {
   useRecordStudy,
 } from "@/hooks/api";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useBackClose } from "@/hooks/useBackClose";
 import { formatDuration } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
 import type {
@@ -91,6 +92,9 @@ export function FlashcardViewer({
   const { data, isLoading } = useFlashcardSet(open ? setId : null);
   const recordStudy = useRecordStudy();
   const createSession = useCreateSession();
+
+  // Back gesture/button closes the flashcard viewer instead of leaving the page.
+  useBackClose(open, () => onOpenChange(false));
 
   const [index, setIndex] = useState(0);
   // Direction the deck is moving (1 = forward, -1 = back) for slide transitions.
@@ -244,7 +248,7 @@ export function FlashcardViewer({
         ) : (
           <>
             {/* Header */}
-            <div className="border-b border-border/40 px-5 py-4 pr-12">
+            <div className="border-b border-border/40 px-5 pb-4 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] sm:pt-4">
               <div className="flex items-center gap-2">
                 <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow">
                   <Layers className="h-4 w-4" />
@@ -304,7 +308,7 @@ export function FlashcardViewer({
 
             {completed ? (
               /* ---------- Completion screen ---------- */
-              <div className="flex-1 overflow-y-auto px-5 py-8">
+              <div className="flex-1 overflow-y-auto px-5 pt-8 pb-[calc(env(safe-area-inset-bottom)+2rem)]">
                 <motion.div
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -485,7 +489,7 @@ export function FlashcardViewer({
                 </div>
 
                 {/* Footer nav + flow actions */}
-                <div className="border-t border-border/40 px-5 py-3">
+                <div className="border-t border-border/40 px-5 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <Button
                       variant="outline"

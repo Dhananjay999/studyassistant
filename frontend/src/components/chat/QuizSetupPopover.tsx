@@ -6,7 +6,6 @@ import {
 } from "@/components/ui/popover";
 import {
   ResponsiveModal,
-  ResponsiveModalBody,
   ResponsiveModalContent,
   ResponsiveModalHeader,
   ResponsiveModalTitle,
@@ -44,20 +43,19 @@ export function QuizSetupPopover({
     return (
       <ResponsiveModal open={open} onOpenChange={setOpen}>
         <ResponsiveModalTrigger asChild>{children}</ResponsiveModalTrigger>
-        <ResponsiveModalContent>
+        <ResponsiveModalContent className="h-[92vh] max-h-[92vh]">
           <ResponsiveModalHeader>
             <ResponsiveModalTitle className="font-display">
               Set up your quiz
             </ResponsiveModalTitle>
           </ResponsiveModalHeader>
-          <ResponsiveModalBody className="pb-2 pt-1">
-            <QuizSetupForm
-              initialTopic={initialTopic}
-              mediaAvailable={mediaAvailable}
-              busy={busy}
-              onGenerate={handleGenerate}
-            />
-          </ResponsiveModalBody>
+          <QuizSetupForm
+            layout="sheet"
+            initialTopic={initialTopic}
+            mediaAvailable={mediaAvailable}
+            busy={busy}
+            onGenerate={handleGenerate}
+          />
         </ResponsiveModalContent>
       </ResponsiveModal>
     );

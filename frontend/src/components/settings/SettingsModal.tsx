@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/contexts/AuthContext";
+import { useConfirmLogout } from "@/hooks/useConfirmLogout";
 import { useSettings } from "@/contexts/SettingsContext";
 import { SETTINGS_SECTIONS, getSection } from "./sections";
 import { DiscardGuardDialog } from "./DiscardGuardDialog";
@@ -19,16 +19,13 @@ import { useDiscardGuard } from "./useDiscardGuard";
  */
 export function SettingsModal() {
   const { isOpen, section, close, setSection } = useSettings();
-  const { logout } = useAuth();
+  const confirmLogout = useConfirmLogout();
   const { guard, isPrompting, confirm, cancel } = useDiscardGuard();
 
   const active = getSection(section);
   const ActiveComponent = active.Component;
 
-  const signOut = () => {
-    close();
-    logout();
-  };
+  const signOut = () => confirmLogout(close);
 
   return (
     <Dialog

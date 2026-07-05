@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useConfirmLogout } from "@/hooks/useConfirmLogout";
 import { useSettings } from "@/contexts/SettingsContext";
 import { SETTINGS_SECTIONS, getSection } from "./sections";
 import type { SettingsSection, SettingsSectionId } from "./types";
@@ -26,7 +27,8 @@ const MENU_GROUPS: ReadonlyArray<{
  */
 export function SettingsMobile() {
   const { section, close, setSection } = useSettings();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const confirmLogout = useConfirmLogout();
   const { guard, isPrompting, confirm, cancel } = useDiscardGuard();
 
   // `null` = the grouped menu; otherwise a section sub-screen.
@@ -44,10 +46,7 @@ export function SettingsMobile() {
       else close();
     });
 
-  const signOut = () => {
-    close();
-    logout();
-  };
+  const signOut = () => confirmLogout(close);
 
   return (
     <motion.div

@@ -35,6 +35,7 @@ export function QuizSetupForm({
   busy = false,
   onGenerate,
   className,
+  layout = "default",
 }: {
   initialTopic?: string;
   initialCount?: number | null;
@@ -45,6 +46,9 @@ export function QuizSetupForm({
   busy?: boolean;
   onGenerate: (options: QuizOptions) => void;
   className?: string;
+  /** "sheet" fills its container: fields scroll, Generate pins to the bottom as
+   * a sticky footer (used inside the mobile bottom sheet). */
+  layout?: "default" | "sheet";
 }) {
   const { data: config } = useAppConfig();
   const maxQuestions = config?.max_quiz_questions ?? DEFAULT_MAX;
@@ -92,8 +96,19 @@ export function QuizSetupForm({
     });
   };
 
-  return (
-    <div className={cn("space-y-3", className)}>
+  const submitButton = (
+    <Button
+      onClick={submit}
+      disabled={busy || types.length === 0 || !countValid}
+      className="w-full gap-2"
+    >
+      <Sparkles className="h-4 w-4" />
+      {busy ? "Generating…" : "Generate quiz"}
+    </Button>
+  );
+
+  const fields = (
+    <>
       <div className="space-y-1.5">
         <Label className="text-xs">Topic</Label>
         <Input
@@ -246,15 +261,28 @@ export function QuizSetupForm({
           onPatternDefaultType={(t) => setTypes([t])}
         />
       </div>
+    </>
+  );
 
-      <Button
-        onClick={submit}
-        disabled={busy || types.length === 0 || !countValid}
-        className="w-full gap-2"
-      >
-        <Sparkles className="h-4 w-4" />
-        {busy ? "Generating…" : "Generate quiz"}
-      </Button>
+  // Sheet layout: fields scroll inside a flex column and the primary action
+  // pins to the bottom as a sticky, safe-area-padded footer.
+  if (layout === "sheet") {
+    return (
+      <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-3">
+          {fields}
+        </div>
+        <div className="sticky bottom-0 -mx-4 border-t border-border/50 bg-background px-4 pb-[calc(env(safe-area-inset-bottom))] pt-3">
+          {submitButton}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("space-y-3", className)}>
+      {fields}
+      {submitButton}
     </div>
   );
 }

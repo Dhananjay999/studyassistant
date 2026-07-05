@@ -6,24 +6,19 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { QuizExportButton } from "@/components/quiz/QuizExportButton";
+import { ShareQuizButton } from "@/components/quiz/ShareQuizButton";
 import { QuizRunner } from "@/components/quiz/QuizRunner";
 import { QuizAttemptReport } from "@/components/quiz/QuizAttemptReport";
 import { QuizAttemptsTab } from "@/components/quiz/QuizAttemptsTab";
 import { ExamSummary } from "@/components/quiz/ExamSummary";
 import { useQuizAttempt, useQuizAttempts } from "@/hooks/api";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useBackClose } from "@/hooks/useBackClose";
+import { useTabSwipe } from "@/hooks/useTabSwipe";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 import { cn } from "@/lib/utils";
 import {
   hasExamConfig,
@@ -34,6 +29,7 @@ import {
 
 type View = "menu" | "summary" | "run" | "report";
 type Tab = "take" | "attempts";
+const TAB_VALUES: Tab[] = ["take", "attempts"];
 
 /** How the dashboard opens: a freshly-opened quiz jumps straight into taking
  * ("run"); the library opens the dashboard on a chosen tab. */
@@ -65,8 +61,19 @@ export function QuizDrawer({
   const [examOverride, setExamOverride] = useState<ExamConfig | null>(null);
   // True once the entry screen is chosen for this open (gates the loader).
   const [inited, setInited] = useState(false);
-  // Confirmation before abandoning an in-progress attempt.
-  const [confirmClose, setConfirmClose] = useState(false);
+  const confirm = useConfirm();
+
+  // Confirmation before abandoning an in-progress attempt. Shared by the close
+  // button and the device back gesture.
+  const confirmLeave = () =>
+    confirm({
+      title: "Leave the quiz?",
+      description:
+        "Your attempt is in progress and hasn't been submitted. If you leave now, your answers will be lost.",
+      confirmText: "Leave quiz",
+      cancelText: "Keep going",
+      destructive: true,
+    });
 
   const quizId = quiz?.quiz_id ?? "";
   const isExam = hasExamConfig(quiz?.exam_config);
@@ -131,6 +138,19 @@ export function QuizDrawer({
     [quiz, examOverride],
   );
 
+  // Back gesture/button leaves the quiz dashboard; mid-attempt it routes
+  // through the same "Leave quiz?" guard as the close button.
+  useBackClose(open, async () => {
+    if (view === "run") {
+      if (await confirmLeave()) onOpenChange(false);
+    } else {
+      onOpenChange(false);
+    }
+  });
+
+  // Horizontal swipe moves between the Take Quiz / Attempts tabs on the menu.
+  const tabSwipe = useTabSwipe(TAB_VALUES, tab, (v) => setTab(v as Tab));
+
   if (!quiz || !effectiveQuiz) return null;
 
   const backToAttempts = () => {
@@ -149,16 +169,15 @@ export function QuizDrawer({
   };
 
   // Guard against losing progress: closing mid-attempt asks first.
-  const requestClose = (next: boolean) => {
+  const requestClose = async (next: boolean) => {
     if (!next && view === "run") {
-      setConfirmClose(true);
+      if (await confirmLeave()) onOpenChange(false);
       return;
     }
     onOpenChange(next);
   };
 
   return (
-    <>
     <Dialog open={open} onOpenChange={requestClose}>
       <DialogContent
         className={cn(
@@ -235,13 +254,13 @@ export function QuizDrawer({
           >
             <header className="space-y-3 border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
               <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-2 sm:grid sm:w-full">
                 <TabsTrigger value="take">Take Quiz</TabsTrigger>
                 <TabsTrigger value="attempts">Attempts</TabsTrigger>
               </TabsList>
             </header>
 
-            <div className="flex-1 overflow-y-auto px-5 py-6">
+            <div className="flex-1 overflow-y-auto px-5 py-6" {...tabSwipe}>
               <TabsContent value="take" className="mt-0">
                 <TakePanel
                   quiz={quiz}
@@ -265,30 +284,6 @@ export function QuizDrawer({
         )}
       </DialogContent>
     </Dialog>
-
-    <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Leave the quiz?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Your attempt is in progress and hasn't been submitted. If you leave
-            now, your answers will be lost.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Keep going</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              setConfirmClose(false);
-              onOpenChange(false);
-            }}
-          >
-            Leave quiz
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    </>
   );
 }
 
@@ -325,6 +320,20 @@ function TakePanel({
       >
         <History className="h-4 w-4" /> View past attempts
       </Button>
+      <div className="mt-1 flex items-center gap-2">
+        <ShareQuizButton
+          quizId={quiz.quiz_id}
+          quizTitle={quiz.title}
+          variant="ghost"
+          className="gap-1.5 text-muted-foreground"
+        />
+        <QuizExportButton
+          quizId={quiz.quiz_id}
+          quizTitle={quiz.title}
+          variant="ghost"
+          className="gap-1.5 text-muted-foreground"
+        />
+      </div>
     </div>
   );
 }

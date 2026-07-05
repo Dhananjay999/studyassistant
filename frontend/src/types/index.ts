@@ -138,6 +138,25 @@ export interface QuizContent {
   exam_config?: ExamConfig | null;
 }
 
+/** A quiz question with its answer key, returned by GET /quiz/:id/export.
+ * `correct_answers` holds the correct option *text(s)* (matched, not indexed). */
+export interface QuizExportQuestion extends QuizQuestion {
+  correct_answers: string[];
+  explanation?: string | null;
+}
+
+/** Owner-only quiz payload for PDF export — the questions carry answers. */
+export interface QuizExportContent extends Omit<QuizContent, "questions"> {
+  questions: QuizExportQuestion[];
+}
+
+/** Public share link for a quiz (POST /quiz/:id/share). `url` is the backend
+ * share URL that renders OG tags and redirects a human to the SPA. */
+export interface QuizShareLink {
+  token: string;
+  url: string;
+}
+
 export interface QuizPerQuestion {
   question_id: string;
   is_correct: boolean;

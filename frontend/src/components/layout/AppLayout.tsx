@@ -15,6 +15,7 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { HeaderSlotProvider } from "@/components/layout/HeaderSlot";
 import { RouteTransition } from "@/components/layout/RouteTransition";
 import { useDeleteSession, useSessions } from "@/hooks/api";
+import { useBackClose } from "@/hooks/useBackClose";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 
 const COLLAPSE_KEY = "aeva_sidebar_collapsed";
@@ -117,6 +118,11 @@ export function AppLayout() {
   });
 
   const openMobileNav = useCallback(() => setMobileOpen(true), []);
+
+  // Native back gesture/button closes the mobile nav drawer and the command
+  // palette instead of navigating away from the app.
+  useBackClose(mobileOpen, () => setMobileOpen(false));
+  useBackClose(paletteOpen, () => setPaletteOpen(false));
 
   const shell = useMemo<ShellValue>(
     () => ({ collapsed, setDocked, openMobileNav, registerSlashHandler }),

@@ -1,16 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CircleSlash, Pencil, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -381,30 +372,16 @@ export function LearningProfileSection() {
         </div>
       )}
 
-      <AlertDialog open={confirmReset} onOpenChange={setConfirmReset}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset learning profile?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This clears all your personalization choices. Aeva will stop
-              tailoring responses until you set them up again.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                void reset();
-              }}
-              disabled={busy}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Reset
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmModal
+        open={confirmReset}
+        onOpenChange={setConfirmReset}
+        title="Reset learning profile?"
+        description="This clears all your personalization choices. Aeva will stop tailoring responses until you set them up again."
+        confirmText="Reset"
+        destructive
+        loading={busy}
+        onConfirm={() => void reset()}
+      />
     </div>
   );
 }

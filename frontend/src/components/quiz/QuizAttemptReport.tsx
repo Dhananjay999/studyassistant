@@ -43,6 +43,7 @@ export function QuizAttemptReport({
   onClose,
   onBack,
   onRetake,
+  guest = false,
 }: {
   quiz: QuizContent;
   evaluation: QuizEvaluation;
@@ -52,6 +53,9 @@ export function QuizAttemptReport({
   onClose: () => void;
   onBack?: () => void;
   onRetake?: () => void;
+  /** Guest (public share) mode: hide account-only actions (AI analysis,
+   * bookmarking, create-flashcards) and show a promo CTA instead. */
+  guest?: boolean;
 }) {
   const navigate = useNavigate();
   const createSession = useCreateSession();
@@ -276,34 +280,35 @@ export function QuizAttemptReport({
               <ListChecks className="h-4 w-4" />
               {reviewOpen ? "Hide review" : "Review answers"}
             </Button>
-            {analysis ? (
-              <Button
-                variant="outline"
-                onClick={() => setAnalysisOpen((o) => !o)}
-                className="flex-1 gap-1.5"
-              >
-                <Sparkles className="h-4 w-4 text-brand-1" />
-                {analysisOpen ? "Hide AI analysis" : "View AI analysis"}
-              </Button>
-            ) : (
-              <Button
-                onClick={runAnalysis}
-                disabled={analyzeMutation.isPending}
-                className="flex-1 gap-1.5 bg-brand-gradient text-white"
-              >
-                {analyzeMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Brain className="h-4 w-4" />
-                )}
-                {analyzeMutation.isPending
-                  ? "Analyzing…"
-                  : "Analyze my performance"}
-              </Button>
-            )}
+            {!guest &&
+              (analysis ? (
+                <Button
+                  variant="outline"
+                  onClick={() => setAnalysisOpen((o) => !o)}
+                  className="flex-1 gap-1.5"
+                >
+                  <Sparkles className="h-4 w-4 text-brand-1" />
+                  {analysisOpen ? "Hide AI analysis" : "View AI analysis"}
+                </Button>
+              ) : (
+                <Button
+                  onClick={runAnalysis}
+                  disabled={analyzeMutation.isPending}
+                  className="flex-1 gap-1.5 bg-brand-gradient text-white"
+                >
+                  {analyzeMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Brain className="h-4 w-4" />
+                  )}
+                  {analyzeMutation.isPending
+                    ? "Analyzing…"
+                    : "Analyze my performance"}
+                </Button>
+              ))}
           </div>
 
-          {analyzeMutation.isError && !analysis && (
+          {!guest && analyzeMutation.isError && !analysis && (
             <p className="text-center text-xs text-destructive">
               Couldn't analyze right now. Please try again.
             </p>
@@ -315,33 +320,50 @@ export function QuizAttemptReport({
           {/* Review */}
           {reviewOpen && <ReviewPanel quiz={quiz} evaluation={ev} />}
 
-          {/* Keep learning */}
-          <div className="space-y-2 border-t border-border/50 pt-4">
-            <p className="text-sm font-semibold">Keep learning</p>
-            <div className="flex flex-wrap gap-2 align-item-center">
-              <Button
-                size="sm"
-                onClick={makeFlashcards}
-                disabled={createSession.isPending}
-                className="flex-1 gap-1.5 bg-brand-gradient text-white"
-              >
-                <Layers className="h-4 w-4" /> Create flashcards
-              </Button>
-              <BookmarkButton
-                label
-                item={{
-                  item_type: "quiz",
-                  item_ref: quiz.quiz_id,
-                  title: quiz.title,
-                  content: quiz.topic || quiz.title,
-                  metadata: {
-                    quiz_id: quiz.quiz_id,
-                    score: ev.score,
-                  },
-                }}
-              />
+          {/* Keep learning (account features) */}
+          {!guest && (
+            <div className="space-y-2 border-t border-border/50 pt-4">
+              <p className="text-sm font-semibold">Keep learning</p>
+              <div className="flex flex-wrap gap-2 align-item-center">
+                <Button
+                  size="sm"
+                  onClick={makeFlashcards}
+                  disabled={createSession.isPending}
+                  className="flex-1 gap-1.5 bg-brand-gradient text-white"
+                >
+                  <Layers className="h-4 w-4" /> Create flashcards
+                </Button>
+                <BookmarkButton
+                  label
+                  item={{
+                    item_type: "quiz",
+                    item_ref: quiz.quiz_id,
+                    title: quiz.title,
+                    content: quiz.topic || quiz.title,
+                    metadata: {
+                      quiz_id: quiz.quiz_id,
+                      score: ev.score,
+                    },
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Guest promo — nudge sign-up without any account action */}
+          {guest && (
+            <div className="space-y-2 border-t border-border/50 pt-4 text-center">
+              <p className="text-sm font-semibold">
+                Want quizzes like this on your own notes?
+              </p>
+              <Button
+                onClick={() => navigate("/")}
+                className="w-full gap-1.5 bg-brand-gradient text-white sm:w-auto"
+              >
+                <Sparkles className="h-4 w-4" /> Try StudyAssistant free
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </>

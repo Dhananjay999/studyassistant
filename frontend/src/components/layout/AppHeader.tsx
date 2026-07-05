@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
+import { useConfirmLogout } from "@/hooks/useConfirmLogout";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useHeaderSlotContent } from "@/components/layout/HeaderSlot";
 
@@ -33,7 +34,8 @@ export function AppHeader({
   onOpenSearch: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const confirmLogout = useConfirmLogout();
   const { open: openSettings } = useSettings();
   const { start, end } = useHeaderSlotContent();
 
@@ -113,7 +115,7 @@ export function AppHeader({
             <Bookmark className="mr-2 h-4 w-4" /> Bookmarks
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={logout}>
+          <DropdownMenuItem onClick={() => confirmLogout()}>
             <LogOut className="mr-2 h-4 w-4" /> Log out
           </DropdownMenuItem>
         </DropdownMenuContent>

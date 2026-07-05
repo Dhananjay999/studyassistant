@@ -22,7 +22,10 @@ import type {
   QuizAttemptDetail,
   QuizAttemptSummary,
   QuizContent,
+  QuizEvaluation,
+  QuizExportContent,
   QuizListItem,
+  QuizShareLink,
   QuizSubmitResult,
   SearchResults,
   Session,
@@ -49,6 +52,10 @@ export const ENDPOINTS = {
   QUIZZES: "/quiz/",
   QUIZ_EXAM_PATTERNS: "/quiz/exam-patterns",
   QUIZ: (id: string) => `/quiz/${id}`,
+  QUIZ_EXPORT: (id: string) => `/quiz/${id}/export`,
+  QUIZ_SHARE: (id: string) => `/quiz/${id}/share`,
+  SHARED_QUIZ_DATA: (token: string) => `/shared/quiz/${token}/data`,
+  SHARED_QUIZ_SUBMIT: (token: string) => `/shared/quiz/${token}/submit`,
   QUIZ_EXAM_CONFIG: (id: string) => `/quiz/${id}/exam-config`,
   QUIZ_SUBMIT: (id: string) => `/quiz/${id}/submit`,
   QUIZ_ANALYZE: (id: string) => `/quiz/${id}/analyze`,
@@ -94,7 +101,18 @@ function authHeaders(json = true): Record<string, string> {
   return headers;
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// `public` marks an unauthenticated (guest) call: a 401 must NOT tear down the
+// session, since there is no session to lose — it would wrongly bounce a
+// logged-out visitor toward login on a public share page.
+interface RequestExtras {
+  public?: boolean;
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  extras: RequestExtras = {},
+): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT);
   try {
@@ -105,8 +123,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     });
     if (!res.ok) {
       // An expired/invalid token surfaces as 401 here (the proactive refresh
-      // timer failed or never ran). Tear the session down so the app logs out.
-      if (res.status === 401) onUnauthorized();
+      // timer failed or never ran). Tear the session down so the app logs out —
+      // but never for an intentionally public call.
+      if (res.status === 401 && !extras.public) onUnauthorized();
       const err = await res.json().catch(() => ({}));
       throw new Error(err.msg || `Request failed (${res.status})`);
     }
@@ -116,8 +135,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 }
 
-function unwrap<T>(path: string, options?: RequestInit): Promise<T> {
-  return request<APIEnvelope<T>>(path, options).then((r) => r.data);
+function unwrap<T>(
+  path: string,
+  options?: RequestInit,
+  extras?: RequestExtras,
+): Promise<T> {
+  return request<APIEnvelope<T>>(path, options, extras).then((r) => r.data);
 }
 
 /* --------------------------------- config --------------------------------- */
@@ -312,6 +335,52 @@ export const getQuiz = async (id: string): Promise<QuizContent> => {
   const q = await unwrap<QuizContent & { id?: string }>(ENDPOINTS.QUIZ(id));
   return { ...q, quiz_id: q.quiz_id ?? q.id ?? id };
 };
+
+/** Owner-only quiz payload incl. correct answers, for the PDF export. */
+export const getQuizExport = async (
+  id: string,
+): Promise<QuizExportContent> => {
+  const q = await unwrap<QuizExportContent & { id?: string }>(
+    ENDPOINTS.QUIZ_EXPORT(id),
+  );
+  return { ...q, quiz_id: q.quiz_id ?? q.id ?? id };
+};
+
+/* ------------------------------- quiz sharing ----------------------------- */
+
+/** Owner: create/reuse the public share link for a quiz. */
+export const createQuizShare = (id: string) =>
+  unwrap<QuizShareLink>(ENDPOINTS.QUIZ_SHARE(id), { method: "POST" });
+
+/** Public (guest): load a shared quiz for taking — no answers, no auth. */
+export const getSharedQuiz = async (
+  token: string,
+): Promise<QuizContent> => {
+  const q = await unwrap<QuizContent & { id?: string }>(
+    ENDPOINTS.SHARED_QUIZ_DATA(token),
+    undefined,
+    { public: true },
+  );
+  return { ...q, quiz_id: q.quiz_id ?? q.id ?? token };
+};
+
+/** Public (guest): submit a shared-quiz attempt; scored server-side. */
+export const submitSharedQuiz = (
+  token: string,
+  answers: Record<string, string[]>,
+  timeTakenSeconds = 0,
+) =>
+  unwrap<{ evaluation: QuizEvaluation }>(
+    ENDPOINTS.SHARED_QUIZ_SUBMIT(token),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        answers,
+        time_taken_seconds: timeTakenSeconds,
+      }),
+    },
+    { public: true },
+  );
 
 export const submitQuiz = (
   id: string,

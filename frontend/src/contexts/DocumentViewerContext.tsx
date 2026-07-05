@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getMediaStatus } from "@/lib/api";
 import { qk } from "@/hooks/api";
+import { useBackClose } from "@/hooks/useBackClose";
 import type { MediaItem } from "@/types";
 
 interface OpenDocArgs {
@@ -93,6 +94,9 @@ export function useDocumentViewerController(): DocumentViewerController {
     () => setMode((m) => (m === "docked" ? "fullscreen" : "docked")),
     [],
   );
+
+  // Back gesture/button returns from the PDF viewer to the chat.
+  useBackClose(viewer !== null, close);
 
   const value = useMemo(
     () => ({ openDocument, openDocumentByMediaId }),

@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useBackClose } from "@/hooks/useBackClose";
 import type { SettingsSectionId } from "@/components/settings/types";
 
 /**
@@ -54,6 +55,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSectionState(next);
     setDirty(false);
   }, []);
+
+  // Back gesture/button closes the Settings overlay instead of leaving the app.
+  useBackClose(isOpen, close);
 
   const value = useMemo<SettingsContextValue>(
     () => ({ isOpen, section, dirty, open, close, setSection, setDirty }),

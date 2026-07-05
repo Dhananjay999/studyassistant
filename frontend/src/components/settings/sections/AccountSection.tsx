@@ -3,21 +3,20 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { useConfirmLogout } from "@/hooks/useConfirmLogout";
 import { useSettings } from "@/contexts/SettingsContext";
 import { SettingsGroup } from "@/components/settings/primitives";
 
 /** Account identity + session controls. */
 export function AccountSection() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { close } = useSettings();
+  const confirmLogout = useConfirmLogout();
 
   const name = user?.full_name || "Student";
   const initial = user?.full_name?.[0] || user?.email?.[0] || "?";
 
-  const signOut = () => {
-    close();
-    logout();
-  };
+  const signOut = () => confirmLogout(close);
 
   return (
     <div className="space-y-6">

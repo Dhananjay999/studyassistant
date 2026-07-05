@@ -32,12 +32,20 @@ function clock(seconds: number): string {
 export function QuizRunner({
   quiz,
   onSubmitted,
+  onSubmit,
 }: {
   quiz: QuizContent;
   onSubmitted: (result: QuizSubmitResult) => void;
+  /** Override the (authed) submit — e.g. a public guest submit on a share
+   * page. Receives the answers + elapsed seconds, returns the scored result. */
+  onSubmit?: (
+    answers: Record<string, string[]>,
+    timeTakenSeconds: number,
+  ) => Promise<QuizSubmitResult>;
 }) {
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [submitting, setSubmitting] = useState(false);
   const startedAt = useRef(0);
   const submitMutation = useSubmitQuiz();
 
@@ -144,20 +152,24 @@ export function QuizRunner({
       return;
     }
     submittedRef.current = true;
+    setSubmitting(true);
     const timeTakenSeconds = Math.max(
       1,
       Math.round((Date.now() - startedAt.current) / 1000),
     );
     try {
-      const res = await submitMutation.mutateAsync({
-        id: quiz.quiz_id,
-        answers,
-        timeTakenSeconds,
-      });
+      const res = onSubmit
+        ? await onSubmit(answers, timeTakenSeconds)
+        : await submitMutation.mutateAsync({
+            id: quiz.quiz_id,
+            answers,
+            timeTakenSeconds,
+          });
       if (auto) toast.info("Time's up — your exam was submitted.");
       onSubmitted(res);
     } catch {
       submittedRef.current = false;
+      setSubmitting(false);
       toast.error("Couldn't submit the quiz. Please try again.");
     }
   };
@@ -305,10 +317,10 @@ export function QuizRunner({
           <Button
             size="sm"
             onClick={() => submit()}
-            disabled={submitMutation.isPending}
+            disabled={submitting}
             className="gap-1.5 bg-brand-gradient text-white"
           >
-            {submitMutation.isPending ? (
+            {submitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <CheckCircle2 className="h-4 w-4" />
