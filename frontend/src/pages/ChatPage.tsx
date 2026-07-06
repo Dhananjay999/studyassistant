@@ -13,6 +13,7 @@ import {
   Bookmark,
   FolderOpen,
   GraduationCap,
+  MessageSquarePlus,
   Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -851,6 +852,18 @@ export default function ChatPage() {
       ),
       end: (
         <>
+          {/* New Chat lives in the chat header on mobile — the bottom-nav Chat
+              tab just returns to the current workspace (kept alive). Hidden on
+              desktop, where the sidebar owns New Chat. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={handleNewChat}
+            aria-label="New chat"
+          >
+            <MessageSquarePlus className="h-5 w-5" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"

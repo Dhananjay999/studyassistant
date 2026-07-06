@@ -45,6 +45,11 @@ def create_provider(
         provider_key, current_app.config["LLM_PROVIDER"]
     )
     model_name = model or current_app.config[config_key]
+    # Safety net: a config value may hold a comma-separated candidate list
+    # (e.g. LLM_*_MODEL set to "gpt-4.1,o3,gpt-4.1-mini"). A provider takes ONE
+    # model, so never pass the whole string — use the first entry.
+    if model_name and "," in model_name:
+        model_name = model_name.split(",", 1)[0].strip()
 
     provider_cls = PROVIDERS.get(provider_name)
     if not provider_cls:

@@ -133,6 +133,30 @@ class LLMClient:
             lines.append(f"── response schema ──\n{schema_json}")
         logger.info("\n".join(lines))
 
+    def _log_response(self, label: str, result: object) -> None:
+        """Log the response the provider returned.
+
+        Symmetric to :meth:`_log_request`: with ``LOG_LLM_REQUESTS`` on, the
+        full untruncated response is emitted at INFO — so a single switch dumps
+        both the final prompt and the reply for the same call. Otherwise a
+        length-capped preview at DEBUG, as before.
+        """
+        if log_full_llm_requests():
+            text = (
+                result
+                if isinstance(result, str)
+                else json.dumps(result, default=str, ensure_ascii=False)
+            )
+            logger.info(
+                "LLM %s full response | model=%s\n── response ──\n%s",
+                label,
+                self.model,
+                text,
+            )
+            return
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("LLM %s result: %s", label, preview(result))
+
     @property
     def last_sources(self) -> list[dict[str, str]]:
         """Grounding citations captured from the most recent call."""
@@ -145,6 +169,8 @@ class LLMClient:
         attachments: list[dict[str, Any]] | None = None,
         history: list[dict[str, str]] | None = None,
         use_search: bool = False,
+        *,
+        log_label: str = "generate",
     ) -> str:
         """Generate a response (optionally grounded with web search)."""
         extra = (
@@ -152,14 +178,14 @@ class LLMClient:
             f" hist={len(history or [])}"
         )
         self._log_request(
-            "generate",
+            log_label,
             user_message,
             system_prompt=system_prompt,
             attachments=attachments,
             history=history,
             use_search=use_search,
         )
-        with self._timed("generate", user_message, extra):
+        with self._timed(log_label, user_message, extra):
             result = self._provider.generate(
                 user_message,
                 system_prompt=system_prompt,
@@ -167,8 +193,7 @@ class LLMClient:
                 history=history,
                 use_search=use_search,
             )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("LLM generate result: %s", preview(result))
+        self._log_response(log_label, result)
         return result
 
     def generate_structured(
@@ -180,10 +205,11 @@ class LLMClient:
         attachments: list[dict[str, Any]] | None = None,
         history: list[dict[str, str]] | None = None,
         use_search: bool = False,
+        log_label: str = "structured",
     ) -> dict[str, Any]:
         """Generate JSON matching the given schema."""
         self._log_request(
-            "structured",
+            log_label,
             user_message,
             system_prompt=system_prompt,
             attachments=attachments,
@@ -191,7 +217,7 @@ class LLMClient:
             use_search=use_search,
             response_schema=response_schema,
         )
-        with self._timed("structured", user_message, " (json)"):
+        with self._timed(log_label, user_message, " (json)"):
             result = self._provider.generate_structured(
                 user_message,
                 response_schema,
@@ -200,8 +226,7 @@ class LLMClient:
                 history=history,
                 use_search=use_search,
             )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("LLM structured result: %s", preview(result))
+        self._log_response(log_label, result)
         return result
 
     def generate_stream(
@@ -232,7 +257,7 @@ class LLMClient:
 
         def _streamed() -> Generator[str, None, None]:
             chunks = 0
-            chars = 0
+            parts: list[str] = []
             try:
                 for chunk in self._provider.generate_stream(
                     user_message,
@@ -242,7 +267,7 @@ class LLMClient:
                     use_search=use_search,
                 ):
                     chunks += 1
-                    chars += len(chunk)
+                    parts.append(chunk)
                     yield chunk
             except Exception:
                 logger.exception(
@@ -251,13 +276,15 @@ class LLMClient:
                     (time.perf_counter() - start) * 1000,
                 )
                 raise
+            answer = "".join(parts)
             logger.info(
                 "LLM stream ✓ model=%s | %d chunks, %d chars (%.0fms)",
                 self.model,
                 chunks,
-                chars,
+                len(answer),
                 (time.perf_counter() - start) * 1000,
             )
+            self._log_response("stream", answer)
 
         return _streamed()
 

@@ -29,6 +29,7 @@ import { ShareQuizButton } from "@/components/quiz/ShareQuizButton";
 import { useExamPatterns, useQuizzes } from "@/hooks/api";
 import { getQuiz } from "@/lib/api";
 import { useListQuery } from "@/hooks/useListQuery";
+import { useTabHosted } from "@/components/layout/tabPanel";
 import {
   applyListQuery,
   byDateAsc,
@@ -111,7 +112,9 @@ export default function QuizzesPage() {
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const config = useMemo(() => buildQuizConfig(patterns), [patterns]);
-  const listQuery = useListQuery(config);
+  // In-memory filters under mobile keep-alive (preserved across tab switches);
+  // URL-persisted on desktop. See BookmarksPage for the rationale.
+  const listQuery = useListQuery(config, { persist: !useTabHosted() });
   const filtered = useMemo(
     () => applyListQuery(quizzes, config, listQuery.state),
     [quizzes, config, listQuery.state],

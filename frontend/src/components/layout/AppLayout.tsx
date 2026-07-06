@@ -6,7 +6,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Outlet,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { AppSidebar } from "@/components/chat/AppSidebar";
 import { MobileNav } from "@/components/MobileNav";
@@ -14,6 +19,10 @@ import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { HeaderSlotProvider } from "@/components/layout/HeaderSlot";
 import { RouteTransition } from "@/components/layout/RouteTransition";
+import { MobileTabsHost } from "@/components/layout/MobileTabsHost";
+import { ShellViewportProvider } from "@/components/layout/shellViewport";
+import { isTabPath } from "@/components/layout/tabPages";
+import { useIsMobileShell } from "@/hooks/useIsMobileShell";
 import { useDeleteSession, useSessions } from "@/hooks/api";
 import { useBackClose } from "@/hooks/useBackClose";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
@@ -52,7 +61,13 @@ export function useShell(): ShellValue {
  */
 export function AppLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+  // Mobile keep-alive: the shell tracks the active tab and whether the mobile
+  // (bottom-nav) shell is showing, shared with MobileTabsHost and the tab route
+  // elements via ShellViewportProvider so they never double-mount a tab page.
+  const isMobileShell = useIsMobileShell();
+  const activeTab = isTabPath(location.pathname) ? location.pathname : null;
   const sessionsQuery = useSessions();
   const sessions = useMemo(
     () => sessionsQuery.data ?? [],
@@ -146,6 +161,7 @@ export function AppLayout() {
   );
 
   return (
+    <ShellViewportProvider value={{ isMobileShell, activeTab }}>
     <ShellContext.Provider value={shell}>
       <HeaderSlotProvider>
         <div className="flex h-dvh bg-background">
@@ -164,6 +180,9 @@ export function AppLayout() {
               onOpenSearch={() => setPaletteOpen(true)}
             />
             <main className="relative min-h-0 flex-1 overflow-hidden">
+              {/* Mobile keep-alive tab pages (mounted, visibility-toggled).
+                  Renders nothing on desktop, where the Outlet owns the pages. */}
+              <MobileTabsHost />
               <RouteTransition>
                 <Outlet />
               </RouteTransition>
@@ -181,5 +200,6 @@ export function AppLayout() {
         </div>
       </HeaderSlotProvider>
     </ShellContext.Provider>
+    </ShellViewportProvider>
   );
 }

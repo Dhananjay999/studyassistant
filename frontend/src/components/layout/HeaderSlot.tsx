@@ -8,6 +8,7 @@ import {
   type DependencyList,
   type ReactNode,
 } from "react";
+import { TabPanelContext } from "@/components/layout/tabPanel";
 
 /**
  * A slot in the persistent {@link AppHeader}. Pages inject page-specific header
@@ -63,11 +64,18 @@ export function useHeaderSlot(
   deps: DependencyList,
 ): void {
   const ctx = useContext(HeaderSlotContext);
+  // Under mobile keep-alive, several pages stay mounted at once. Only the
+  // ACTIVE tab may own the single header slot; an inactive panel must not
+  // publish (or clear) it. Outside a tab panel (desktop, non-tab routes) the
+  // context is absent, so `active` is always true — behavior is unchanged.
+  const panel = useContext(TabPanelContext);
+  const active = panel ? panel.active : true;
   useEffect(() => {
+    if (!active) return;
     ctx?.setSlot(content);
     return () => ctx?.clearSlot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, active]);
 }
 
 /** Convenience: render a plain page title into the header's left slot. */

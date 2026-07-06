@@ -47,6 +47,7 @@ import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { getQuiz } from "@/lib/api";
 import { useListQuery } from "@/hooks/useListQuery";
+import { useTabHosted } from "@/components/layout/tabPanel";
 import {
   applyListQuery,
   byDateAsc,
@@ -269,7 +270,10 @@ export default function BookmarksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [collections],
   );
-  const listQuery = useListQuery(config);
+  // Under mobile keep-alive, hidden tabs stay mounted, so filters must NOT go
+  // in the shared URL (they'd collide across tabs); use in-memory state, which
+  // keep-alive preserves. Desktop keeps URL-persisted filters unchanged.
+  const listQuery = useListQuery(config, { persist: !useTabHosted() });
 
   // Folder scoping is a sidebar pre-filter; search/sort/type live in the toolbar.
   const filtered = useMemo(() => {

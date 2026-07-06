@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ElementType } from "react";
 import { HelmetProvider } from "react-helmet-async";
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -34,13 +34,20 @@ import PrivacyPage from "@/pages/PrivacyPage";
 import TermsPage from "@/pages/TermsPage";
 
 // Heavy app (markdown/KaTeX/PDF) is split out of the landing's initial load.
-const ChatPage = lazy(() => import("@/pages/ChatPage"));
-const BookmarksPage = lazy(() => import("@/pages/BookmarksPage"));
+// The four keep-alive tab pages share a single lazy identity with the mobile
+// tab host (see tabPages), so import them from there rather than re-declaring.
+import {
+  ChatPage,
+  QuizzesPage,
+  FlashcardsPage,
+  BookmarksPage,
+} from "@/components/layout/tabPages";
+import { useShellViewport } from "@/components/layout/shellViewport";
 const BookmarkDetailPage = lazy(() => import("@/pages/BookmarkDetailPage"));
-const QuizzesPage = lazy(() => import("@/pages/QuizzesPage"));
-const FlashcardsPage = lazy(() => import("@/pages/FlashcardsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
+const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
+const ProfileSectionPage = lazy(() => import("@/pages/ProfileSectionPage"));
 // Public, no-login guest quiz attempt reached from a share link.
 const QuizSharePage = lazy(() => import("@/pages/QuizSharePage"));
 // Hidden Super Admin panel. The path is an unguessable secret AND the panel
@@ -50,6 +57,17 @@ const ADMIN_ROUTE = "/admin/0670246c/no-access/b7bb2c4485f1/82cacc27d7";
 
 function RouteFallback() {
   return <AppLoader />;
+}
+
+/**
+ * A keep-alive tab route. On mobile the page is owned by `MobileTabsHost`
+ * (mounted once, kept alive), so the route renders `null` to avoid a second
+ * mount. On desktop it renders the page normally through the Outlet. Both read
+ * the same `useShellViewport()` value, so exactly one instance ever mounts.
+ */
+function TabRoute({ Component }: { Component: ElementType }) {
+  const { isMobileShell } = useShellViewport();
+  return isMobileShell ? null : <Component />;
 }
 
 /** Reports SPA route changes to GA4 (no-op unless configured). */
@@ -105,16 +123,33 @@ export default function App() {
                         </ProtectedRoute>
                       }
                     >
-                      <Route path="/chat" element={<ChatPage />} />
-                      <Route path="/bookmarks" element={<BookmarksPage />} />
+                      <Route
+                        path="/chat"
+                        element={<TabRoute Component={ChatPage} />}
+                      />
+                      <Route
+                        path="/bookmarks"
+                        element={<TabRoute Component={BookmarksPage} />}
+                      />
                       <Route
                         path="/bookmarks/:id"
                         element={<BookmarkDetailPage />}
                       />
-                      <Route path="/quizzes" element={<QuizzesPage />} />
-                      <Route path="/flashcards" element={<FlashcardsPage />} />
+                      <Route
+                        path="/quizzes"
+                        element={<TabRoute Component={QuizzesPage} />}
+                      />
+                      <Route
+                        path="/flashcards"
+                        element={<TabRoute Component={FlashcardsPage} />}
+                      />
                       <Route path="/analytics" element={<AnalyticsPage />} />
                       <Route path="/files" element={<FilesPage />} />
+                      <Route path="/profile" element={<ProfilePage />} />
+                      <Route
+                        path="/profile/:section"
+                        element={<ProfileSectionPage />}
+                      />
                     </Route>
                     <Route path={ADMIN_ROUTE} element={<AdminApp />} />
                     <Route path="*" element={<NotFound />} />

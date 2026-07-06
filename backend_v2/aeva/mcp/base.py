@@ -69,6 +69,10 @@ class ToolContext:
     # list (see ``orchestration.model_candidates``). ``None`` means "use the
     # tool's configured default model".
     model: str | None = None
+    # Config key overriding which ``LLM_*_MODEL`` / ``LLM_*_PROVIDER`` pair this
+    # turn resolves through (e.g. ``"LLM_FAST_MODEL"`` for the fast-turn path).
+    # ``None`` means "use the tool's own config key".
+    config_key: str | None = None
 
 
 class BaseTool(ABC):
@@ -107,24 +111,32 @@ class BaseTool(ABC):
     def resolve_llm(self, ctx: ToolContext, config_key: str) -> Any:
         """Pick the LLM client for this call, honoring the planner's model.
 
-        When the planner chose a model for this turn (``ctx.model``), bind the
-        client to it — reusing the tool's injected default client when it
-        already runs that model (the common cheapest-default case, so no extra
-        client is built), else constructing one bound to the chosen model. With
-        no choice, fall back to the injected default (or a config-default
-        client). A test-injected client whose model matches is preserved.
+        The ``LLM_*_MODEL`` / ``LLM_*_PROVIDER`` pair is chosen by the config
+        key — the tool's own, unless this turn overrides it via
+        ``ctx.config_key`` (e.g. the fast-turn path routing through
+        ``LLM_FAST_MODEL``). When the planner chose a model (``ctx.model``),
+        bind the client to it — reusing
+        the tool's injected default only when it already runs that model AND no
+        config override is in play, else constructing one from the resolved key.
+        With no model choice, fall back to the injected default (or a client
+        built from the resolved key).
 
         ``LLMClient`` is imported lazily: ``aeva.mcp.base`` is pulled in by the
         prompt package, so a module-level import would risk an import cycle.
         """
         from aeva.llm.llm_client import LLMClient
 
+        key = ctx.config_key or config_key
         injected = getattr(self, "_llm", None)
         if ctx.model:
-            if injected is not None and injected.model == ctx.model:
+            if (
+                injected is not None
+                and injected.model == ctx.model
+                and ctx.config_key is None
+            ):
                 return injected
-            return LLMClient(model=ctx.model, config_key=config_key)
-        return injected or LLMClient(config_key=config_key)
+            return LLMClient(model=ctx.model, config_key=key)
+        return injected or LLMClient(config_key=key)
 
     def execute_stream(
         self,

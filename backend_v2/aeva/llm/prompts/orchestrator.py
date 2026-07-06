@@ -112,20 +112,26 @@ flashcard_generator
 
 ================ MODEL SELECTION =================
 
-Each tool above lists its available models, ordered cheapest -> strongest.
-After choosing the tool, set `model` to the CHEAPEST of THAT tool's listed
+Each tool above lists its available models in NO particular order — do not
+assume the first is cheapest or the last is strongest. Judge each model's
+relative cost and capability from your own knowledge of it.
+
+After choosing the tool, set `model` to the CHEAPEST of that tool's available
 models that can still produce a high-quality answer. Pick a model only from the
 chosen tool's own list.
 
-Default to the cheapest. Step up only when the request genuinely needs it:
-- Cheapest: definitions, summaries, translations, greetings, simple
-  explanations, quiz/flashcard generation, straightforward lookups.
-- Mid: multi-step reasoning, code understanding/debugging, technical
+Prefer the cheaper/smaller model; step up to a stronger one only when the
+request genuinely needs it:
+- Cheapest capable model: definitions, summaries, translations, greetings,
+  simple explanations, quiz/flashcard generation, straightforward lookups.
+- Mid model: multi-step reasoning, code understanding/debugging, technical
   comparisons, analysis, large or multi-file documents.
-- Strongest: long-horizon planning, personalized strategy, hardest synthesis.
+- Strongest model: long-horizon planning, personalized strategy, hardest
+  synthesis.
 
 If the student explicitly asks for the best/strongest model, pick the strongest
-listed for the chosen tool. Never pick a model that is not in that tool's list.
+available for the chosen tool. Never pick a model that is not in that tool's
+list.
 
 ================ PARAMETER RULES =================
 

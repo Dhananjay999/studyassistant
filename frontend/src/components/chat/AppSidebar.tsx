@@ -128,9 +128,15 @@ export function AppSidebar({
     navigate(to);
   };
 
+  // `onNavigate` is provided only for the mobile drawer instance. On mobile,
+  // Profile is a normal in-shell page; on the desktop rail it stays the modal.
   const openSettingsPanel = () => {
-    onNavigate?.();
-    openSettings();
+    if (onNavigate) {
+      onNavigate();
+      navigate("/profile");
+    } else {
+      openSettings();
+    }
   };
 
   const runSearch = () => {

@@ -11,6 +11,7 @@ import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { useFlashcardSets } from "@/hooks/api";
 import { useListQuery } from "@/hooks/useListQuery";
+import { useTabHosted } from "@/components/layout/tabPanel";
 import {
   applyListQuery,
   byDateAsc,
@@ -58,7 +59,11 @@ export default function FlashcardsPage() {
 
   // Instant client-side search / sort / filter. Deep card-content search is
   // available from the global command palette (Cmd/Ctrl+F).
-  const listQuery = useListQuery(FLASHCARD_CONFIG);
+  // In-memory filters under mobile keep-alive (preserved across tab switches);
+  // URL-persisted on desktop. See BookmarksPage for the rationale.
+  const listQuery = useListQuery(FLASHCARD_CONFIG, {
+    persist: !useTabHosted(),
+  });
   const filtered = useMemo(
     () => applyListQuery(sets, FLASHCARD_CONFIG, listQuery.state),
     [sets, listQuery.state],

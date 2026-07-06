@@ -1,23 +1,12 @@
-import { AnimatePresence } from "framer-motion";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { useSettings } from "@/contexts/SettingsContext";
 import { SettingsModal } from "./SettingsModal";
-import { SettingsMobile } from "./SettingsMobile";
 
 /**
- * Single global mount point for the Settings/Profile experience. Renders the
- * desktop two-pane modal or the mobile full-screen page depending on viewport,
- * both driven by the same SettingsContext so every entry point is consistent.
+ * Global mount point for the DESKTOP Settings modal. On mobile there is no
+ * overlay any more — Profile is a normal in-shell page (`/profile`), so the
+ * only remaining settings surface is the desktop two-pane modal, driven by
+ * SettingsContext. The modal renders nothing until opened, so mounting it on a
+ * mobile viewport is harmless (mobile never calls `open()`).
  */
 export function SettingsExperience() {
-  const isMobile = useIsMobile();
-  const { isOpen } = useSettings();
-
-  if (isMobile) {
-    return (
-      <AnimatePresence>{isOpen && <SettingsMobile />}</AnimatePresence>
-    );
-  }
-
   return <SettingsModal />;
 }

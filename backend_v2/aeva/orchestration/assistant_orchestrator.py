@@ -138,8 +138,10 @@ class AssistantOrchestrator:
             return self._handle_clarification(ctx, plan, enriched_message)
 
         tool_name, tool_model, tool_params = self._resolve_tool(plan)
+        tool_model, tool_config_key = self._fast_override(plan, tool_model)
         tool_ctx = self._build_tool_ctx(
-            ctx, enriched_message, history, personalization, tool_model
+            ctx, enriched_message, history, personalization,
+            tool_model, tool_config_key,
         )
 
         result = self.registry.execute(tool_name, tool_ctx, tool_params)
@@ -205,11 +207,16 @@ class AssistantOrchestrator:
             return
 
         tool_name, tool_model, tool_params = self._resolve_tool(plan)
+        tool_model, tool_config_key = self._fast_override(plan, tool_model)
         logger.info(
-            "Turn → running tool: %s | model=%s", tool_name, tool_model
+            "Turn → running tool: %s | model=%s%s",
+            tool_name,
+            tool_model,
+            f" | via {tool_config_key}" if tool_config_key else "",
         )
         tool_ctx = self._build_tool_ctx(
-            ctx, enriched_message, history, personalization, tool_model
+            ctx, enriched_message, history, personalization,
+            tool_model, tool_config_key,
         )
         tool = self.registry.get(tool_name)
 
@@ -413,6 +420,26 @@ class AssistantOrchestrator:
         return plan
 
     @staticmethod
+    def _fast_override(
+        plan: dict[str, Any], tool_model: str | None
+    ) -> tuple[str | None, str | None]:
+        """Redirect a fast-turn plan to its dedicated model/provider config.
+
+        Returns ``(model, config_key)``. When the fast path tagged the plan with
+        a ``model_config_key``, the tool resolves through that config pair and
+        the model is that config's value (first entry if it holds a list, so the
+        badge and logs show the real single model). Otherwise unchanged.
+        """
+        key = plan.get("model_config_key")
+        if not key:
+            return tool_model, None
+        from flask import current_app
+
+        raw = current_app.config.get(key) or ""
+        model = raw.split(",")[0].strip() or tool_model
+        return model, key
+
+    @staticmethod
     def _model_badge(model: str | None) -> str:
         """Return a "powered by: <model>" trailer (empty unless enabled).
 
@@ -430,16 +457,14 @@ class AssistantOrchestrator:
     def _tool_line(t: "ToolDefinition") -> str:
         """One planner line per tool: description + its candidate models.
 
-        The candidate list (cheapest -> strongest) is what lets the planner
+        The candidate set (in no particular order) is what lets the planner
         return a ``model`` alongside the tool. A tool with no configured
         candidates simply omits the models line and runs its own default.
         """
         line = f"- {t.name}: {t.description}"
         models = models_for(t.name)
         if models:
-            line += (
-                f"\n  models (cheapest->strongest): {', '.join(models)}"
-            )
+            line += f"\n  available models: {', '.join(models)}"
         return line
 
     @staticmethod
@@ -677,12 +702,15 @@ class AssistantOrchestrator:
         history: list[dict[str, str]],
         personalization: str,
         model: str | None = None,
+        config_key: str | None = None,
     ) -> ToolContext:
         """Build the runtime context passed to a tool.
 
         ``personalization`` is the block already built in ``_setup_and_plan`` so
         the user's profile is loaded once per turn. ``model`` is the planner's
-        per-turn model choice for this tool (``None`` = the tool's default).
+        per-turn model choice for this tool (``None`` = the tool's default);
+        ``config_key`` overrides which ``LLM_*_MODEL``/``LLM_*_PROVIDER`` pair
+        the tool resolves through (``None`` = the tool's own key).
         """
         return ToolContext(
             user_id=ctx.user_id,
@@ -693,6 +721,7 @@ class AssistantOrchestrator:
             history=history,
             personalization=personalization,
             model=model,
+            config_key=config_key,
         )
 
     def _persist_answer(
@@ -898,7 +927,14 @@ class AssistantOrchestrator:
         )
         if needs_planner:
             return None
-        return self._fallback_tool_plan(ctx, message)
+        plan = self._fallback_tool_plan(ctx, message)
+        # A planner-free `general` turn (greeting, simple chat) may run on the
+        # dedicated fast model/provider — the same create_provider flow, just a
+        # different config key. web_search keeps its own config (it needs the
+        # search grounding the fast provider may not support).
+        if (plan.get("tool") or {}).get("name") == "general":
+            plan["model_config_key"] = "LLM_FAST_MODEL"
+        return plan
 
     def _plan_turn(
         self,
@@ -943,6 +979,7 @@ class AssistantOrchestrator:
             prompts.PLAN_TURN_SCHEMA,
             history=self._history_for_planner(history),
             system_prompt=rendered.system_prompt,
+            log_label="orchestrator",
         )
 
     @staticmethod

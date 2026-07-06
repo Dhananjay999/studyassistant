@@ -165,6 +165,20 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
         "LLM_EMBEDDING_PROVIDER", default_provider
     )
 
+    # Fast-turn capability: greetings and simple chat are answered
+    # deterministically (no planner LLM call) by the `general` tool. This gives
+    # that path its OWN model + provider, resolved through the same
+    # create_provider flow as every other capability. Both fall back to the
+    # web-search config (which `general` otherwise shares), so behavior is
+    # unchanged until these are set. Point them at a cheap/fast vendor (e.g.
+    # LLM_FAST_PROVIDER=groq) to serve greetings/simple chat more cheaply.
+    app.config["LLM_FAST_MODEL"] = os.environ.get(
+        "LLM_FAST_MODEL", app.config["LLM_WEB_SEARCH_MODEL"]
+    )
+    app.config["LLM_FAST_PROVIDER"] = os.environ.get(
+        "LLM_FAST_PROVIDER", app.config["LLM_WEB_SEARCH_PROVIDER"]
+    )
+
     # Media RAG pipeline. LLAMA_CLOUD_API_KEY is optional like Groq: when blank,
     # parsing is disabled and the media tool falls back to direct attachment, so
     # Gemini-only deployments still boot. LLAMAPARSE_MODE is the parse tier
