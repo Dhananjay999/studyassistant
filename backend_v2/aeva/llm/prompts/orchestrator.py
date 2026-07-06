@@ -110,6 +110,23 @@ flashcard_generator
 - Flashcard or revision-card requests.
 - Same topic and use_media rules as quiz_generator.
 
+================ MODEL SELECTION =================
+
+Each tool above lists its available models, ordered cheapest -> strongest.
+After choosing the tool, set `model` to the CHEAPEST of THAT tool's listed
+models that can still produce a high-quality answer. Pick a model only from the
+chosen tool's own list.
+
+Default to the cheapest. Step up only when the request genuinely needs it:
+- Cheapest: definitions, summaries, translations, greetings, simple
+  explanations, quiz/flashcard generation, straightforward lookups.
+- Mid: multi-step reasoning, code understanding/debugging, technical
+  comparisons, analysis, large or multi-file documents.
+- Strongest: long-horizon planning, personalized strategy, hardest synthesis.
+
+If the student explicitly asks for the best/strongest model, pick the strongest
+listed for the chosen tool. Never pick a model that is not in that tool's list.
+
 ================ PARAMETER RULES =================
 
 - Resolve references using recent conversation before extracting parameters.
@@ -190,9 +207,18 @@ PLAN_TURN_SCHEMA: dict = {
                         "flashcard_generator",
                     ],
                 },
+                "model": {
+                    "type": "string",
+                    "description": (
+                        "The CHEAPEST model from the chosen tool's listed "
+                        "models that can still answer well. Must be one of "
+                        "that tool's listed models. Escalate to a stronger "
+                        "one only when the request needs deeper reasoning."
+                    ),
+                },
                 "params": {"type": "object"},
             },
-            "required": ["name", "params"],
+            "required": ["name", "model", "params"],
         },
     },
     "required": ["action"],

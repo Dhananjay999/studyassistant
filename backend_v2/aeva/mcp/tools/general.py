@@ -58,7 +58,7 @@ class GeneralAnswerTool(BaseTool):
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
-        answer = self.llm.generate(
+        answer = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL").generate(
             rendered.user_message,
             system_prompt=rendered.system_prompt,
             history=ctx.history,
@@ -75,7 +75,7 @@ class GeneralAnswerTool(BaseTool):
         params: dict[str, Any],
     ) -> Generator[str, None, dict[str, Any]]:
         """Stream the answer, returning answer + (empty) sources at the end."""
-        llm = self.llm
+        llm = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL")
         query = params.get("query") or ctx.enriched_message
         rendered = prompts.PromptBuilder.build(
             prompts.GENERAL_ANSWER_TEMPLATE,

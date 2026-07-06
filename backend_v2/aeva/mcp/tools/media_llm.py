@@ -174,7 +174,7 @@ class MediaLLMTool(BaseTool):
             DOCUMENT_CONTEXT=context,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
-        answer = self.llm.generate(
+        answer = self.resolve_llm(ctx, "LLM_MEDIA_MODEL").generate(
             rendered.user_message,
             system_prompt=rendered.system_prompt,
             history=ctx.history,
@@ -201,7 +201,7 @@ class MediaLLMTool(BaseTool):
             DOCUMENT_CONTEXT="(none)",
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
-        answer = self.llm.generate(
+        answer = self.resolve_llm(ctx, "LLM_MEDIA_MODEL").generate(
             rendered.user_message,
             system_prompt=rendered.system_prompt,
             attachments=attachments,
@@ -219,7 +219,7 @@ class MediaLLMTool(BaseTool):
         params: dict[str, Any],
     ) -> Generator[str, None, dict[str, Any]]:
         """Stream the answer; retrieval (or fallback) runs up front."""
-        llm = self.llm
+        llm = self.resolve_llm(ctx, "LLM_MEDIA_MODEL")
         query = params.get("query") or ctx.enriched_message
         media_ids = params.get("media_ids") or ctx.media_ids
         records = self._candidate_records(ctx, media_ids)

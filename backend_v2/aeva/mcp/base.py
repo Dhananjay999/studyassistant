@@ -65,6 +65,10 @@ class ToolContext:
     # Optional system-prompt fragment built from the user's learning profile;
     # empty when the user has not completed onboarding.
     personalization: str = ""
+    # Model the planner chose for THIS turn's tool, from the tool's candidate
+    # list (see ``orchestration.model_candidates``). ``None`` means "use the
+    # tool's configured default model".
+    model: str | None = None
 
 
 class BaseTool(ABC):
@@ -99,6 +103,28 @@ class BaseTool(ABC):
     def can_stream(self) -> bool:
         """Whether this tool streams text token-by-token via execute_stream."""
         return False
+
+    def resolve_llm(self, ctx: ToolContext, config_key: str) -> Any:
+        """Pick the LLM client for this call, honoring the planner's model.
+
+        When the planner chose a model for this turn (``ctx.model``), bind the
+        client to it — reusing the tool's injected default client when it
+        already runs that model (the common cheapest-default case, so no extra
+        client is built), else constructing one bound to the chosen model. With
+        no choice, fall back to the injected default (or a config-default
+        client). A test-injected client whose model matches is preserved.
+
+        ``LLMClient`` is imported lazily: ``aeva.mcp.base`` is pulled in by the
+        prompt package, so a module-level import would risk an import cycle.
+        """
+        from aeva.llm.llm_client import LLMClient
+
+        injected = getattr(self, "_llm", None)
+        if ctx.model:
+            if injected is not None and injected.model == ctx.model:
+                return injected
+            return LLMClient(model=ctx.model, config_key=config_key)
+        return injected or LLMClient(config_key=config_key)
 
     def execute_stream(
         self,

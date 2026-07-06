@@ -110,7 +110,9 @@ class FlashcardGeneratorTool(BaseTool):
             RECENT_CONTEXT=ctx.enriched_message,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
-        data = self.llm.generate_structured(
+        data = self.resolve_llm(
+            ctx, "LLM_FLASHCARD_MODEL"
+        ).generate_structured(
             rendered.user_message,
             prompts.FLASHCARD_GENERATION_SCHEMA,
             system_prompt=rendered.system_prompt,

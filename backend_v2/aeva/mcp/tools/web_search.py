@@ -52,7 +52,8 @@ class WebSearchTool(BaseTool):
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
-        answer = self.llm.generate(
+        llm = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL")
+        answer = llm.generate(
             rendered.user_message,
             system_prompt=rendered.system_prompt,
             use_search=True,
@@ -60,7 +61,7 @@ class WebSearchTool(BaseTool):
         )
         return {
             "answer": answer,
-            "sources": self.llm.last_sources,
+            "sources": llm.last_sources,
         }
 
     def can_stream(self) -> bool:
@@ -73,7 +74,7 @@ class WebSearchTool(BaseTool):
         params: dict[str, Any],
     ) -> Generator[str, None, dict[str, Any]]:
         """Stream the grounded answer, returning answer + sources at the end."""
-        llm = self.llm
+        llm = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL")
         query = params.get("query") or ctx.enriched_message
         rendered = prompts.PromptBuilder.build(
             prompts.WEB_SEARCH_TEMPLATE,

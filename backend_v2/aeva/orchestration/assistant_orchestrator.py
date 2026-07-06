@@ -9,8 +9,14 @@ from typing import Any
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
-from aeva.mcp.base import LEARNING_ACTIONS, BaseTool, ToolContext
+from aeva.mcp.base import (
+    LEARNING_ACTIONS,
+    BaseTool,
+    ToolContext,
+    ToolDefinition,
+)
 from aeva.mcp.registry import ToolRegistry
+from aeva.orchestration.model_candidates import models_for, resolve_model
 from aeva.orchestration.models import (
     AssistantContext,
     AssistantResult,
@@ -131,9 +137,9 @@ class AssistantOrchestrator:
         if plan.get("action") == "clarify":
             return self._handle_clarification(ctx, plan, enriched_message)
 
-        tool_name, tool_params = self._resolve_tool(plan)
+        tool_name, tool_model, tool_params = self._resolve_tool(plan)
         tool_ctx = self._build_tool_ctx(
-            ctx, enriched_message, history, personalization
+            ctx, enriched_message, history, personalization, tool_model
         )
 
         result = self.registry.execute(tool_name, tool_ctx, tool_params)
@@ -142,6 +148,10 @@ class AssistantOrchestrator:
             result["answer"] = answer
         self._attach_actions(tool_name, result, meta=meta)
         display_text = self._format_display(tool_name, result)
+        badge = self._model_badge(tool_model)
+        if badge:
+            result["model"] = tool_model
+            display_text += badge
         msg = self._persist_answer(
             ctx, session, tool_name, result, display_text
         )
@@ -194,10 +204,12 @@ class AssistantOrchestrator:
             yield self._clarification_frame(clar)
             return
 
-        tool_name, tool_params = self._resolve_tool(plan)
-        logger.info("Turn → running tool: %s", tool_name)
+        tool_name, tool_model, tool_params = self._resolve_tool(plan)
+        logger.info(
+            "Turn → running tool: %s | model=%s", tool_name, tool_model
+        )
         tool_ctx = self._build_tool_ctx(
-            ctx, enriched_message, history, personalization
+            ctx, enriched_message, history, personalization, tool_model
         )
         tool = self.registry.get(tool_name)
 
@@ -224,6 +236,14 @@ class AssistantOrchestrator:
             result = self.registry.execute(tool_name, tool_ctx, tool_params)
             display_text = self._format_display(tool_name, result)
             yield LLMClient.format_sse_chunk(display_text)
+
+        # Optional "powered by: <model>" badge — streamed as a trailing chunk
+        # and folded into the persisted display text (never into the answer).
+        badge = self._model_badge(tool_model)
+        if badge:
+            result["model"] = tool_model
+            display_text = (display_text or "") + badge
+            yield LLMClient.format_sse_chunk(badge)
 
         # Follow-up chips ride the finished answer's metadata trailer.
         self._attach_actions(tool_name, result, tool, meta)
@@ -393,10 +413,50 @@ class AssistantOrchestrator:
         return plan
 
     @staticmethod
-    def _resolve_tool(plan: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        """Pull the tool name and params from a run_tool plan."""
+    def _model_badge(model: str | None) -> str:
+        """Return a "powered by: <model>" trailer (empty unless enabled).
+
+        Gated on ``SHOW_MODEL_BADGE`` (a dev/QA aid) so it never leaks into
+        production answers. Display-only: it is appended to the display text,
+        never to ``result["answer"]``, so the stored answer stays clean.
+        """
+        from flask import current_app
+
+        if not model or not current_app.config.get("SHOW_MODEL_BADGE"):
+            return ""
+        return f"\n\n---\n_⚡ powered by: {model}_"
+
+    @staticmethod
+    def _tool_line(t: "ToolDefinition") -> str:
+        """One planner line per tool: description + its candidate models.
+
+        The candidate list (cheapest -> strongest) is what lets the planner
+        return a ``model`` alongside the tool. A tool with no configured
+        candidates simply omits the models line and runs its own default.
+        """
+        line = f"- {t.name}: {t.description}"
+        models = models_for(t.name)
+        if models:
+            line += (
+                f"\n  models (cheapest->strongest): {', '.join(models)}"
+            )
+        return line
+
+    @staticmethod
+    def _resolve_tool(
+        plan: dict[str, Any],
+    ) -> tuple[str, str | None, dict[str, Any]]:
+        """Pull the tool name, planner-chosen model, and params from a plan.
+
+        The model is clamped to the tool's allowed candidates — the planner is
+        free-text and may emit an invalid or retired name — falling back to the
+        cheapest candidate (``resolve_model``). Hardcoded/forced plans that
+        carry no model resolve to the cheapest candidate too.
+        """
         tool_info = plan.get("tool") or {}
-        return tool_info.get("name", "general"), tool_info.get("params") or {}
+        name = tool_info.get("name", "general")
+        model = resolve_model(name, tool_info.get("model"))
+        return name, model, tool_info.get("params") or {}
 
     def _attach_actions(
         self,
@@ -616,11 +676,13 @@ class AssistantOrchestrator:
         enriched_message: str,
         history: list[dict[str, str]],
         personalization: str,
+        model: str | None = None,
     ) -> ToolContext:
         """Build the runtime context passed to a tool.
 
         ``personalization`` is the block already built in ``_setup_and_plan`` so
-        the user's profile is loaded once per turn.
+        the user's profile is loaded once per turn. ``model`` is the planner's
+        per-turn model choice for this tool (``None`` = the tool's default).
         """
         return ToolContext(
             user_id=ctx.user_id,
@@ -630,6 +692,7 @@ class AssistantOrchestrator:
             media_ids=ctx.media_ids,
             history=history,
             personalization=personalization,
+            model=model,
         )
 
     def _persist_answer(
@@ -853,7 +916,7 @@ class AssistantOrchestrator:
         the planner emits JSON, never prose, so none of that changes its output.
         """
         tools_desc = "\n".join(
-            f"- {t.name}: {t.description}"
+            self._tool_line(t)
             for t in self.registry.list_definitions()
         )
         media_hint = (

@@ -114,6 +114,25 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["LLM_FLASHCARD_MODEL"] = os.environ.get(
         "LLM_FLASHCARD_MODEL", default_model
     )
+    # Per-tool candidate model lists for planner-driven model selection
+    # (comma-separated, ordered cheapest -> strongest). The planner picks one
+    # per request; the first entry is the cheapest default. Blank falls back to
+    # the tool's single LLM_*_MODEL above, so single-model deployments are
+    # unchanged. See aeva.orchestration.model_candidates.models_for.
+    app.config["GENERAL_LLM_MODELS"] = os.environ.get("GENERAL_LLM_MODELS", "")
+    app.config["WEB_SEARCH_LLM_MODELS"] = os.environ.get(
+        "WEB_SEARCH_LLM_MODELS", ""
+    )
+    app.config["MEDIA_LLM_MODELS"] = os.environ.get("MEDIA_LLM_MODELS", "")
+    app.config["QUIZ_LLM_MODELS"] = os.environ.get("QUIZ_LLM_MODELS", "")
+    app.config["FLASHCARD_LLM_MODELS"] = os.environ.get(
+        "FLASHCARD_LLM_MODELS", ""
+    )
+    # Dev/QA aid: append a "powered by: <model>" badge to each answer so the
+    # model the planner picked is visible in the UI. Off in production.
+    app.config["SHOW_MODEL_BADGE"] = os.environ.get(
+        "SHOW_MODEL_BADGE", ""
+    ).lower() in ("1", "true", "yes", "on")
     # Embedding model for the media RAG retrieval layer. Has its own model
     # (not LLM_MODEL) because chat and embeddings are different model families.
     app.config["LLM_EMBEDDING_MODEL"] = os.environ.get(
