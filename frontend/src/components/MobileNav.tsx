@@ -38,7 +38,10 @@ export function MobileNav() {
   const profileActive = location.pathname.startsWith("/profile");
 
   return (
-    <nav className="glass-strong fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border/60 pb-safe lg:hidden">
+    <nav
+      data-bottom-nav
+      className="glass-strong fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border/60 pb-safe lg:hidden"
+    >
       {TABS.map((tab) => {
         const Icon = tab.icon;
         const active = isActive(tab.to);

@@ -1,4 +1,5 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { FileText, FolderOpen, ImageIcon, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -106,6 +107,21 @@ export default function FilesPage() {
       setOpeningId(null);
     }
   };
+
+  // Deep-link: `/files?fileId=X` (e.g. from global search) opens that file once
+  // the media list has loaded, then clears the param.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const fileId = searchParams.get("fileId");
+    if (!fileId) return;
+    const item = media.find((m) => m.id === fileId);
+    if (!item) return; // list still loading — reruns when `media` arrives
+    openFile(item);
+    const next = new URLSearchParams(searchParams);
+    next.delete("fileId");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, media]);
 
   const hasFiles = media.length > 0;
 

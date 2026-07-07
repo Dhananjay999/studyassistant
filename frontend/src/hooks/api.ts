@@ -220,6 +220,15 @@ export function useRecordStudy() {
   });
 }
 
+export function useRecordStudyBatch() {
+  return useMutation({
+    mutationFn: (v: {
+      setId: string;
+      ratings: { flashcard_id: string; rating: StudyRating }[];
+    }) => api.recordFlashcardStudyBatch(v.setId, v.ratings),
+  });
+}
+
 /* --------------------------------- search --------------------------------- */
 
 export function useSearch(query: string) {

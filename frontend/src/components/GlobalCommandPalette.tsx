@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import {
   Bookmark,
+  Clock,
   FileText,
   FolderTree,
   Layers,
@@ -24,10 +25,23 @@ import {
 import { useBookmarks, useCollections, useSearch } from "@/hooks/api";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
+const RECENTS_KEY = "aeva_recent_searches";
+
+function loadRecents(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Cmd/Ctrl+F global search. Chats (incl. response/question text), quizzes, and
- * files come from the backend search endpoint; bookmarks and folders are
- * matched client-side. Results update as you type.
+ * Cmd/Ctrl+F global search. Chats (incl. response/question text), quizzes,
+ * flashcards, and files come from the backend search endpoint; bookmarks and
+ * folders are matched client-side. Selecting a result navigates straight to it
+ * (opening the quiz/flashcard/file and highlighting the matched chat message).
+ * On mobile the dialog fills the screen like a native search page.
  */
 export function GlobalCommandPalette({
   open,
@@ -45,6 +59,7 @@ export function GlobalCommandPalette({
   const isDark = resolvedTheme !== "light";
 
   const [query, setQuery] = useState("");
+  const [recents, setRecents] = useState<string[]>(loadRecents);
   // Debounce keystrokes before hitting the backend.
   const debounced = useDebouncedValue(query, 180);
 
@@ -72,9 +87,26 @@ export function GlobalCommandPalette({
     ? collections.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 5)
     : [];
 
+  // Remember the term behind a chosen result, close, then navigate.
+  const remember = (term: string) => {
+    const t = term.trim();
+    if (t.length < 2) return;
+    setRecents((prev) => {
+      const next = [
+        t,
+        ...prev.filter((x) => x.toLowerCase() !== t.toLowerCase()),
+      ].slice(0, 6);
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
   const run = (fn: () => void) => {
     onOpenChange(false);
     fn();
+  };
+  const go = (fn: () => void) => {
+    remember(query);
+    run(fn);
   };
 
   const hasResults =
@@ -94,7 +126,23 @@ export function GlobalCommandPalette({
         value={query}
         onValueChange={setQuery}
       />
-      <CommandList>
+      <CommandList className="max-sm:max-h-none max-sm:flex-1">
+        {!searching && recents.length > 0 && (
+          <CommandGroup heading="Recent searches">
+            {recents.map((term) => (
+              <CommandItem
+                key={`recent-${term}`}
+                value={`recent ${term}`}
+                onSelect={() => setQuery(term)}
+                className="gap-2"
+              >
+                <Clock className="h-4 w-4 shrink-0 opacity-60" />
+                <span className="truncate">{term}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
         {!searching && (
           <CommandGroup heading="Actions">
             <CommandItem
@@ -138,7 +186,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`s-${s.id}`}
                 value={`chat ${s.id} ${s.title}`}
-                onSelect={() => run(() => onSelectSession(s.id))}
+                onSelect={() => go(() => onSelectSession(s.id))}
                 className="gap-2"
               >
                 <MessagesSquare className="h-4 w-4 shrink-0" />
@@ -149,7 +197,13 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`m-${m.id}`}
                 value={`msg ${m.id} ${m.content}`}
-                onSelect={() => run(() => onSelectSession(m.session_id))}
+                onSelect={() =>
+                  go(() =>
+                    navigate(`/chat?sessionId=${m.session_id}`, {
+                      state: { highlightMessageId: m.id },
+                    }),
+                  )
+                }
                 className="gap-2"
               >
                 <MessageSquare className="h-4 w-4 shrink-0 opacity-60" />
@@ -170,7 +224,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`q-${qz.id}`}
                 value={`quiz ${qz.id} ${qz.title} ${qz.topic}`}
-                onSelect={() => run(() => navigate("/quizzes"))}
+                onSelect={() => go(() => navigate(`/quizzes?quizId=${qz.id}`))}
                 className="gap-2"
               >
                 <ListChecks className="h-4 w-4 shrink-0" />
@@ -186,7 +240,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`fc-${fc.id}`}
                 value={`flashcards ${fc.id} ${fc.title} ${fc.topic}`}
-                onSelect={() => run(() => navigate("/flashcards"))}
+                onSelect={() => go(() => navigate(`/flashcards?setId=${fc.id}`))}
                 className="gap-2"
               >
                 <Layers className="h-4 w-4 shrink-0" />
@@ -202,11 +256,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`b-${b.id}`}
                 value={`bookmark ${b.id} ${b.title}`}
-                onSelect={() =>
-                  run(() =>
-                    navigate("/chat", { state: { previewBookmark: b } }),
-                  )
-                }
+                onSelect={() => go(() => navigate(`/bookmarks/${b.id}`))}
                 className="gap-2"
               >
                 <Bookmark className="h-4 w-4 shrink-0" />
@@ -224,7 +274,9 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`f-${c.id}`}
                 value={`folder ${c.id} ${c.name}`}
-                onSelect={() => run(() => navigate("/bookmarks"))}
+                onSelect={() =>
+                  go(() => navigate(`/bookmarks?collection=${c.id}`))
+                }
                 className="gap-2"
               >
                 <FolderTree className="h-4 w-4 shrink-0" />
@@ -240,7 +292,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`file-${f.id}`}
                 value={`file ${f.id} ${f.file_name}`}
-                onSelect={() => run(() => navigate("/files"))}
+                onSelect={() => go(() => navigate(`/files?fileId=${f.id}`))}
                 className="gap-2"
               >
                 <FileText className="h-4 w-4 shrink-0" />

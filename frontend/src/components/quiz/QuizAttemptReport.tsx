@@ -22,6 +22,7 @@ import { BookmarkButton } from "@/components/BookmarkButton";
 import { useAnalyzeQuiz, useCreateSession } from "@/hooks/api";
 import { formatDuration, formatMark, formatMarks } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
+import { MathText } from "@/components/common/MathText";
 import type {
   ChatSeed,
   QuizAnalysis,
@@ -529,7 +530,7 @@ function ReviewPanel({
               )}
               <div className="min-w-0">
                 <p className="font-medium">
-                  {i + 1}. {q?.prompt ?? row.question_id}
+                  {i + 1}. <MathText>{q?.prompt ?? row.question_id}</MathText>
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Your answer: {row.user_answer.join(", ") || "—"}
@@ -541,7 +542,7 @@ function ReviewPanel({
                 )}
                 {row.explanation && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {row.explanation}
+                    <MathText>{row.explanation}</MathText>
                   </p>
                 )}
               </div>

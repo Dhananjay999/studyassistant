@@ -23,6 +23,8 @@ import { MobileTabsHost } from "@/components/layout/MobileTabsHost";
 import { ShellViewportProvider } from "@/components/layout/shellViewport";
 import { isTabPath } from "@/components/layout/tabPages";
 import { useIsMobileShell } from "@/hooks/useIsMobileShell";
+import { usePreventPinchZoom } from "@/hooks/usePreventPinchZoom";
+import { useMobileViewport } from "@/hooks/useMobileViewport";
 import { useDeleteSession, useSessions } from "@/hooks/api";
 import { useBackClose } from "@/hooks/useBackClose";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
@@ -68,6 +70,12 @@ export function AppLayout() {
   // elements via ShellViewportProvider so they never double-mount a tab page.
   const isMobileShell = useIsMobileShell();
   const activeTab = isTabPath(location.pathname) ? location.pathname : null;
+  // Native app-feel: no pinch-zoom (and, via touch-manipulation below, no
+  // double-tap zoom) inside the app shell. Public pages keep normal zoom.
+  usePreventPinchZoom();
+  // Keyboard-safe layout: pin the shell to the visual viewport so only the
+  // message list + composer move when the keyboard opens (not the whole page).
+  useMobileViewport();
   const sessionsQuery = useSessions();
   const sessions = useMemo(
     () => sessionsQuery.data ?? [],
@@ -164,7 +172,10 @@ export function AppLayout() {
     <ShellViewportProvider value={{ isMobileShell, activeTab }}>
     <ShellContext.Provider value={shell}>
       <HeaderSlotProvider>
-        <div className="flex h-dvh bg-background">
+        <div
+          className="flex touch-manipulation bg-background"
+          style={{ height: "var(--app-height, 100dvh)" }}
+        >
           <aside className="hidden shrink-0 border-r border-border/50 lg:block">
             {sidebar(false)}
           </aside>

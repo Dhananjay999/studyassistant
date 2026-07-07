@@ -25,3 +25,21 @@ class StudySchema(Schema):
     def make_data(self, data: dict, **_kwargs: object) -> StudyData:
         """Convert to dataclass."""
         return StudyData(**data)
+
+
+@dataclass
+class StudyBatchData:
+    """Batch record-study payload."""
+
+    ratings: list[StudyData]
+
+
+class StudyBatchSchema(Schema):
+    """Record many card ratings in one request (whole study session)."""
+
+    ratings = fields.List(fields.Nested(StudySchema), required=True)
+
+    @post_load
+    def make_data(self, data: dict, **_kwargs: object) -> StudyBatchData:
+        """Convert to dataclass."""
+        return StudyBatchData(**data)

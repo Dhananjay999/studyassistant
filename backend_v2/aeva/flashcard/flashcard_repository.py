@@ -181,6 +181,39 @@ class FlashcardRepository:
         ).execute()
         return self._analytics(set_id, user_id, len(total))
 
+    def record_study_batch(
+        self,
+        user_id: str,
+        set_id: str,
+        ratings: list[tuple[str, str]],
+    ) -> dict[str, Any]:
+        """Upsert a whole study session's ratings in ONE request.
+
+        ``ratings`` is a list of ``(flashcard_id, rating)``. This is what lets
+        the client study entirely offline (navigation/flip/progress on the
+        client) and persist once on completion, instead of a call per card.
+        """
+        total = (
+            self.supabase.client.table("flashcards")
+            .select("id")
+            .eq("set_id", set_id)
+            .execute()
+        ).data or []
+        rows = [
+            {
+                "user_id": user_id,
+                "set_id": set_id,
+                "flashcard_id": flashcard_id,
+                "rating": rating,
+            }
+            for flashcard_id, rating in ratings
+        ]
+        if rows:
+            self.supabase.client.table("flashcard_study").upsert(
+                rows, on_conflict="user_id,flashcard_id"
+            ).execute()
+        return self._analytics(set_id, user_id, len(total))
+
     def _analytics(
         self, set_id: str, user_id: str, total: int
     ) -> dict[str, Any]:

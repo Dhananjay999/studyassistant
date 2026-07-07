@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   BarChart3,
   Clock,
@@ -131,6 +132,19 @@ export default function QuizzesPage() {
       setLoadingId(null);
     }
   };
+
+  // Deep-link: `/quizzes?quizId=X` (e.g. from global search) opens that quiz,
+  // then clears the param so it doesn't reopen on back/refresh.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const quizId = searchParams.get("quizId");
+    if (!quizId) return;
+    openQuiz(quizId, "take");
+    const next = new URLSearchParams(searchParams);
+    next.delete("quizId");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   return (
     <PageContainer title="Quizzes">

@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { useSubmitQuiz } from "@/hooks/api";
 import { useSwipe } from "@/hooks/useSwipe";
 import { markingSummary } from "@/lib/quizFormat";
+import { MathText } from "@/components/common/MathText";
 import { cn } from "@/lib/utils";
 import { hasExamConfig, type QuizContent, type QuizSubmitResult } from "@/types";
 
@@ -240,7 +241,7 @@ export function QuizRunner({
         {q ? (
           <div className="learning-content mx-auto max-w-2xl space-y-5">
             <p className="text-base font-medium leading-relaxed sm:text-lg">
-              {q.prompt}
+              <MathText>{q.prompt}</MathText>
             </p>
             {q.type === "multi_select" ? (
               <div className="space-y-2">
@@ -258,7 +259,7 @@ export function QuizRunner({
                       checked={(answers[q.id] || []).includes(opt)}
                       onCheckedChange={() => toggleMulti(q.id, opt)}
                     />
-                    {opt}
+                    <MathText>{opt}</MathText>
                   </label>
                 ))}
                 <p className="pt-1 text-xs text-muted-foreground">
@@ -283,7 +284,7 @@ export function QuizRunner({
                     )}
                   >
                     <RadioGroupItem value={opt} id={`${q.id}-${opt}`} />
-                    {opt}
+                    <MathText>{opt}</MathText>
                   </Label>
                 ))}
               </RadioGroup>

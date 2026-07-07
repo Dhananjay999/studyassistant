@@ -35,11 +35,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BookmarkButton } from "@/components/BookmarkButton";
+import { MathText } from "@/components/common/MathText";
 import { FlashcardAnalytics } from "@/components/flashcard/FlashcardAnalytics";
 import {
   useCreateSession,
   useFlashcardSet,
-  useRecordStudy,
+  useRecordStudyBatch,
 } from "@/hooks/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useBackClose } from "@/hooks/useBackClose";
@@ -103,7 +104,13 @@ export function FlashcardViewer({
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { data, isLoading } = useFlashcardSet(open ? setId : null);
-  const recordStudy = useRecordStudy();
+  const recordStudyBatch = useRecordStudyBatch();
+  // Ratings are buffered on the client during a session and persisted in ONE
+  // batch on completion (or when the viewer closes) — no API call per flip or
+  // navigation. `flushStudy` is reassigned each render so it always closes over
+  // the latest setId/mutation, while `finish` can stay referentially stable.
+  const ratingsRef = useRef<Map<string, StudyRating>>(new Map());
+  const flushStudy = useRef<() => void>(() => {});
   const createSession = useCreateSession();
 
   // Back gesture/button closes the flashcard viewer instead of leaving the page.
@@ -144,15 +151,35 @@ export function FlashcardViewer({
     setShuffleSeed(0);
     setCompleted(false);
     setElapsed(0);
+    ratingsRef.current = new Map();
     startedAtRef.current = Date.now();
   }, [setId, open]);
   useEffect(() => {
     if (data?.analytics) setAnalytics(data.analytics);
   }, [data?.analytics]);
 
+  // Persist all buffered ratings in one request. Reassigned every render so it
+  // always uses the current setId/mutation; callers invoke `flushStudy.current`.
+  flushStudy.current = () => {
+    const buffered = ratingsRef.current;
+    if (!setId || buffered.size === 0) return;
+    const ratings = [...buffered.entries()].map(([flashcard_id, rating]) => ({
+      flashcard_id,
+      rating,
+    }));
+    ratingsRef.current = new Map();
+    recordStudyBatch.mutate(
+      { setId, ratings },
+      { onSuccess: (next) => setAnalytics(next) },
+    );
+  };
+  // Save any un-flushed ratings if the viewer closes mid-session.
+  useEffect(() => () => flushStudy.current(), []);
+
   const finish = useCallback(() => {
     setElapsed((Date.now() - startedAtRef.current) / 1000);
     setCompleted(true);
+    flushStudy.current();
   }, []);
 
   const reviewAgain = () => {
@@ -161,6 +188,7 @@ export function FlashcardViewer({
     setShuffleSeed(0);
     setCompleted(false);
     setElapsed(0);
+    ratingsRef.current = new Map();
     startedAtRef.current = Date.now();
   };
 
@@ -176,18 +204,11 @@ export function FlashcardViewer({
     [index, total, finish],
   );
 
-  const rate = async (rating: StudyRating) => {
-    if (!setId || !card) return;
-    try {
-      const next = await recordStudy.mutateAsync({
-        setId,
-        flashcardId: card.id,
-        rating,
-      });
-      setAnalytics(next);
-    } catch {
-      /* ignore — rating is best-effort */
-    }
+  const rate = (rating: StudyRating) => {
+    if (!card) return;
+    // Buffer client-side and advance immediately — the whole session is saved
+    // in one batch on completion (see flushStudy), so navigation stays instant.
+    ratingsRef.current.set(card.id, rating);
     if (index < total - 1) go(1);
     else finish();
   };
@@ -246,8 +267,10 @@ export function FlashcardViewer({
         ) : (
           <>
             {/* Header */}
-            <div className="border-b border-border/40 px-5 pb-4 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] sm:pt-4">
-              <div className="flex items-center gap-2">
+            <div className="border-b border-border/40 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:pt-4">
+              {/* Only the title row clears the top-right ✕; the progress bar
+                  below keeps the symmetric px-5 so it spans the full width. */}
+              <div className="flex items-center gap-2 pr-10">
                 <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow">
                   <Layers className="h-4 w-4" />
                 </div>
@@ -413,7 +436,7 @@ export function FlashcardViewer({
                         key={r.value}
                         variant="outline"
                         size="sm"
-                        disabled={!card || recordStudy.isPending}
+                        disabled={!card}
                         onClick={() => rate(r.value)}
                         className={cn("h-9 rounded-full px-4 text-xs", r.cls)}
                       >
@@ -568,7 +591,7 @@ const StudyCard = forwardRef<
           </Badge>
           <div className="learning-content flex flex-1 items-center justify-center">
             <p className="text-balance text-center text-xl font-semibold leading-snug">
-              {card.front}
+              <MathText>{card.front}</MathText>
             </p>
           </div>
           <p className="text-center text-xs text-muted-foreground">
@@ -582,12 +605,12 @@ const StudyCard = forwardRef<
           </Badge>
           <div className="learning-content flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <p className="text-balance text-lg font-medium leading-snug">
-              {card.back}
+              <MathText>{card.back}</MathText>
             </p>
             {card.example && (
               <p className="rounded-xl bg-background/60 p-3 text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">Example: </span>
-                {card.example}
+                <MathText>{card.example}</MathText>
               </p>
             )}
           </div>

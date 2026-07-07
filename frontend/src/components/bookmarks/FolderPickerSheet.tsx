@@ -2,6 +2,7 @@
 // to move one or many bookmarks into a collection. "Unfiled" moves to no
 // collection (collection_id = null).
 
+import { useEffect, useState } from "react";
 import {
   Folder,
   FolderMinus,
@@ -36,6 +37,15 @@ export function FolderPickerSheet({
   busy?: boolean;
   onPick: (collectionId: string | null) => void;
 }) {
+  // Which row the user tapped — so ONLY that folder shows a spinner while the
+  // move is in flight, not every row.
+  const [pickingId, setPickingId] = useState<string | null | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (!open) setPickingId(undefined);
+  }, [open]);
+
   const rows: Array<{ id: string | null; name: string; unfiled?: boolean }> = [
     { id: null, name: "Unfiled", unfiled: true },
     ...collections.map((c) => ({ id: c.id, name: c.name })),
@@ -62,7 +72,10 @@ export function FolderPickerSheet({
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => onPick(row.id)}
+                    onClick={() => {
+                      setPickingId(row.id);
+                      onPick(row.id);
+                    }}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors disabled:opacity-60",
                       active
@@ -77,7 +90,9 @@ export function FolderPickerSheet({
                         Current
                       </span>
                     )}
-                    {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {busy && row.id === pickingId && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
                   </button>
                 </li>
               );

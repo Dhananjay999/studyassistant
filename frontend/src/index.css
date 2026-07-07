@@ -404,6 +404,15 @@
   .pb-bottomnav {
     padding-bottom: calc(3.75rem + env(safe-area-inset-bottom));
   }
+  /* When the on-screen keyboard is open (see useMobileViewport), hide the fixed
+     bottom nav and drop the composer's reserved bottom-nav space, so the
+     composer sits directly above the keyboard like a native chat app. */
+  :root[data-kb-open="1"] [data-bottom-nav] {
+    display: none;
+  }
+  :root[data-kb-open="1"] .pb-bottomnav {
+    padding-bottom: 0;
+  }
 
   /* Mask helper for fading marquee edges */
   .mask-fade-x {

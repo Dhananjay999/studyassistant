@@ -82,6 +82,11 @@ const PDFViewer = lazy(() => import("@/components/PDFViewer"));
 
 const uid = () => crypto.randomUUID();
 
+// The last active chat session, persisted so navigating to the Chat tab/button
+// (which drops ?sessionId) restores the conversation on BOTH mobile (kept-alive)
+// and desktop (where ChatPage remounts). Cleared only by New Chat.
+const LAST_SESSION_KEY = "aeva_last_session";
+
 export default function ChatPage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -103,7 +108,26 @@ export default function ChatPage() {
   const deleteSession = useDeleteSession();
 
   const urlId = searchParams.get("sessionId");
-  const activeId = urlId && sessions.some((s) => s.id === urlId) ? urlId : null;
+  // Sticky active session: adopt the URL's ?sessionId whenever present, but
+  // RETAIN the last one (from sessionStorage) when the param is dropped —
+  // tapping the Chat tab/button, or switching to another tab and back. This is
+  // what makes the Chat tab restore its conversation (and keep a live stream
+  // running) on mobile (kept-alive) AND desktop (where ChatPage remounts),
+  // instead of blanking when the URL loses the id. New Chat clears it.
+  const [stickyId, setStickyId] = useState<string | null>(() => {
+    const wantsNew = (location.state as { newChat?: boolean } | null)?.newChat;
+    if (wantsNew) return null;
+    return urlId ?? sessionStorage.getItem(LAST_SESSION_KEY);
+  });
+  useEffect(() => {
+    if (urlId && urlId !== stickyId) setStickyId(urlId);
+  }, [urlId, stickyId]);
+  useEffect(() => {
+    if (stickyId) sessionStorage.setItem(LAST_SESSION_KEY, stickyId);
+    else sessionStorage.removeItem(LAST_SESSION_KEY);
+  }, [stickyId]);
+  const activeId =
+    stickyId && sessions.some((s) => s.id === stickyId) ? stickyId : null;
   const activeSession = sessions.find((s) => s.id === activeId) ?? null;
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -401,6 +425,7 @@ export default function ChatPage() {
           sid = s.id;
           newChatRef.current = false;
           loadedSession.current = sid;
+          setStickyId(sid);
           setSearchParams({ sessionId: sid });
         } catch {
           // Roll back the optimistic messages we rendered above.
@@ -788,6 +813,7 @@ export default function ChatPage() {
     setMessages([]);
     setPendingClar(null);
     setPendingQuiz(null);
+    setStickyId(null);
     setSearchParams({});
     composerRef.current?.focus();
   };

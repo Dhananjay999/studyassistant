@@ -13,7 +13,10 @@ from aeva.common.schema import (
     success_response,
 )
 from aeva.flashcard.flashcard_repository import FlashcardRepository
-from aeva.flashcard.schema.flashcard_schema import StudySchema
+from aeva.flashcard.schema.flashcard_schema import (
+    StudyBatchSchema,
+    StudySchema,
+)
 
 blueprint = Blueprint(
     "flashcard",
@@ -71,6 +74,27 @@ class FlashcardStudyEndpoint(MethodView):
         return success_response("Study recorded", analytics)
 
 
+class FlashcardStudyBatchEndpoint(MethodView):
+    """Record a whole study session's ratings in one request."""
+
+    @staticmethod
+    @blueprint.arguments(StudyBatchSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def post(
+        current_user: UserData,
+        request_data: object,
+        set_id: str,
+    ) -> dict[str, Any]:
+        """Persist all card ratings from a completed study session at once."""
+        analytics = FlashcardRepository().record_study_batch(
+            current_user.id,
+            set_id,
+            [(r.flashcard_id, r.rating) for r in request_data.ratings],
+        )
+        return success_response("Study recorded", analytics)
+
+
 blueprint.add_url_rule(
     "/", view_func=FlashcardList, endpoint="flashcard_list"
 )
@@ -83,4 +107,9 @@ blueprint.add_url_rule(
     "/<set_id>/study",
     view_func=FlashcardStudyEndpoint,
     endpoint="flashcard_study",
+)
+blueprint.add_url_rule(
+    "/<set_id>/study/batch",
+    view_func=FlashcardStudyBatchEndpoint,
+    endpoint="flashcard_study_batch",
 )

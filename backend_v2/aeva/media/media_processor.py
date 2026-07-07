@@ -126,6 +126,25 @@ class MediaProcessor:
             yield self._event("ready", 100, "Document is ready!")
             return
 
+        # Images skip the RAG pipeline entirely — no parsing, chunking, or
+        # embedding. They are answered by sending the image straight to the
+        # vision-capable LLM (the media tool's attachment path). Marking the
+        # record ready with ZERO chunks is what routes it there: the media tool
+        # treats "ready + chunk_count>0" as retrievable and everything else as a
+        # direct attachment. Only documents (PDF/DOCX/PPTX/…) enter RAG below.
+        if str(record.get("mime_type", "")).startswith("image/"):
+            logger.info("Image skips RAG pipeline | media=%s", media_id)
+            self.supabase.update_media_processing(
+                media_id,
+                user_id,
+                processing_status="ready",
+                chunk_count=0,
+                processing_error=None,
+                processed_at=datetime.now(tz=UTC).isoformat(),
+            )
+            yield self._event("ready", 100, "Image ready!")
+            return
+
         try:
             yield from self._run(user_id, record)
         except MediaProcessingError as exc:

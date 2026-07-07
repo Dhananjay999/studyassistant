@@ -70,6 +70,7 @@ export const ENDPOINTS = {
   FLASHCARDS: "/flashcards/",
   FLASHCARD: (id: string) => `/flashcards/${id}`,
   FLASHCARD_STUDY: (id: string) => `/flashcards/${id}/study`,
+  FLASHCARD_STUDY_BATCH: (id: string) => `/flashcards/${id}/study/batch`,
   LEARNING_PROFILE: "/learning-profile/",
   LEARNING_PROFILE_SKIP: "/learning-profile/skip",
   ANALYTICS_OVERVIEW: "/analytics/overview",
@@ -472,6 +473,17 @@ export const recordFlashcardStudy = (
   unwrap<FlashcardAnalytics>(ENDPOINTS.FLASHCARD_STUDY(setId), {
     method: "POST",
     body: JSON.stringify({ flashcard_id: flashcardId, rating }),
+  });
+
+/** Persist a whole study session's ratings in one request (client studies
+ *  offline, then saves once on completion). */
+export const recordFlashcardStudyBatch = (
+  setId: string,
+  ratings: { flashcard_id: string; rating: StudyRating }[],
+) =>
+  unwrap<FlashcardAnalytics>(ENDPOINTS.FLASHCARD_STUDY_BATCH(setId), {
+    method: "POST",
+    body: JSON.stringify({ ratings }),
   });
 
 /* --------------------------- learning profile ----------------------------- */

@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { GraduationCap, Layers } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
@@ -73,6 +74,19 @@ export default function FlashcardsPage() {
     setActiveSet(id);
     setOpen(true);
   };
+
+  // Deep-link: `/flashcards?setId=X` (e.g. from global search) opens that set,
+  // then clears the param so it doesn't reopen on back/refresh.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const setId = searchParams.get("setId");
+    if (!setId) return;
+    study(setId);
+    const next = new URLSearchParams(searchParams);
+    next.delete("setId");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   return (
     <PageContainer title="Flashcards">
