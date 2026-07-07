@@ -3,6 +3,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import "katex/dist/contrib/mhchem";
+import { normalizeMath } from "@/lib/normalizeMath";
 import { cn } from "@/lib/utils";
 
 const REMARK = [remarkMath];
@@ -32,7 +33,7 @@ export function MathText({
         rehypePlugins={REHYPE}
         components={{ p: ({ children }) => <>{children}</> }}
       >
-        {children ?? ""}
+        {normalizeMath(children ?? "")}
       </ReactMarkdown>
     </span>
   );

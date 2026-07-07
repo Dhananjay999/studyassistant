@@ -18,11 +18,19 @@ interface SwipeOptions {
   threshold?: number;
   /** Maximum off-axis drift (px) allowed for a clean directional swipe. */
   restraint?: number;
+  /**
+   * Restrict HORIZONTAL swipes to those that START near a screen edge, so an
+   * edge-swipe (e.g. open the nav) doesn't fire on ordinary mid-screen reading
+   * swipes. Vertical swipes are unaffected.
+   */
+  edge?: "left" | "right";
+  /** How close to the edge (px) the touch must start when `edge` is set. */
+  edgeSize?: number;
 }
 
 export function useSwipe(options: SwipeOptions): SwipeHandlers {
   const start = useRef<{ x: number; y: number } | null>(null);
-  const { threshold = 56, restraint = 80 } = options;
+  const { threshold = 56, restraint = 80, edge, edgeSize = 28 } = options;
 
   return {
     onTouchStart: (e) => {
@@ -39,6 +47,9 @@ export function useSwipe(options: SwipeOptions): SwipeHandlers {
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
       if (absX >= threshold && absY <= restraint) {
+        // Edge gating: only accept horizontal swipes that began at the edge.
+        if (edge === "left" && s.x > edgeSize) return;
+        if (edge === "right" && s.x < window.innerWidth - edgeSize) return;
         (dx < 0 ? options.onSwipeLeft : options.onSwipeRight)?.();
       } else if (absY >= threshold && absX <= restraint) {
         (dy < 0 ? options.onSwipeUp : options.onSwipeDown)?.();

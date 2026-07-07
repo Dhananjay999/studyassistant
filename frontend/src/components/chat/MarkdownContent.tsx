@@ -11,6 +11,7 @@ import {
   parseCiteTarget,
   preprocessCitations,
 } from "@/lib/citations";
+import { normalizeMath } from "@/lib/normalizeMath";
 import type { SourceInfo } from "@/types";
 
 /** Filename/title comparison key: lowercased, extension + surrounding space stripped. */
@@ -156,7 +157,7 @@ export function MarkdownContent({
         },
       }}
     >
-      {preprocessCitations(content)}
+      {preprocessCitations(normalizeMath(content))}
     </ReactMarkdown>
   );
 }

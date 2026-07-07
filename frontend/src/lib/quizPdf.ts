@@ -12,6 +12,7 @@
 import type { jsPDF } from "jspdf";
 import { SITE_URL } from "@/lib/seo";
 import { difficultyMeta } from "@/lib/quizFormat";
+import { latexToText } from "@/lib/latexToText";
 import type { QuizExportContent, QuizExportQuestion } from "@/types";
 
 export type PaperSize = "a4" | "letter";
@@ -161,7 +162,7 @@ function drawQuestion(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   const promptLines = doc.splitTextToSize(
-    q.prompt,
+    latexToText(q.prompt),
     l.contentW - promptIndent,
   );
   ensureSpace(l, promptLines.length * 15 + 40);
@@ -177,7 +178,7 @@ function drawQuestion(
   doc.setFontSize(10.5);
   const optIndent = promptIndent + 6;
   q.options.forEach((opt, i) => {
-    const label = `${optionLetter(i)})  ${opt}`;
+    const label = `${optionLetter(i)})  ${latexToText(opt)}`;
     const lines = doc.splitTextToSize(label, l.contentW - optIndent - 6);
     ensureSpace(l, lines.length * 14 + 4);
     doc.setTextColor(...INK);
@@ -200,7 +201,7 @@ function answerKeyText(q: QuizExportQuestion): string {
     .filter((idx) => idx >= 0)
     .sort((a, b) => a - b)
     .map((idx) => optionLetter(idx).toUpperCase());
-  if (letters.length === 0) return correct.join(", ") || "—";
+  if (letters.length === 0) return latexToText(correct.join(", ")) || "—";
   return letters.join(" & ");
 }
 

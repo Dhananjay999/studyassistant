@@ -6,8 +6,15 @@ import {
   type KeyboardEvent,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUp, Loader2, Paperclip } from "lucide-react";
+import {
+  ArrowUp,
+  FolderOpen,
+  Loader2,
+  Paperclip,
+  Upload,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { SlashCommandMenu } from "@/components/chat/SlashCommandMenu";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { filterSlashCommands, type SlashCommand } from "@/lib/slashCommands";
@@ -36,6 +43,9 @@ export const ChatComposer = forwardRef<
     selectedCount?: number;
     /** Open the file selector/sidebar when the indicator is tapped. */
     onOpenFiles?: () => void;
+    /** Whether the user already has uploaded media (drives the mobile
+     *  choose-existing-vs-upload sheet). */
+    hasMedia?: boolean;
   }
 >(function ChatComposer(
   {
@@ -48,12 +58,14 @@ export const ChatComposer = forwardRef<
     uploading,
     selectedCount = 0,
     onOpenFiles,
+    hasMedia = false,
   },
   ref,
 ) {
   const [value, setValue] = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [attachOpen, setAttachOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const isMobile = useIsMobile();
@@ -101,6 +113,15 @@ export const ChatComposer = forwardRef<
       focusEnd();
     },
   }));
+
+  const openPicker = () => fileRef.current?.click();
+  // On mobile, if the user already has uploaded media, offer to reuse it (open
+  // the file list) instead of always uploading again. No media, or desktop →
+  // straight to the system picker.
+  const handleAttach = () => {
+    if (isMobile && hasMedia) setAttachOpen(true);
+    else openPicker();
+  };
 
   const send = () => {
     const text = value.trim();
@@ -213,7 +234,7 @@ export const ChatComposer = forwardRef<
             size="icon"
             className="h-9 w-9 shrink-0 rounded-xl"
             disabled={uploading || locked}
-            onClick={() => fileRef.current?.click()}
+            onClick={handleAttach}
             aria-label="Attach files"
           >
             {uploading ? (
@@ -252,6 +273,51 @@ export const ChatComposer = forwardRef<
           </div>
         </div>
       </div>
+
+      {/* Mobile attach chooser: reuse an existing file or upload a new one. */}
+      <Drawer open={attachOpen} onOpenChange={setAttachOpen}>
+        <DrawerContent>
+          <DrawerTitle className="sr-only">Add attachment</DrawerTitle>
+          <div className="mx-auto w-full max-w-md space-y-2 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+            <button
+              type="button"
+              onClick={() => {
+                setAttachOpen(false);
+                onOpenFiles?.();
+              }}
+              className="flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card/50 p-4 text-left transition-colors hover:bg-accent/50 active:scale-[0.99]"
+            >
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-1/10 text-brand-1">
+                <FolderOpen className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">Choose existing file</span>
+                <span className="block text-xs text-muted-foreground">
+                  Reuse a document you've already uploaded
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAttachOpen(false);
+                openPicker();
+              }}
+              className="flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card/50 p-4 text-left transition-colors hover:bg-accent/50 active:scale-[0.99]"
+            >
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-2/10 text-brand-2">
+                <Upload className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">Upload new file</span>
+                <span className="block text-xs text-muted-foreground">
+                  Pick a PDF or image from your device
+                </span>
+              </span>
+            </button>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 });

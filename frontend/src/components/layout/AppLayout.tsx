@@ -27,6 +27,7 @@ import { usePreventPinchZoom } from "@/hooks/usePreventPinchZoom";
 import { useMobileViewport } from "@/hooks/useMobileViewport";
 import { useDeleteSession, useSessions } from "@/hooks/api";
 import { useBackClose } from "@/hooks/useBackClose";
+import { useSwipe } from "@/hooks/useSwipe";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 
 const COLLAPSE_KEY = "aeva_sidebar_collapsed";
@@ -141,11 +142,16 @@ export function AppLayout() {
   });
 
   const openMobileNav = useCallback(() => setMobileOpen(true), []);
+  const navCloseSwipe = useSwipe({ onSwipeLeft: () => setMobileOpen(false) });
 
   // Native back gesture/button closes the mobile nav drawer and the command
   // palette instead of navigating away from the app.
   useBackClose(mobileOpen, () => setMobileOpen(false));
-  useBackClose(paletteOpen, () => setPaletteOpen(false));
+  // NOTE: the search palette deliberately does NOT use useBackClose. Selecting a
+  // result closes the palette AND navigates in the same tick; useBackClose's
+  // programmatic-close `history.back()` would pop the entry we just pushed,
+  // reverting the navigation (result loads, but the route snaps back). Radix
+  // still closes it on Escape / tap-outside / the ✕.
 
   const shell = useMemo<ShellValue>(
     () => ({ collapsed, setDocked, openMobileNav, registerSlashHandler }),
@@ -180,7 +186,8 @@ export function AppLayout() {
             {sidebar(false)}
           </aside>
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-            <SheetContent side="left" className="w-72 p-0">
+            {/* Swipe right→left anywhere on the open sidebar closes it. */}
+            <SheetContent side="left" className="w-72 p-0" {...navCloseSwipe}>
               {sidebar(true)}
             </SheetContent>
           </Sheet>
