@@ -1,7 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { usePreferences } from "@/contexts/PreferencesContext";
-import { PageSkeleton } from "@/components/layout/PageSkeleton";
+import { RouteSkeleton } from "@/components/layout/RouteSkeleton";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,7 +28,9 @@ export function RouteTransition({ children }: { children: ReactNode }) {
         !reduceMotion && "animate-in fade-in-0 duration-200 ease-out",
       )}
     >
-      <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
+      <Suspense fallback={<RouteSkeleton pathname={location.pathname} />}>
+        {children}
+      </Suspense>
     </div>
   );
 }

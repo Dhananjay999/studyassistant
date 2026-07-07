@@ -13,6 +13,7 @@ import {
   Bookmark,
   FolderOpen,
   GraduationCap,
+  MessageSquarePlus,
   Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,6 @@ import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
-import { NewChatButton } from "@/components/chat/NewChatButton";
 import { useShell } from "@/components/layout/AppLayout";
 import { useHeaderSlot } from "@/components/layout/HeaderSlot";
 import { OnboardingFlow } from "@/components/learning/OnboardingFlow";
@@ -145,13 +145,10 @@ export default function ChatPage() {
 
   // Touch navigation: swipe right opens the nav drawer, swipe left opens the
   // files sheet. Touch-only, so desktop pointer use is unaffected.
-  // Only an edge-swipe from the LEFT opens the nav — mid-screen swipes are left
-  // for reading/scrolling. The media panel no longer opens by swipe (it has its
-  // own button), which prevents accidental openings.
+  // Swipe left→right opens the nav. The media panel no longer opens by swipe
+  // (it has its own button), which prevents accidental openings while reading.
   const chatSwipe = useSwipe({
     onSwipeRight: openMobileNav,
-    edge: "left",
-    edgeSize: 30,
   });
 
   const [activeQuiz, setActiveQuiz] = useState<QuizContent | null>(null);
@@ -889,7 +886,15 @@ export default function ChatPage() {
           {/* New Chat lives in the chat header on mobile — the bottom-nav Chat
               tab just returns to the current workspace (kept alive). Hidden on
               desktop, where the sidebar owns New Chat. */}
-          <NewChatButton onClick={handleNewChat} className="lg:hidden" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={handleNewChat}
+            aria-label="New chat"
+          >
+            <MessageSquarePlus className="h-5 w-5" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"

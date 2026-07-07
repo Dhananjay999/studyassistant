@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useState } from "react";
-import { PageSkeleton } from "@/components/layout/PageSkeleton";
+import { RouteSkeleton } from "@/components/layout/RouteSkeleton";
 import { useShellViewport } from "@/components/layout/shellViewport";
 import { TabPanelContext } from "@/components/layout/tabPanel";
 import { TAB_PAGES, type TabPath } from "@/components/layout/tabPages";
@@ -41,7 +41,7 @@ export function MobileTabsHost() {
             aria-hidden={!active}
           >
             <TabPanelContext.Provider value={{ active }}>
-              <Suspense fallback={<PageSkeleton />}>
+              <Suspense fallback={<RouteSkeleton pathname={path} />}>
                 <Page />
               </Suspense>
             </TabPanelContext.Provider>
