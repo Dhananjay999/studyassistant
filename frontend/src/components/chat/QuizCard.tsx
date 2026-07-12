@@ -5,6 +5,7 @@ import {
   Clock,
   GraduationCap,
   HelpCircle,
+  Share2,
   Sparkles,
   Timer,
 } from "lucide-react";
@@ -12,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/common/GlassCard";
 import { BookmarkButton } from "@/components/BookmarkButton";
+import { ShareQuizButton } from "@/components/quiz/ShareQuizButton";
 import { useExamPatterns } from "@/hooks/api";
 import { formatTimeLimit } from "@/lib/quizFormat";
 import { hasExamConfig, type QuizContent } from "@/types";
@@ -56,6 +58,17 @@ export function QuizCard({
               </Badge>
             ) : (
               <Badge variant="secondary">Quiz</Badge>
+            )}
+            {quiz.quiz_id && (
+              <ShareQuizButton
+                quizId={quiz.quiz_id}
+                quizTitle={quiz.title}
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+              </ShareQuizButton>
             )}
             <BookmarkButton
               item={{

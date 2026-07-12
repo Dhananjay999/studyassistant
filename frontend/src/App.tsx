@@ -48,8 +48,8 @@ const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const ProfileSectionPage = lazy(() => import("@/pages/ProfileSectionPage"));
-// Public, no-login guest quiz attempt reached from a share link.
-const QuizSharePage = lazy(() => import("@/pages/QuizSharePage"));
+// Public, no-login share surface for every shareable content type.
+const SharePage = lazy(() => import("@/pages/SharePage"));
 // Hidden Super Admin panel. The path is an unguessable secret AND the panel
 // has its own server-verified auth — the URL is never trusted on its own.
 const AdminApp = lazy(() => import("@/pages/admin/AdminApp"));
@@ -109,10 +109,17 @@ export default function App() {
                     <Route path="/privacy" element={<PrivacyPage />} />
                     <Route path="/terms" element={<TermsPage />} />
                     <Route path="/auth/callback" element={<AuthCallback />} />
-                    {/* Public guest quiz attempt (no auth, no app shell). */}
+                    {/* One stable public share URL for every content type
+                       (no auth, no app shell). Legacy paths from the
+                       pre-generic system render the same page. */}
+                    <Route path="/share/:shareId" element={<SharePage />} />
                     <Route
                       path="/quiz/share/:shareId"
-                      element={<QuizSharePage />}
+                      element={<SharePage />}
+                    />
+                    <Route
+                      path="/quiz/result/:shareId"
+                      element={<SharePage />}
                     />
                     {/* Persistent app shell: header + sidebar mount once; only
                        the routed content below swaps (with a crossfade). */}

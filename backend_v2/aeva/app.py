@@ -26,9 +26,17 @@ from aeva.learning_profile.learning_profile_controller import (
 )
 from aeva.media.media_controller import blueprint as media_bp
 from aeva.quiz.quiz_controller import blueprint as quiz_bp
-from aeva.quiz.share_controller import blueprint as shared_bp
 from aeva.search.search_controller import blueprint as search_bp
 from aeva.session.session_controller import blueprint as session_bp
+from aeva.share.share_controller import (
+    legacy_blueprint as share_legacy_bp,
+)
+from aeva.share.share_controller import (
+    public_blueprint as share_public_bp,
+)
+from aeva.share.share_controller import (
+    shares_blueprint as shares_bp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +354,9 @@ def create_app() -> Flask:
     api.register_blueprint(chat_bp)
     api.register_blueprint(assistant_bp)
     api.register_blueprint(quiz_bp)
-    api.register_blueprint(shared_bp)
+    api.register_blueprint(shares_bp)
+    api.register_blueprint(share_public_bp)
+    api.register_blueprint(share_legacy_bp)
     api.register_blueprint(bookmark_bp)
     api.register_blueprint(search_bp)
     api.register_blueprint(flashcard_bp)

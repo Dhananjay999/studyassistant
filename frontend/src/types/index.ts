@@ -151,11 +151,60 @@ export interface QuizExportContent extends Omit<QuizContent, "questions"> {
   questions: QuizExportQuestion[];
 }
 
-/** Public share link for a quiz (POST /quiz/:id/share). `url` is the backend
- * share URL that renders OG tags and redirects a human to the SPA. */
-export interface QuizShareLink {
-  token: string;
+/* ------------------------------- sharing --------------------------------- */
+// One generic sharing platform: every shareable resource gets a stable
+// /share/{share_id} URL. The backend resolves the share into a normalized
+// envelope; the frontend picks a renderer by `content_type`.
+
+/** Registered shareable content types (mirrors backend resolvers). */
+export type ShareContentType = "quiz" | "quiz_result";
+
+export type ShareVisibility = "public" | "unlisted" | "private";
+
+/** Public share link (POST /shares/). `url` is the backend share URL that
+ * renders OG tags and redirects a human to the SPA. */
+export interface ShareLink {
+  share_id: string;
+  content_type: ShareContentType;
   url: string;
+}
+
+/** Normalized public payload for any share (GET /share/:id/data). `content`
+ * is typed per `content_type` by the renderer that consumes it. */
+export interface ResolvedShare<T = unknown> {
+  share_id: string;
+  content_type: ShareContentType;
+  /** Preview snapshot (title, counts, score...) taken at share time. */
+  metadata: Record<string, unknown>;
+  content: T;
+  created_at?: string | null;
+}
+
+/** `content` of a quiz_result share. Counts only — never answers. */
+export interface SharedQuizResultContent {
+  quiz: {
+    title: string;
+    topic: string;
+    difficulty: Difficulty | string;
+    question_count: number;
+    is_exam: boolean;
+  };
+  result: {
+    score: number;
+    total: number;
+    correct_count: number;
+    incorrect_count: number;
+    partial_count: number;
+    attempted_count: number;
+    unanswered_count: number;
+    time_taken_seconds: number;
+    // Marks for exam attempts (null for ordinary, accuracy-only attempts).
+    final_score?: number | null;
+    max_marks?: number | null;
+    attempted_at: string | null;
+  };
+  /** Companion quiz share powering the "Attempt This Quiz" CTA. */
+  quiz_share_id: string | null;
 }
 
 export interface QuizPerQuestion {
@@ -423,6 +472,18 @@ export interface PendingQuizSetup {
   questionTypes?: QuestionType[] | null;
   difficulty?: Difficulty | null;
   examConfig?: ExamConfig | null;
+}
+
+/** Snapshot of the quiz-setup form, kept while the popup is dismissed so
+ * reopening it restores everything the user already entered. */
+export interface QuizSetupDraft {
+  topic: string;
+  count: string;
+  level: number;
+  types: QuestionType[];
+  instructions: string;
+  useMedia: boolean;
+  exam: ExamConfig;
 }
 
 // Public, non-secret runtime config from GET /config.

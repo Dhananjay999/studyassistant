@@ -73,6 +73,7 @@ import type {
   ProcessingStage,
   QuizContent,
   QuizOptions,
+  QuizSetupDraft,
   UploadProgress,
 } from "@/types";
 import { isMediaReady, PROCESSING_STAGES } from "@/types";
@@ -135,6 +136,13 @@ export default function ChatPage() {
     null,
   );
   const [pendingQuiz, setPendingQuiz] = useState<PendingQuizSetup | null>(null);
+  // The setup popup is dismissible without losing the pending request: closing
+  // it keeps `pendingQuiz` + the typed draft and surfaces a resume banner.
+  const [quizSetupOpen, setQuizSetupOpen] = useState(false);
+  const quizDraftRef = useRef<QuizSetupDraft | null>(null);
+  const handleQuizDraftChange = useCallback((draft: QuizSetupDraft) => {
+    quizDraftRef.current = draft;
+  }, []);
   const [thinkingHint, setThinkingHint] = useState<ThinkingHint | undefined>();
   const [mediaOpen, setMediaOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -508,6 +516,8 @@ export default function ChatPage() {
           },
           onQuizSetup: (data) => {
             removeStreaming();
+            quizDraftRef.current = null;
+            setQuizSetupOpen(true);
             setPendingQuiz({
               topic: (data.topic as string) || "",
               mediaAvailable: Boolean(data.media_available),
@@ -614,6 +624,8 @@ export default function ChatPage() {
     sourceContent?: string,
   ) => {
     setPendingQuiz(null);
+    setQuizSetupOpen(false);
+    quizDraftRef.current = null;
     const resolved = { ...options, topic: options.topic || topic || undefined };
     send(`Generate a quiz${resolved.topic ? ` on ${resolved.topic}` : ""}`, {
       quizOptions: resolved,
@@ -839,8 +851,20 @@ export default function ChatPage() {
     }
   };
 
-  const openQuizSetup = () =>
-    setPendingQuiz({ topic: "", mediaAvailable: selected.size > 0 });
+  const openQuizSetup = () => {
+    // Reuse the pending request (and its typed draft) when one exists so the
+    // /quiz command doubles as "resume the setup I closed".
+    setPendingQuiz(
+      (prev) => prev ?? { topic: "", mediaAvailable: selected.size > 0 },
+    );
+    setQuizSetupOpen(true);
+  };
+
+  const dismissQuizSetup = () => {
+    setPendingQuiz(null);
+    setQuizSetupOpen(false);
+    quizDraftRef.current = null;
+  };
 
   // The chat composer owns Cmd/Ctrl+/ (slash commands) while chat is active;
   // the shell owns Cmd/Ctrl+F (search) and Cmd/Ctrl+N (new chat).
@@ -1016,22 +1040,55 @@ export default function ChatPage() {
               </div>
             )}
             {/* A quiz requested in chat opens the SAME setup UI as the chip —
-               one component, one behaviour, everywhere. */}
+               one component, one behaviour, everywhere. Closing the popup
+               keeps the pending request + draft; the banner below resumes it. */}
             {pendingQuiz && (
               <QuizSetup
-                open
-                onOpenChange={(next) => {
-                  if (!next) setPendingQuiz(null);
-                }}
+                open={quizSetupOpen}
+                onOpenChange={setQuizSetupOpen}
                 initialTopic={pendingQuiz.topic}
                 initialCount={pendingQuiz.questionCount}
                 initialTypes={pendingQuiz.questionTypes}
                 initialDifficulty={pendingQuiz.difficulty}
                 initialExamConfig={pendingQuiz.examConfig}
+                draft={quizDraftRef.current}
+                onDraftChange={handleQuizDraftChange}
                 mediaAvailable={pendingQuiz.mediaAvailable}
                 busy={streaming}
                 onGenerate={(opts) => handleGenerateQuiz(pendingQuiz.topic, opts)}
               />
+            )}
+
+            {pendingQuiz && !quizSetupOpen && (
+              <div className="mx-auto w-full max-w-4xl px-4 pb-2">
+                <div className="flex items-center gap-2 rounded-xl border border-brand-1/30 bg-brand-1/5 px-3 py-2 text-xs">
+                  <GraduationCap className="h-3.5 w-3.5 text-brand-1" />
+                  <span className="flex-1 truncate">
+                    Quiz setup in progress
+                    {pendingQuiz.topic ? (
+                      <>
+                        {" "}
+                        on <span className="font-medium">{pendingQuiz.topic}</span>
+                      </>
+                    ) : null}
+                    {" "}— your settings are saved.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setQuizSetupOpen(true)}
+                    className="font-semibold text-brand-1 hover:underline"
+                  >
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    onClick={dismissQuizSetup}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
             )}
 
             {seedBanner && (

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GraduationCap, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,14 +15,19 @@ import {
   levelToDifficulty,
   NEUTRAL_EXAM_CONFIG,
 } from "@/lib/quizFormat";
-import type { Difficulty, ExamConfig, QuestionType, QuizOptions } from "@/types";
+import type {
+  Difficulty,
+  ExamConfig,
+  QuestionType,
+  QuizOptions,
+  QuizSetupDraft,
+} from "@/types";
 
 const TYPE_OPTIONS: { value: QuestionType; label: string }[] = [
   { value: "single_select", label: "Single select" },
   { value: "multi_select", label: "Multiple select" },
   { value: "true_false", label: "True / False" },
 ];
-const ALL_TYPES: QuestionType[] = TYPE_OPTIONS.map((t) => t.value);
 const DEFAULT_MAX = 25;
 
 export function QuizSetupForm({
@@ -31,6 +36,8 @@ export function QuizSetupForm({
   initialTypes,
   initialDifficulty,
   initialExamConfig,
+  draft,
+  onDraftChange,
   mediaAvailable = false,
   busy = false,
   onGenerate,
@@ -42,6 +49,11 @@ export function QuizSetupForm({
   initialTypes?: QuestionType[] | null;
   initialDifficulty?: Difficulty | null;
   initialExamConfig?: ExamConfig | null;
+  /** A previously-typed form snapshot; wins over `initial*` so closing and
+   * reopening the setup popup restores the user's progress. */
+  draft?: QuizSetupDraft | null;
+  /** Reports every form change so the host can stash a draft. */
+  onDraftChange?: (draft: QuizSetupDraft) => void;
   mediaAvailable?: boolean;
   busy?: boolean;
   onGenerate: (options: QuizOptions) => void;
@@ -53,26 +65,43 @@ export function QuizSetupForm({
   const { data: config } = useAppConfig();
   const maxQuestions = config?.max_quiz_questions ?? DEFAULT_MAX;
 
-  const [topic, setTopic] = useState(initialTopic);
-  const [count, setCount] = useState(String(initialCount ?? 5));
+  const [topic, setTopic] = useState(draft?.topic ?? initialTopic);
+  const [count, setCount] = useState(
+    draft?.count ?? String(initialCount ?? 5),
+  );
   // Difficulty is chosen on a 1–10 slider and mapped to a 5-band label.
   const [level, setLevel] = useState<number>(
-    difficultyToLevel(initialDifficulty ?? "medium"),
+    draft?.level ?? difficultyToLevel(initialDifficulty ?? "medium"),
   );
   const difficulty: Difficulty = levelToDifficulty(level);
-  // Prefill detected types; default to Mixed (all) when none were specified.
+  // Prefill detected types; otherwise leave empty so the LLM may generate a
+  // mixed-type quiz unless the user explicitly picks a format.
   const [types, setTypes] = useState<QuestionType[]>(
-    initialTypes && initialTypes.length > 0 ? initialTypes : ALL_TYPES,
+    draft?.types ?? initialTypes ?? [],
   );
-  const [instructions, setInstructions] = useState("");
-  const [useMedia, setUseMedia] = useState(false);
+  const [instructions, setInstructions] = useState(draft?.instructions ?? "");
+  const [useMedia, setUseMedia] = useState(draft?.useMedia ?? false);
 
   // Exam Mode: editable marking scheme + timer (see ExamSettingsFields).
   const [exam, setExam] = useState<ExamConfig>(
-    initialExamConfig ?? NEUTRAL_EXAM_CONFIG,
+    draft?.exam ?? initialExamConfig ?? NEUTRAL_EXAM_CONFIG,
   );
 
-  const isMixed = ALL_TYPES.every((t) => types.includes(t));
+  // Snapshot every change so closing the popup never loses progress.
+  useEffect(() => {
+    onDraftChange?.({
+      topic,
+      count,
+      level,
+      types,
+      instructions,
+      useMedia,
+      exam,
+    });
+  }, [onDraftChange, topic, count, level, types, instructions, useMedia, exam]);
+
+  // No selection = Mixed: the LLM freely mixes question formats.
+  const isMixed = types.length === 0;
   const countNum = Number(count);
   const countValid =
     Number.isInteger(countNum) && countNum >= 1 && countNum <= maxQuestions;
@@ -81,15 +110,15 @@ export function QuizSetupForm({
     setTypes((prev) =>
       prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
     );
-  const selectMixed = () => setTypes(ALL_TYPES);
+  const selectMixed = () => setTypes([]);
 
   const submit = () => {
-    if (!countValid || types.length === 0) return;
+    if (!countValid) return;
     onGenerate({
       topic: topic.trim() || undefined,
       question_count: countNum,
       difficulty,
-      question_types: types,
+      question_types: types.length > 0 ? types : undefined,
       use_media: mediaAvailable ? useMedia : undefined,
       additional_instructions: instructions.trim() || undefined,
       exam_config: isExamConfig(exam) ? exam : undefined,
@@ -99,7 +128,7 @@ export function QuizSetupForm({
   const submitButton = (
     <Button
       onClick={submit}
-      disabled={busy || types.length === 0 || !countValid}
+      disabled={busy || !countValid}
       className="w-full gap-2"
     >
       <Sparkles className="h-4 w-4" />
@@ -200,6 +229,9 @@ export function QuizSetupForm({
             Mixed
           </button>
         </div>
+        <p className="text-[10px] text-muted-foreground">
+          Pick specific formats, or leave it on Mixed to let the AI vary them.
+        </p>
       </div>
 
       <div className="space-y-1.5">
@@ -272,7 +304,7 @@ export function QuizSetupForm({
         {/* `overscroll-contain` keeps the fields scrolling inside the sheet
            instead of the gesture bubbling up and drag-dismissing the drawer,
            which is what left the lower fields unreachable on some phones. */}
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-3 px-1">
           {fields}
         </div>
         <div className="-mx-4 border-t border-border/50 bg-background px-4 pt-3">

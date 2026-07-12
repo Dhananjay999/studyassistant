@@ -12,6 +12,7 @@ import type {
   ExamConfig,
   QuestionType,
   QuizOptions,
+  QuizSetupDraft,
 } from "@/types";
 
 /**
@@ -35,6 +36,8 @@ export function QuizSetup({
   initialTypes,
   initialDifficulty,
   initialExamConfig,
+  draft,
+  onDraftChange,
   mediaAvailable,
   busy,
   onGenerate,
@@ -47,6 +50,9 @@ export function QuizSetup({
   initialTypes?: QuestionType[] | null;
   initialDifficulty?: Difficulty | null;
   initialExamConfig?: ExamConfig | null;
+  /** Form snapshot restored when the popup is reopened after a dismiss. */
+  draft?: QuizSetupDraft | null;
+  onDraftChange?: (draft: QuizSetupDraft) => void;
   mediaAvailable?: boolean;
   busy?: boolean;
   onGenerate: (options: QuizOptions) => void;
@@ -74,6 +80,8 @@ export function QuizSetup({
           initialTypes={initialTypes}
           initialDifficulty={initialDifficulty}
           initialExamConfig={initialExamConfig}
+          draft={draft}
+          onDraftChange={onDraftChange}
           mediaAvailable={mediaAvailable}
           busy={busy}
           onGenerate={handleGenerate}

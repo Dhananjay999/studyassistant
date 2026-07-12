@@ -25,8 +25,11 @@ import type {
   QuizEvaluation,
   QuizExportContent,
   QuizListItem,
-  QuizShareLink,
   QuizSubmitResult,
+  ResolvedShare,
+  ShareContentType,
+  ShareLink,
+  ShareVisibility,
   SearchResults,
   Session,
   StudyRating,
@@ -53,9 +56,10 @@ export const ENDPOINTS = {
   QUIZ_EXAM_PATTERNS: "/quiz/exam-patterns",
   QUIZ: (id: string) => `/quiz/${id}`,
   QUIZ_EXPORT: (id: string) => `/quiz/${id}/export`,
-  QUIZ_SHARE: (id: string) => `/quiz/${id}/share`,
-  SHARED_QUIZ_DATA: (token: string) => `/shared/quiz/${token}/data`,
-  SHARED_QUIZ_SUBMIT: (token: string) => `/shared/quiz/${token}/submit`,
+  SHARES: "/shares/",
+  SHARE_MANAGE: (shareId: string) => `/shares/${shareId}`,
+  SHARE_DATA: (shareId: string) => `/share/${shareId}/data`,
+  SHARE_SUBMIT: (shareId: string) => `/share/${shareId}/submit`,
   QUIZ_EXAM_CONFIG: (id: string) => `/quiz/${id}/exam-config`,
   QUIZ_SUBMIT: (id: string) => `/quiz/${id}/submit`,
   QUIZ_ANALYZE: (id: string) => `/quiz/${id}/analyze`,
@@ -347,32 +351,61 @@ export const getQuizExport = async (
   return { ...q, quiz_id: q.quiz_id ?? q.id ?? id };
 };
 
-/* ------------------------------- quiz sharing ----------------------------- */
+/* --------------------------------- sharing -------------------------------- */
+// One generic API for every shareable content type — see types ShareLink /
+// ResolvedShare. Adding a shareable feature needs no new endpoints here.
 
-/** Owner: create/reuse the public share link for a quiz. */
-export const createQuizShare = (id: string) =>
-  unwrap<QuizShareLink>(ENDPOINTS.QUIZ_SHARE(id), { method: "POST" });
+/** Owner: create/reuse the stable public share link for any resource. */
+export const createShare = (
+  contentType: ShareContentType,
+  contentId: string,
+  visibility?: ShareVisibility,
+) =>
+  unwrap<ShareLink>(ENDPOINTS.SHARES, {
+    method: "POST",
+    body: JSON.stringify({
+      content_type: contentType,
+      content_id: contentId,
+      ...(visibility ? { visibility } : {}),
+    }),
+  });
 
-/** Public (guest): load a shared quiz for taking — no answers, no auth. */
-export const getSharedQuiz = async (
-  token: string,
-): Promise<QuizContent> => {
-  const q = await unwrap<QuizContent & { id?: string }>(
-    ENDPOINTS.SHARED_QUIZ_DATA(token),
-    undefined,
-    { public: true },
+/** Owner: share settings + central analytics for one share. */
+export const getShare = (shareId: string) =>
+  unwrap<ShareLink & { visibility: ShareVisibility; analytics: unknown }>(
+    ENDPOINTS.SHARE_MANAGE(shareId),
   );
-  return { ...q, quiz_id: q.quiz_id ?? q.id ?? token };
-};
+
+/** Owner: change a share's visibility. */
+export const updateShareVisibility = (
+  shareId: string,
+  visibility: ShareVisibility,
+) =>
+  unwrap<{ share_id: string; visibility: ShareVisibility }>(
+    ENDPOINTS.SHARE_MANAGE(shareId),
+    { method: "PATCH", body: JSON.stringify({ visibility }) },
+  );
+
+/** Owner: revoke a share; its public link stops resolving. */
+export const deleteShare = (shareId: string) =>
+  unwrap<{ share_id: string }>(ENDPOINTS.SHARE_MANAGE(shareId), {
+    method: "DELETE",
+  });
+
+/** Public (guest): resolve any share into its normalized payload. */
+export const resolveShare = <T = unknown>(shareId: string) =>
+  unwrap<ResolvedShare<T>>(ENDPOINTS.SHARE_DATA(shareId), undefined, {
+    public: true,
+  });
 
 /** Public (guest): submit a shared-quiz attempt; scored server-side. */
 export const submitSharedQuiz = (
-  token: string,
+  shareId: string,
   answers: Record<string, string[]>,
   timeTakenSeconds = 0,
 ) =>
   unwrap<{ evaluation: QuizEvaluation }>(
-    ENDPOINTS.SHARED_QUIZ_SUBMIT(token),
+    ENDPOINTS.SHARE_SUBMIT(shareId),
     {
       method: "POST",
       body: JSON.stringify({

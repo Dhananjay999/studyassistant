@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -6,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   Loader2,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -24,6 +26,9 @@ function clock(seconds: number): string {
   const s = Math.max(0, seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
+
+/** How long the answer stays locked on screen before auto-advancing. */
+const AUTO_NEXT_MS = 3000;
 
 /**
  * The quiz-taking experience: one question at a time, single/true-false answers
@@ -129,11 +134,34 @@ export function QuizRunner({
     return () => window.removeEventListener("keydown", onKey);
   }, [total]);
 
+  // Auto-next: after a single-select/true-false answer, the choice locks and a
+  // visible countdown runs before the next question, so the transition never
+  // feels abrupt. Navigating away (Next/Prev/swipe/keys) cancels it.
+  const [lockedQ, setLockedQ] = useState<string | null>(null);
+  const autoNextTimer = useRef<number | null>(null);
+
+  // Any question change (auto or manual) unlocks and cancels a pending
+  // advance; the cleanup also covers unmount mid-countdown.
+  useEffect(() => {
+    setLockedQ(null);
+    return () => {
+      if (autoNextTimer.current !== null) {
+        window.clearTimeout(autoNextTimer.current);
+        autoNextTimer.current = null;
+      }
+    };
+  }, [idx]);
+
   const setSingle = (qid: string, v: string) => {
+    // The answer is locked during the countdown — no accidental re-picks.
+    if (lockedQ === qid) return;
     setAnswers((p) => ({ ...p, [qid]: [v] }));
-    // Single-select & true/false auto-advance after a short beat.
     if (idx < total - 1) {
-      window.setTimeout(() => setIdx((i) => Math.min(total - 1, i + 1)), 450);
+      setLockedQ(qid);
+      autoNextTimer.current = window.setTimeout(() => {
+        autoNextTimer.current = null;
+        setIdx((i) => Math.min(total - 1, i + 1));
+      }, AUTO_NEXT_MS);
     }
   };
   const toggleMulti = (qid: string, v: string) =>
@@ -270,24 +298,64 @@ export function QuizRunner({
               <RadioGroup
                 value={answers[q.id]?.[0] || ""}
                 onValueChange={(v) => setSingle(q.id, v)}
+                disabled={lockedQ === q.id}
                 className="space-y-2"
               >
-                {q.options.map((opt) => (
-                  <Label
-                    key={opt}
-                    htmlFor={`${q.id}-${opt}`}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 rounded-xl border p-3.5 text-sm font-normal transition-colors",
-                      answers[q.id]?.[0] === opt
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-muted/50",
-                    )}
-                  >
-                    <RadioGroupItem value={opt} id={`${q.id}-${opt}`} />
-                    <MathText>{opt}</MathText>
-                  </Label>
-                ))}
+                {q.options.map((opt) => {
+                  const selected = answers[q.id]?.[0] === opt;
+                  const locked = lockedQ === q.id;
+                  return (
+                    <Label
+                      key={opt}
+                      htmlFor={`${q.id}-${opt}`}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-3 rounded-xl border p-3.5 text-sm font-normal transition-colors",
+                        selected
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50",
+                        locked && !selected && "opacity-50",
+                        locked && "cursor-default",
+                      )}
+                    >
+                      <RadioGroupItem value={opt} id={`${q.id}-${opt}`} />
+                      <MathText>{opt}</MathText>
+                      {locked && selected && (
+                        <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-primary" />
+                      )}
+                    </Label>
+                  );
+                })}
               </RadioGroup>
+            )}
+
+            {/* Auto-next countdown: the answer is locked and a progress bar
+               shows exactly when the next question arrives. */}
+            {lockedQ === q.id && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-xl border border-primary/20 bg-primary/5 px-3.5 py-2.5"
+              >
+                <div className="flex items-center justify-between text-xs font-medium">
+                  <span className="flex items-center gap-1.5 text-primary">
+                    <Lock className="h-3.5 w-3.5" /> Answer locked
+                  </span>
+                  <span className="text-muted-foreground">
+                    Next question…
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-primary/15">
+                  <motion.div
+                    initial={{ width: "0%" }}
+                    animate={{ width: "100%" }}
+                    transition={{
+                      duration: AUTO_NEXT_MS / 1000,
+                      ease: "linear",
+                    }}
+                    className="h-full rounded-full bg-primary"
+                  />
+                </div>
+              </motion.div>
             )}
           </div>
         ) : null}

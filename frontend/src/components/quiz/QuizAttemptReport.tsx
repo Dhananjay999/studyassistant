@@ -11,6 +11,7 @@ import {
   ListChecks,
   Loader2,
   MinusCircle,
+  Printer,
   RotateCcw,
   Sparkles,
   Target,
@@ -19,8 +20,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BookmarkButton } from "@/components/BookmarkButton";
+import { ShareResultButton } from "@/components/quiz/ShareResultButton";
 import { useAnalyzeQuiz, useCreateSession } from "@/hooks/api";
 import { formatDuration, formatMark, formatMarks } from "@/lib/quizFormat";
+import { printAttemptReport } from "@/lib/printReport";
 import { cn } from "@/lib/utils";
 import { MathText } from "@/components/common/MathText";
 import type {
@@ -263,12 +266,14 @@ export function QuizAttemptReport({
             />
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-col gap-2 sm:flex-row">
+          {/* Actions — only the AI analysis CTA carries the gradient; the
+             rest stay outline so one action reads as primary. */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {onRetake && (
               <Button
+                variant="outline"
                 onClick={onRetake}
-                className="flex-1 gap-1.5 bg-brand-gradient text-white shadow-glow"
+                className="w-full gap-1.5"
               >
                 <RotateCcw className="h-4 w-4" /> Retake quiz
               </Button>
@@ -276,7 +281,7 @@ export function QuizAttemptReport({
             <Button
               variant="outline"
               onClick={() => setReviewOpen((o) => !o)}
-              className="flex-1 gap-1.5"
+              className="w-full gap-1.5"
             >
               <ListChecks className="h-4 w-4" />
               {reviewOpen ? "Hide review" : "Review answers"}
@@ -286,7 +291,7 @@ export function QuizAttemptReport({
                 <Button
                   variant="outline"
                   onClick={() => setAnalysisOpen((o) => !o)}
-                  className="flex-1 gap-1.5"
+                  className="w-full gap-1.5"
                 >
                   <Sparkles className="h-4 w-4 text-brand-1" />
                   {analysisOpen ? "Hide AI analysis" : "View AI analysis"}
@@ -295,7 +300,7 @@ export function QuizAttemptReport({
                 <Button
                   onClick={runAnalysis}
                   disabled={analyzeMutation.isPending}
-                  className="flex-1 gap-1.5 bg-brand-gradient text-white"
+                  className="w-full gap-1.5 bg-brand-gradient text-white shadow-glow"
                 >
                   {analyzeMutation.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -321,21 +326,22 @@ export function QuizAttemptReport({
           {/* Review */}
           {reviewOpen && <ReviewPanel quiz={quiz} evaluation={ev} />}
 
-          {/* Keep learning (account features) */}
+          {/* Keep learning (account features). Even grid so every action
+             lines up; only Create flashcards carries the gradient. */}
           {!guest && (
             <div className="space-y-2 border-t border-border/50 pt-4">
               <p className="text-sm font-semibold">Keep learning</p>
-              <div className="flex flex-wrap gap-2 align-item-center">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Button
-                  size="sm"
                   onClick={makeFlashcards}
                   disabled={createSession.isPending}
-                  className="flex-1 gap-1.5 bg-brand-gradient text-white"
+                  className="w-full gap-1.5 bg-brand-gradient text-white shadow-glow"
                 >
-                  <Layers className="h-4 w-4" /> Create flashcards
+                  <Layers className="h-4 w-4" /> Flashcards
                 </Button>
                 <BookmarkButton
                   label
+                  className="h-10 w-full justify-center gap-1.5 rounded-md border border-input bg-background text-sm hover:bg-accent"
                   item={{
                     item_type: "quiz",
                     item_ref: quiz.quiz_id,
@@ -347,6 +353,21 @@ export function QuizAttemptReport({
                     },
                   }}
                 />
+                <Button
+                  variant="outline"
+                  onClick={() => printAttemptReport(quiz, ev)}
+                  className="w-full gap-1.5"
+                >
+                  <Printer className="h-4 w-4" /> Print
+                </Button>
+                {attemptId && (
+                  <ShareResultButton
+                    quizId={quiz.quiz_id}
+                    quizTitle={quiz.title}
+                    attemptId={attemptId}
+                    className="w-full gap-1.5"
+                  />
+                )}
               </div>
             </div>
           )}
