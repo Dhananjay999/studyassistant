@@ -22,6 +22,7 @@ import { SigningInModal } from "@/components/auth/SigningInModal";
 import { SettingsExperience } from "@/components/settings/SettingsExperience";
 import { queryClient } from "@/lib/queryClient";
 import { trackPageview } from "@/lib/analytics";
+import { isAppMode } from "@/lib/appMode";
 import LandingPage from "@/pages/LandingPage";
 import AuthCallback from "@/pages/AuthCallback";
 import NotFound from "@/pages/NotFound";
@@ -50,6 +51,9 @@ const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const ProfileSectionPage = lazy(() => import("@/pages/ProfileSectionPage"));
 // Public, no-login share surface for every shareable content type.
 const SharePage = lazy(() => import("@/pages/SharePage"));
+// Native-app (WebView) entry: onboarding + welcome/login instead of the
+// marketing landing page.
+const AppWelcomePage = lazy(() => import("@/pages/AppWelcomePage"));
 // Hidden Super Admin panel. The path is an unguessable secret AND the panel
 // has its own server-verified auth — the URL is never trusted on its own.
 const AdminApp = lazy(() => import("@/pages/admin/AdminApp"));
@@ -83,6 +87,9 @@ function HomeRoute() {
   const { isAuthenticated, loading } = useAuth();
   if (loading) return <RouteFallback />;
   if (isAuthenticated) return <Navigate to="/chat" replace />;
+  // Inside the native app's WebView, skip the marketing site entirely and
+  // open the app-style onboarding/welcome experience.
+  if (isAppMode()) return <AppWelcomePage />;
   return <LandingPage />;
 }
 

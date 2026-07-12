@@ -126,6 +126,52 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* --- Touch-first behavior (mobile web + native WebView) --- */
+
+  /* Our ripple/pressed states replace the OS gray tap flash, and
+     `manipulation` removes the 300ms double-tap-zoom delay on tappables. */
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button,
+  a,
+  label,
+  summary,
+  [role="button"],
+  [role="menuitem"],
+  [role="tab"],
+  [role="option"] {
+    touch-action: manipulation;
+  }
+
+  /* Touch devices: momentum scrolling + contained overscroll so inner lists
+     never chain-scroll the page (native-feeling edges, no page bounce). */
+  @media (hover: none) {
+    body {
+      overscroll-behavior-y: contain;
+    }
+    .overflow-y-auto,
+    .overflow-auto {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+  }
+
+  /* Native-app (WebView) mode: the UI chrome shouldn't select or callout
+     like a web page. Learning content and form fields stay selectable. */
+  html.app-mode body {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  html.app-mode .learning-content,
+  html.app-mode input,
+  html.app-mode textarea,
+  html.app-mode [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
   h1, h2, h3, h4, .font-display {
     font-family: "Sora Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   }
@@ -387,6 +433,40 @@
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  /* --- Touch ripple (spawned by lib/ripple.ts on touch pointers only).
+     The wave expands from the exact touch point and fades — Material-like
+     feedback that replaces hover states on touch devices. --- */
+  .touch-ripple {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .touch-ripple > span {
+    position: absolute;
+    border-radius: 9999px;
+    background: currentColor;
+    transform: scale(0);
+    animation: ripple-expand 0.45s ease-out forwards;
+  }
+  @keyframes ripple-expand {
+    from {
+      transform: scale(0);
+      opacity: 0.16;
+    }
+    to {
+      transform: scale(1);
+      opacity: 0;
+    }
+  }
+
+  /* Comfortable minimum hit area for small/custom tappables. */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
   }
 
   /* --- Safe-area helpers (notch / Dynamic Island / gesture bars) --- */

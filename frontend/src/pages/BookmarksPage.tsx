@@ -764,13 +764,16 @@ function BookmarkCard({
   });
 
   const card = (
+    // Deliberately effect-free (no hover accents, no touch ripple): the card
+    // is a calm reading surface; selection state is the only highlight.
     <div
       {...press}
+      data-no-ripple
       className={cn(
         "flex h-full flex-col rounded-2xl border bg-card/50 p-4 transition-colors",
         selected
           ? "border-brand-1 ring-1 ring-brand-1"
-          : "border-border/60 hover:border-brand-1/40",
+          : "border-border/60",
         selectMode && "cursor-pointer select-none",
       )}
     >
@@ -814,7 +817,7 @@ function BookmarkCard({
           disabled={opening}
           className="text-left"
         >
-          <h3 className="flex items-center gap-1.5 text-sm font-semibold hover:underline">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold">
             <span className="line-clamp-2">
               {bookmark.title || "Untitled"}
             </span>

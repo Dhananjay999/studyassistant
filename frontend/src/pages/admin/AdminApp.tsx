@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Search,
   ShieldAlert,
+  Smartphone,
   Users as UsersIcon,
 } from "lucide-react";
 import { AdminShell, type AdminNavItem } from "@/components/admin/AdminShell";
@@ -28,6 +29,7 @@ import { AdminUserDetail } from "@/pages/admin/AdminUserDetail";
 import { AdminResources } from "@/pages/admin/AdminResources";
 import { AdminSearch } from "@/pages/admin/AdminSearch";
 import { AdminDangerZone } from "@/pages/admin/AdminDangerZone";
+import { AdminDevTools } from "@/pages/admin/AdminDevTools";
 import type { ResourceKey } from "@/types/admin";
 
 type View =
@@ -36,6 +38,7 @@ type View =
   | { name: "user"; id: string }
   | { name: "resource"; resource: ResourceKey }
   | { name: "search" }
+  | { name: "devtools" }
   | { name: "danger" };
 
 const RESOURCE_KEYS: ResourceKey[] = [
@@ -55,6 +58,7 @@ const NAV: AdminNavItem[] = [
   { key: "bookmarks", label: "Bookmarks", icon: BookMarked },
   { key: "files", label: "Files", icon: FileText },
   { key: "search", label: "Search", icon: Search },
+  { key: "devtools", label: "Dev Tools", icon: Smartphone },
   { key: "danger", label: "Danger Zone", icon: ShieldAlert },
 ];
 
@@ -78,6 +82,7 @@ function AdminInner() {
       key === "overview" ||
       key === "users" ||
       key === "search" ||
+      key === "devtools" ||
       key === "danger"
     ) {
       setView({ name: key });
@@ -118,6 +123,7 @@ function AdminInner() {
       {view.name === "search" && (
         <AdminSearch onOpenUser={(id) => setView({ name: "user", id })} />
       )}
+      {view.name === "devtools" && <AdminDevTools />}
       {view.name === "danger" && <AdminDangerZone />}
     </AdminShell>
   );

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ChipSelect } from "@/components/learning/ChipSelect";
+import { OnboardingFlow } from "@/components/learning/OnboardingFlow";
 import { SettingsField } from "@/components/settings/primitives";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
@@ -109,6 +110,8 @@ export function LearningProfileSection() {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  // Step-based guided editing (same experience as first-run onboarding).
+  const [guidedOpen, setGuidedOpen] = useState(false);
 
   const saved = useMemo(() => toDraft(profile), [profile]);
 
@@ -203,6 +206,26 @@ export function LearningProfileSection() {
           </Badge>
         )}
       </div>
+
+      {!editing && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setGuidedOpen(true)}
+          className="w-full gap-1.5 sm:w-auto"
+        >
+          <Sparkles className="h-4 w-4 text-brand-1" />
+          Edit step-by-step
+        </Button>
+      )}
+      <OnboardingFlow
+        open={guidedOpen}
+        mode="edit"
+        onDone={() => {
+          setGuidedOpen(false);
+          void refreshUser();
+        }}
+      />
 
       {!editing ? (
         <ProfileSummary

@@ -3,6 +3,10 @@ import tailwindcssAnimate from "tailwindcss-animate";
 import typography from "@tailwindcss/typography";
 
 export default {
+	// Touch-first: every `hover:` utility only applies on devices that truly
+	// hover (fine pointer). Phones/WebView get pressed/ripple feedback instead
+	// of sticky hover borders, shadows, and elevation.
+	future: { hoverOnlyWhenSupported: true },
 	darkMode: ["class"],
 	content: [
 		"./pages/**/*.{ts,tsx}",
