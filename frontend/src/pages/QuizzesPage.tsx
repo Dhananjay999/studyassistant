@@ -110,7 +110,12 @@ export default function QuizzesPage() {
   const [quiz, setQuiz] = useState<QuizContent | null>(null);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<QuizInitialView>("take");
-  const [loadingId, setLoadingId] = useState<string | null>(null);
+  // Which quiz is being fetched AND which button asked for it, so the loader
+  // renders only on the action the user actually pressed.
+  const [loadingAction, setLoadingAction] = useState<{
+    id: string;
+    view: QuizInitialView;
+  } | null>(null);
 
   const config = useMemo(() => buildQuizConfig(patterns), [patterns]);
   // In-memory filters under mobile keep-alive (preserved across tab switches);
@@ -122,14 +127,14 @@ export default function QuizzesPage() {
   );
 
   const openQuiz = async (id: string, initialView: QuizInitialView) => {
-    setLoadingId(id);
+    setLoadingAction({ id, view: initialView });
     try {
       const q = await getQuiz(id);
       setQuiz(q);
       setView(initialView);
       setOpen(true);
     } finally {
-      setLoadingId(null);
+      setLoadingAction(null);
     }
   };
 
@@ -178,7 +183,11 @@ export default function QuizzesPage() {
                   <QuizGridCard
                     key={q.id}
                     quiz={q}
-                    loading={loadingId === q.quiz_id}
+                    loadingView={
+                      loadingAction?.id === q.quiz_id
+                        ? loadingAction.view
+                        : null
+                    }
                     onOpen={(v) => openQuiz(q.quiz_id, v)}
                   />
                 ))}
@@ -223,13 +232,17 @@ function Metric({
 
 function QuizGridCard({
   quiz: q,
-  loading,
+  loadingView,
   onOpen,
 }: {
   quiz: QuizListItem;
-  loading: boolean;
+  /** Which of this card's actions is loading (null when idle). */
+  loadingView: QuizInitialView | null;
   onOpen: (view: QuizInitialView) => void;
 }) {
+  // Both buttons lock while either loads (one drawer opens at a time), but
+  // the spinner shows only on the button that initiated the fetch.
+  const loading = loadingView !== null;
   const { data: patterns = [] } = useExamPatterns();
   const attempted = q.attempt_count > 0 && q.best_score !== null;
   const pct = Math.round(q.best_score ?? 0);
@@ -362,7 +375,7 @@ function QuizGridCard({
           variant="brand"
           className="flex-1 gap-2"
         >
-          {loading ? (
+          {loadingView === "take" ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Play className="h-4 w-4" />
@@ -375,7 +388,11 @@ function QuizGridCard({
           variant="outline"
           className="gap-2"
         >
-          <History className="h-4 w-4" />
+          {loadingView === "attempts" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <History className="h-4 w-4" />
+          )}
           Attempts
         </Button>
         <ShareQuizButton

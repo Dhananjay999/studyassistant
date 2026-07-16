@@ -44,6 +44,27 @@ const STORAGE = {
   expires: "aeva_expires_at",
 };
 
+// Per-user device state (pinned sessions, recent searches, last-open chat).
+// It survives logout so the same person signing back in finds everything as
+// they left it — but it must never leak into a DIFFERENT account, so on login
+// the device is stamped with the owner's user id and the state is wiped when
+// the id changes. Device-level keys (theme, preferences, app-mode) are
+// untouched either way.
+const USER_STATE_OWNER_KEY = "aeva_state_owner";
+const USER_STATE_KEYS = ["aeva_pinned_sessions", "aeva_recent_searches"];
+const USER_SESSION_KEYS = ["aeva_last_session"];
+
+function reconcileUserState(userId: string): void {
+  try {
+    if (localStorage.getItem(USER_STATE_OWNER_KEY) === userId) return;
+    USER_STATE_KEYS.forEach((k) => localStorage.removeItem(k));
+    USER_SESSION_KEYS.forEach((k) => sessionStorage.removeItem(k));
+    localStorage.setItem(USER_STATE_OWNER_KEY, userId);
+  } catch {
+    /* storage unavailable — nothing persisted to reconcile */
+  }
+}
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -125,7 +146,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const loadUser = useCallback(async () => {
-    setUser(await getMe());
+    const me = await getMe();
+    reconcileUserState(me.id);
+    setUser(me);
     // Warm the learning profile once at app init so the first chat (and any
     // personalization-aware UI) reads it from cache instead of re-fetching.
     // Fire-and-forget: it must never block or fail user load.
@@ -250,7 +273,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener("message", onMessage);
   }, [setSession]);
 
-  const logout = useCallback(() => clearSession(), [clearSession]);
+  // Explicit sign-out: drop the auth session and every in-memory trace of the
+  // user, then leave via a hard replace. The reload guarantees no user data
+  // survives in memory (keep-alive tabs, query cache, streams), lands on the
+  // landing page — or the app welcome screen in app mode via HomeRoute — and,
+  // because the current history entry is replaced and the tokens are gone,
+  // the back button can only reach ProtectedRoute redirects, never a
+  // signed-in page. Persisted per-user niceties (pins, recents) deliberately
+  // stay: `reconcileUserState` wipes them at next login if the account
+  // differs.
+  const logout = useCallback(() => {
+    clearSession();
+    queryClient.clear();
+    window.location.replace("/");
+  }, [clearSession]);
 
   return (
     <AuthContext.Provider

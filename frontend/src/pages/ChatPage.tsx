@@ -35,6 +35,7 @@ import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
 import { useShell } from "@/components/layout/AppLayout";
+import { DRAWER_EDGE_SIZE } from "@/components/layout/MobileNavDrawer";
 import { useHeaderSlot } from "@/components/layout/HeaderSlot";
 import { OnboardingFlow } from "@/components/learning/OnboardingFlow";
 import { useAuth } from "@/contexts/AuthContext";
@@ -157,6 +158,8 @@ export default function ChatPage() {
   // (it has its own button), which prevents accidental openings while reading.
   const chatSwipe = useSwipe({
     onSwipeRight: openMobileNav,
+    // The drawer's finger-tracked edge-drag owns gestures starting there.
+    deadZoneLeft: DRAWER_EDGE_SIZE,
   });
 
   const [activeQuiz, setActiveQuiz] = useState<QuizContent | null>(null);

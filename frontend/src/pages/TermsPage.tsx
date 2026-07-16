@@ -1,5 +1,6 @@
 import { Seo } from "@/components/common/Seo";
 import { PublicPage } from "@/components/landing/PublicPage";
+import { SUPPORT_EMAIL } from "@/components/settings/constants";
 import { PAGES, breadcrumbSchema, webPageSchema } from "@/lib/seo";
 
 export default function TermsPage() {
@@ -70,9 +71,7 @@ export default function TermsPage() {
           <h2>Contact</h2>
           <p>
             Questions about these terms? Reach us at{" "}
-            <a href="mailto:support@studyassistant.app">
-              support@studyassistant.app
-            </a>
+            <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
             .
           </p>
         </div>

@@ -1,20 +1,47 @@
 // Static metadata + reference data for the Settings experience.
 
-/** App identity shown in the About section. Version/build are env-overridable
- *  so CI can stamp real values; links fall back to "#" until wired. */
+import { isAppMode } from "@/lib/appMode";
+
+/** App identity shown in the About section. Version, build id, and
+ *  environment are stamped by the build (vite.config.ts `define`) from
+ *  package.json, CI/git metadata, and the deploy target — never hardcoded. */
 export const APP_META = {
   name: "StudyAssistant",
   tagline: "Your personalized AI study companion, powered by Aeva.",
-  version: (import.meta.env.VITE_APP_VERSION as string) || "1.0.0",
-  build: (import.meta.env.VITE_BUILD_ID as string) || "local",
+  version: __APP_VERSION__,
+  build: __BUILD_ID__,
+  environment: __BUILD_ENV__,
   links: {
-    privacy: (import.meta.env.VITE_PRIVACY_URL as string) || "#",
-    terms: (import.meta.env.VITE_TERMS_URL as string) || "#",
-    feedback:
-      (import.meta.env.VITE_FEEDBACK_URL as string) ||
-      "mailto:feedback@aeva.app",
+    privacy: "/privacy",
+    terms: "/terms",
   },
 } as const;
+
+/** Where bug reports and feature requests go. */
+export const SUPPORT_EMAIL = "support@studyassistant.in";
+
+/**
+ * "Send Feedback" mailto: pre-filled recipient/subject plus the app version
+ * and platform details, so reports arrive self-describing. Built at render
+ * time (needs `navigator`), never at module scope — this module is also
+ * bundled for the SSR prerender.
+ */
+export function feedbackMailto(): string {
+  const platform =
+    typeof navigator === "undefined" ? "unknown" : navigator.userAgent;
+  const subject = `${APP_META.name} feedback`;
+  const body = [
+    "",
+    "",
+    "---- App info (please keep) ----",
+    `Version: ${APP_META.version} (build ${APP_META.build}, ${APP_META.environment})`,
+    `Shell: ${isAppMode() ? "mobile app" : "web"}`,
+    `Platform: ${platform}`,
+  ].join("\n");
+  return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+    subject,
+  )}&body=${encodeURIComponent(body)}`;
+}
 
 /** Keyboard shortcuts surfaced in the Shortcuts section. `keys` is passed to
  *  `formatShortcut` (use "mod" for the platform command key). Keep in sync with

@@ -33,7 +33,7 @@ class ShareCreateSchema(Schema):
     visibility = fields.Str(load_default="unlisted")
 
     @validates("content_type")
-    def _known_type(self, value: str) -> None:
+    def _known_type(self, value: str, data_key: str | None = None) -> None:
         # Validated dynamically so registering a resolver is all a new
         # shareable feature needs — no schema change.
         if value not in supported_content_types():
@@ -42,7 +42,7 @@ class ShareCreateSchema(Schema):
             )
 
     @validates("visibility")
-    def _known_visibility(self, value: str) -> None:
+    def _known_visibility(self, value: str, data_key: str | None = None) -> None:
         if value not in VISIBILITIES:
             raise ValidationError(
                 f"Must be one of: {', '.join(VISIBILITIES)}."
@@ -61,7 +61,7 @@ class ShareUpdateSchema(Schema):
     expires_at = fields.Str(load_default=None, allow_none=True)
 
     @validates("visibility")
-    def _known_visibility(self, value: str | None) -> None:
+    def _known_visibility(self, value: str | None, data_key: str | None = None) -> None:
         if value is not None and value not in VISIBILITIES:
             raise ValidationError(
                 f"Must be one of: {', '.join(VISIBILITIES)}."

@@ -8,29 +8,29 @@
 // only one set of primitives mounts. Title/Description use the matching
 // primitive (vaul vs Radix) to keep each library's a11y wiring intact.
 
-import * as React from "react"
-import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { Drawer as DrawerPrimitive } from "vaul"
-import { X } from "lucide-react"
+import * as React from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Drawer as DrawerPrimitive } from "vaul";
+import { X } from "lucide-react";
 
-import { useIsMobile } from "@/hooks/use-mobile"
-import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 
 const ResponsiveModalContext = React.createContext<{ isMobile: boolean }>({
   isMobile: false,
-})
+});
 
 const useResponsiveModalContext = () =>
-  React.useContext(ResponsiveModalContext)
+  React.useContext(ResponsiveModalContext);
 
 interface ResponsiveModalProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  children: React.ReactNode
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
   /** Mobile-only snap points, e.g. `[0.5, 0.9]` or `["25%", "50%", "90%"]`. */
-  snapPoints?: (number | string)[]
+  snapPoints?: (number | string)[];
   /** When false, the sheet can't be dragged/clicked away (use while busy). */
-  dismissible?: boolean
+  dismissible?: boolean;
 }
 
 function ResponsiveModal({
@@ -40,7 +40,7 @@ function ResponsiveModal({
   snapPoints,
   dismissible = true,
 }: ResponsiveModalProps) {
-  const isMobile = useIsMobile()
+  const isMobile = useIsMobile();
 
   return (
     <ResponsiveModalContext.Provider value={{ isMobile }}>
@@ -60,37 +60,36 @@ function ResponsiveModal({
         </DialogPrimitive.Root>
       )}
     </ResponsiveModalContext.Provider>
-  )
+  );
 }
-ResponsiveModal.displayName = "ResponsiveModal"
+ResponsiveModal.displayName = "ResponsiveModal";
 
 const ResponsiveModalTrigger = (
   props: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Trigger>,
 ) => {
-  const { isMobile } = useResponsiveModalContext()
-  const Trigger = isMobile ? DrawerPrimitive.Trigger : DialogPrimitive.Trigger
-  return <Trigger {...props} />
-}
+  const { isMobile } = useResponsiveModalContext();
+  const Trigger = isMobile ? DrawerPrimitive.Trigger : DialogPrimitive.Trigger;
+  return <Trigger {...props} />;
+};
 
 const ResponsiveModalClose = (
   props: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Close>,
 ) => {
-  const { isMobile } = useResponsiveModalContext()
-  const Close = isMobile ? DrawerPrimitive.Close : DialogPrimitive.Close
-  return <Close {...props} />
-}
+  const { isMobile } = useResponsiveModalContext();
+  const Close = isMobile ? DrawerPrimitive.Close : DialogPrimitive.Close;
+  return <Close {...props} />;
+};
 
-interface ResponsiveModalContentProps
-  extends React.HTMLAttributes<HTMLDivElement> {
+interface ResponsiveModalContentProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Show the desktop close (X) button. Ignored on mobile (drag to dismiss). */
-  showClose?: boolean
+  showClose?: boolean;
 }
 
 const ResponsiveModalContent = React.forwardRef<
   HTMLDivElement,
   ResponsiveModalContentProps
 >(({ className, children, showClose = true, ...props }, ref) => {
-  const { isMobile } = useResponsiveModalContext()
+  const { isMobile } = useResponsiveModalContext();
 
   if (isMobile) {
     return (
@@ -111,7 +110,7 @@ const ResponsiveModalContent = React.forwardRef<
           {children}
         </DrawerPrimitive.Content>
       </DrawerPrimitive.Portal>
-    )
+    );
   }
 
   return (
@@ -134,15 +133,15 @@ const ResponsiveModalContent = React.forwardRef<
         )}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
-  )
-})
-ResponsiveModalContent.displayName = "ResponsiveModalContent"
+  );
+});
+ResponsiveModalContent.displayName = "ResponsiveModalContent";
 
 const ResponsiveModalHeader = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => {
-  const { isMobile } = useResponsiveModalContext()
+  const { isMobile } = useResponsiveModalContext();
   return (
     <div
       className={cn(
@@ -152,15 +151,15 @@ const ResponsiveModalHeader = ({
       )}
       {...props}
     />
-  )
-}
-ResponsiveModalHeader.displayName = "ResponsiveModalHeader"
+  );
+};
+ResponsiveModalHeader.displayName = "ResponsiveModalHeader";
 
 const ResponsiveModalFooter = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => {
-  const { isMobile } = useResponsiveModalContext()
+  const { isMobile } = useResponsiveModalContext();
   return (
     <div
       className={cn(
@@ -171,16 +170,16 @@ const ResponsiveModalFooter = ({
       )}
       {...props}
     />
-  )
-}
-ResponsiveModalFooter.displayName = "ResponsiveModalFooter"
+  );
+};
+ResponsiveModalFooter.displayName = "ResponsiveModalFooter";
 
 const ResponsiveModalTitle = React.forwardRef<
   HTMLHeadingElement,
   React.HTMLAttributes<HTMLHeadingElement> & { asChild?: boolean }
 >(({ className, ...props }, ref) => {
-  const { isMobile } = useResponsiveModalContext()
-  const Title = isMobile ? DrawerPrimitive.Title : DialogPrimitive.Title
+  const { isMobile } = useResponsiveModalContext();
+  const Title = isMobile ? DrawerPrimitive.Title : DialogPrimitive.Title;
   return (
     <Title
       ref={ref}
@@ -190,27 +189,27 @@ const ResponsiveModalTitle = React.forwardRef<
       )}
       {...props}
     />
-  )
-})
-ResponsiveModalTitle.displayName = "ResponsiveModalTitle"
+  );
+});
+ResponsiveModalTitle.displayName = "ResponsiveModalTitle";
 
 const ResponsiveModalDescription = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLParagraphElement> & { asChild?: boolean }
 >(({ className, ...props }, ref) => {
-  const { isMobile } = useResponsiveModalContext()
+  const { isMobile } = useResponsiveModalContext();
   const Description = isMobile
     ? DrawerPrimitive.Description
-    : DialogPrimitive.Description
+    : DialogPrimitive.Description;
   return (
     <Description
       ref={ref}
       className={cn("text-sm text-muted-foreground", className)}
       {...props}
     />
-  )
-})
-ResponsiveModalDescription.displayName = "ResponsiveModalDescription"
+  );
+});
+ResponsiveModalDescription.displayName = "ResponsiveModalDescription";
 
 /** Scrollable body wrapper; negative margins let it use the content's gutters
  * while keeping the scrollbar at the sheet edge. Pass `className` to tune. */
@@ -219,8 +218,8 @@ const ResponsiveModalBody = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("flex-1 overflow-y-auto", className)} {...props} />
-)
-ResponsiveModalBody.displayName = "ResponsiveModalBody"
+);
+ResponsiveModalBody.displayName = "ResponsiveModalBody";
 
 export {
   ResponsiveModal,
@@ -232,4 +231,4 @@ export {
   ResponsiveModalTitle,
   ResponsiveModalDescription,
   ResponsiveModalBody,
-}
+};

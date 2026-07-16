@@ -26,11 +26,23 @@ interface SwipeOptions {
   edge?: "left" | "right";
   /** How close to the edge (px) the touch must start when `edge` is set. */
   edgeSize?: number;
+  /**
+   * Ignore HORIZONTAL swipes that START within this many px of the left
+   * screen edge — that zone belongs to the nav drawer's finger-tracked
+   * edge-drag, which must not double-trigger other horizontal gestures.
+   */
+  deadZoneLeft?: number;
 }
 
 export function useSwipe(options: SwipeOptions): SwipeHandlers {
   const start = useRef<{ x: number; y: number } | null>(null);
-  const { threshold = 56, restraint = 80, edge, edgeSize = 28 } = options;
+  const {
+    threshold = 56,
+    restraint = 80,
+    edge,
+    edgeSize = 28,
+    deadZoneLeft = 0,
+  } = options;
 
   return {
     onTouchStart: (e) => {
@@ -47,6 +59,7 @@ export function useSwipe(options: SwipeOptions): SwipeHandlers {
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
       if (absX >= threshold && absY <= restraint) {
+        if (deadZoneLeft && s.x <= deadZoneLeft) return;
         // Edge gating: only accept horizontal swipes that began at the edge.
         if (edge === "left" && s.x > edgeSize) return;
         if (edge === "right" && s.x < window.innerWidth - edgeSize) return;

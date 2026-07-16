@@ -12,7 +12,6 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router-dom";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { AppSidebar } from "@/components/chat/AppSidebar";
 import { MobileNav } from "@/components/MobileNav";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
@@ -20,6 +19,7 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { HeaderSlotProvider } from "@/components/layout/HeaderSlot";
 import { RouteTransition } from "@/components/layout/RouteTransition";
 import { MobileTabsHost } from "@/components/layout/MobileTabsHost";
+import { MobileNavDrawer } from "@/components/layout/MobileNavDrawer";
 import { ShellViewportProvider } from "@/components/layout/shellViewport";
 import { isTabPath } from "@/components/layout/tabPages";
 import { useIsMobileShell } from "@/hooks/useIsMobileShell";
@@ -27,7 +27,6 @@ import { usePreventPinchZoom } from "@/hooks/usePreventPinchZoom";
 import { useMobileViewport } from "@/hooks/useMobileViewport";
 import { useDeleteSession, useSessions } from "@/hooks/api";
 import { useBackClose } from "@/hooks/useBackClose";
-import { useSwipe } from "@/hooks/useSwipe";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 
 const COLLAPSE_KEY = "aeva_sidebar_collapsed";
@@ -142,7 +141,6 @@ export function AppLayout() {
   });
 
   const openMobileNav = useCallback(() => setMobileOpen(true), []);
-  const navCloseSwipe = useSwipe({ onSwipeLeft: () => setMobileOpen(false) });
 
   // Native back gesture/button closes the mobile nav drawer and the command
   // palette instead of navigating away from the app.
@@ -185,12 +183,11 @@ export function AppLayout() {
           <aside className="hidden shrink-0 border-r border-border/50 lg:block">
             {sidebar(false)}
           </aside>
-          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-            {/* Swipe right→left anywhere on the open sidebar closes it. */}
-            <SheetContent side="left" className="w-72 p-0" {...navCloseSwipe}>
-              {sidebar(true)}
-            </SheetContent>
-          </Sheet>
+          {/* Finger-tracked drawer: edge-drag opens, drag-left closes, both
+              following the touch with velocity-based completion. */}
+          <MobileNavDrawer open={mobileOpen} onOpenChange={setMobileOpen}>
+            {sidebar(true)}
+          </MobileNavDrawer>
 
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <AppHeader

@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
+import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import {
@@ -124,9 +126,33 @@ function verificationMeta(env: Record<string, string>): Plugin {
   };
 }
 
+/** Short commit SHA of the working tree, or "" outside a git checkout. */
+function localGitSha(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode, isSsrBuild }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  // Version/build stamping for the About screen (never hardcoded in src):
+  // version from package.json, build id from CI (Vercel commit SHA) or the
+  // local git checkout, environment from the deploy target.
+  const pkg = JSON.parse(
+    readFileSync(path.resolve(__dirname, "package.json"), "utf-8"),
+  ) as { version: string };
+  const buildId =
+    env.VITE_BUILD_ID ||
+    (env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) ||
+    localGitSha() ||
+    "local";
   // Canonical site origin used for sitemap/robots/llms.txt. Keep in sync with
   // SITE_URL in src/lib/seo.ts (both default to the same origin).
   const siteUrl = (env.VITE_SITE_URL ?? "https://studyassistant.app").replace(
@@ -135,6 +161,11 @@ export default defineConfig(({ mode, isSsrBuild }) => {
   );
 
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(env.VITE_APP_VERSION || pkg.version),
+      __BUILD_ID__: JSON.stringify(buildId),
+      __BUILD_ENV__: JSON.stringify(env.VERCEL_ENV || mode),
+    },
     server: {
       host: "::",
       port: 8080,

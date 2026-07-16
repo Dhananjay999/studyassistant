@@ -2,24 +2,21 @@ import { ExternalLink, FileText, MessageSquareHeart, Shield } from "lucide-react
 import type { LucideIcon } from "lucide-react";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { SettingsGroup } from "@/components/settings/primitives";
-import { APP_META } from "@/components/settings/constants";
-
-const LINKS: ReadonlyArray<{
-  label: string;
-  href: string;
-  icon: LucideIcon;
-}> = [
-  { label: "Privacy Policy", href: APP_META.links.privacy, icon: Shield },
-  { label: "Terms of Service", href: APP_META.links.terms, icon: FileText },
-  {
-    label: "Send Feedback",
-    href: APP_META.links.feedback,
-    icon: MessageSquareHeart,
-  },
-];
+import { APP_META, feedbackMailto } from "@/components/settings/constants";
 
 /** App identity, version/build, and legal/feedback links. */
 export function AboutSection() {
+  const links: ReadonlyArray<{
+    label: string;
+    href: string;
+    icon: LucideIcon;
+  }> = [
+    { label: "Privacy Policy", href: APP_META.links.privacy, icon: Shield },
+    { label: "Terms of Service", href: APP_META.links.terms, icon: FileText },
+    // Built per render: the mailto body embeds live version/platform info.
+    { label: "Send Feedback", href: feedbackMailto(), icon: MessageSquareHeart },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-border/60 bg-card/40 p-6 text-center">
@@ -42,12 +39,18 @@ export function AboutSection() {
             <dt className="text-sm text-muted-foreground">Build</dt>
             <dd className="font-mono text-sm font-medium">{APP_META.build}</dd>
           </div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <dt className="text-sm text-muted-foreground">Environment</dt>
+            <dd className="text-sm font-medium capitalize">
+              {APP_META.environment}
+            </dd>
+          </div>
         </dl>
       </SettingsGroup>
 
       <SettingsGroup title="Legal & support">
         <ul className="divide-y divide-border/50">
-          {LINKS.map((link) => {
+          {links.map((link) => {
             const Icon = link.icon;
             const external = !link.href.startsWith("mailto:");
             return (

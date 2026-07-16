@@ -3,6 +3,7 @@
 // handlers onto the tab content container. Built on `useSwipe`, so it ignores
 // vertical scrolling and only reacts to decisive horizontal gestures.
 
+import { DRAWER_EDGE_SIZE } from "@/components/layout/MobileNavDrawer";
 import { useSwipe, type SwipeHandlers } from "@/hooks/useSwipe";
 
 export function useTabSwipe(
@@ -21,5 +22,7 @@ export function useTabSwipe(
   return useSwipe({
     onSwipeLeft: () => move(1),
     onSwipeRight: () => move(-1),
+    // The nav drawer's finger-tracked edge-drag owns gestures starting there.
+    deadZoneLeft: DRAWER_EDGE_SIZE,
   });
 }

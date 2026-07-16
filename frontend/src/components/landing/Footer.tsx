@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { BrandLogo } from "@/components/common/BrandLogo";
+import { SUPPORT_EMAIL } from "@/components/settings/constants";
 
 const LINKS = [
   { to: "/features", label: "Features" },
@@ -28,6 +29,14 @@ export function Footer() {
               {l.label}
             </Link>
           ))}
+          {/* Plain mailto (no dynamic body): this renders in the prerender,
+              where runtime platform info isn't available. */}
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="hover:text-foreground"
+          >
+            Contact
+          </a>
         </nav>
         <p className="text-xs text-muted-foreground">
           © {year} StudyAssistant. Study smarter.

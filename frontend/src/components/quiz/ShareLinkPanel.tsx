@@ -21,12 +21,37 @@ const SOCIALS: {
   icon: typeof FaWhatsapp;
   className: string;
 }[] = [
-  { key: "whatsapp", label: "WhatsApp", icon: FaWhatsapp, className: "bg-[#25D366]" },
-  { key: "telegram", label: "Telegram", icon: FaTelegram, className: "bg-[#229ED9]" },
+  {
+    key: "whatsapp",
+    label: "WhatsApp",
+    icon: FaWhatsapp,
+    className: "bg-[#25D366]",
+  },
+  {
+    key: "telegram",
+    label: "Telegram",
+    icon: FaTelegram,
+    className: "bg-[#229ED9]",
+  },
   { key: "twitter", label: "X", icon: FaXTwitter, className: "bg-black" },
-  { key: "linkedin", label: "LinkedIn", icon: FaLinkedinIn, className: "bg-[#0A66C2]" },
-  { key: "facebook", label: "Facebook", icon: FaFacebookF, className: "bg-[#1877F2]" },
-  { key: "email", label: "Email", icon: Mail, className: "bg-muted-foreground" },
+  {
+    key: "linkedin",
+    label: "LinkedIn",
+    icon: FaLinkedinIn,
+    className: "bg-[#0A66C2]",
+  },
+  {
+    key: "facebook",
+    label: "Facebook",
+    icon: FaFacebookF,
+    className: "bg-[#1877F2]",
+  },
+  {
+    key: "email",
+    label: "Email",
+    icon: Mail,
+    className: "bg-muted-foreground",
+  },
 ];
 
 export function ShareLinkPanel({
@@ -51,12 +76,16 @@ export function ShareLinkPanel({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-2">
       {/* Copy link — the primary action */}
       <div className="flex gap-2">
         <Input readOnly value={link} className="text-xs" />
         <Button onClick={() => void copy()} className="shrink-0 gap-1.5">
-          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          {copied ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>

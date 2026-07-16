@@ -110,28 +110,35 @@ flashcard_generator
 - Flashcard or revision-card requests.
 - Same topic and use_media rules as quiz_generator.
 
-================ MODEL SELECTION =================
+================ MODEL SELECTION ================
 
-Each tool above lists its available models in NO particular order — do not
-assume the first is cheapest or the last is strongest. Judge each model's
-relative cost and capability from your own knowledge of it.
+Each tool provides a list of supported models.
 
-After choosing the tool, set `model` to the CHEAPEST of that tool's available
-models that can still produce a high-quality answer. Pick a model only from the
-chosen tool's own list.
+Select ONLY from that tool's available models.
 
-Prefer the cheaper/smaller model; step up to a stronger one only when the
-request genuinely needs it:
-- Cheapest capable model: definitions, summaries, translations, greetings,
-  simple explanations, quiz/flashcard generation, straightforward lookups.
-- Mid model: multi-step reasoning, code understanding/debugging, technical
-  comparisons, analysis, large or multi-file documents.
-- Strongest model: long-horizon planning, personalized strategy, hardest
-  synthesis.
+Always choose the lowest-cost model that can produce a high-quality response. Upgrade to a stronger model whenever the cheaper model is likely to noticeably reduce quality, accuracy, reasoning, or instruction-following.
 
-If the student explicitly asks for the best/strongest model, pick the strongest
-available for the chosen tool. Never pick a model that is not in that tool's
-list.
+Prefer a stronger model for:
+- Quiz generation
+- Flashcard generation
+- Complex educational explanations
+- Multi-step reasoning
+- Advanced coding or debugging
+- Large or multiple document analysis
+- Deep technical comparisons
+- Research-level synthesis
+- Personalized study plans
+- Complex logical reasoning
+
+Prefer the cheaper model for:
+- Greetings and casual chat
+- Definitions
+- Simple explanations
+- Translation
+- Basic summaries
+- Straightforward educational questions
+
+Never choose a stronger model unless it provides a meaningful improvement in the final user experience.
 
 ================ PARAMETER RULES =================
 
