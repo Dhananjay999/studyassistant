@@ -4,12 +4,12 @@
 import { useState } from "react";
 import { Check, Copy, Mail } from "lucide-react";
 import {
-  FaFacebookF,
-  FaLinkedinIn,
-  FaTelegram,
-  FaWhatsapp,
-  FaXTwitter,
-} from "react-icons/fa6";
+  FacebookIcon,
+  LinkedInIcon,
+  TelegramIcon,
+  WhatsAppIcon,
+  XIcon,
+} from "@/components/icons/BrandIcons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,32 +18,32 @@ import { buildShareLinks, type SharePlatform } from "@/lib/share";
 const SOCIALS: {
   key: SharePlatform;
   label: string;
-  icon: typeof FaWhatsapp;
+  icon: React.ComponentType<{ className?: string }>;
   className: string;
 }[] = [
   {
     key: "whatsapp",
     label: "WhatsApp",
-    icon: FaWhatsapp,
+    icon: WhatsAppIcon,
     className: "bg-[#25D366]",
   },
   {
     key: "telegram",
     label: "Telegram",
-    icon: FaTelegram,
+    icon: TelegramIcon,
     className: "bg-[#229ED9]",
   },
-  { key: "twitter", label: "X", icon: FaXTwitter, className: "bg-black" },
+  { key: "twitter", label: "X", icon: XIcon, className: "bg-black" },
   {
     key: "linkedin",
     label: "LinkedIn",
-    icon: FaLinkedinIn,
+    icon: LinkedInIcon,
     className: "bg-[#0A66C2]",
   },
   {
     key: "facebook",
     label: "Facebook",
-    icon: FaFacebookF,
+    icon: FacebookIcon,
     className: "bg-[#1877F2]",
   },
   {

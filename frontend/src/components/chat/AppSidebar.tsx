@@ -267,7 +267,7 @@ export function AppSidebar({
           >
             <Search className="h-4 w-4 shrink-0" />
             <span className="flex-1 text-left">Search</span>
-            <span className="text-[10px] text-muted-foreground/70">
+            <span className="text-[10px] text-muted-foreground">
               {formatShortcut(["mod", "F"])}
             </span>
           </Button>

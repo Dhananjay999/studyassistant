@@ -26,6 +26,7 @@ import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { ListToolbar } from "@/components/common/list";
 import { FolderPickerSheet } from "@/components/bookmarks/FolderPickerSheet";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useBackClose } from "@/hooks/useBackClose";
 import { useLongPress } from "@/hooks/useLongPress";
 import {
   DropdownMenu,
@@ -220,6 +221,10 @@ export default function BookmarksPage() {
     setSelectMode(false);
     setSelectedIds(new Set());
   };
+
+  // Device/browser Back while selecting exits select mode (deselecting
+  // everything) instead of leaving the page; the next Back navigates as usual.
+  useBackClose(selectMode, exitSelect);
 
   const confirmDelete = async () => {
     if (!confirmIds) return;

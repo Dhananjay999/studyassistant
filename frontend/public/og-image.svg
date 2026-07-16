@@ -34,11 +34,12 @@
   <!-- Subhead -->
   <text x="92" y="480" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="32" font-weight="500" fill="#b9b6c9">Chat with your PDFs · Quizzes · Flashcards · Analytics</text>
 
-  <!-- Feature pills -->
-  <g font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="24" font-weight="600" fill="#e7e5f0">
-    <rect x="90" y="524" width="200" height="56" rx="28" fill="#ffffff" opacity="0.08" />
-    <text x="120" y="561">AI Study Buddy</text>
-    <rect x="308" y="524" width="176" height="56" rx="28" fill="#ffffff" opacity="0.08" />
-    <text x="338" y="561">Free to start</text>
+  <!-- Feature pills: labels centered with text-anchor so they can never
+       overflow the pill edges regardless of font metrics. -->
+  <g font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="24" font-weight="600" fill="#e7e5f0" text-anchor="middle">
+    <rect x="90" y="524" width="236" height="56" rx="28" fill="#ffffff" opacity="0.08" />
+    <text x="208" y="561">AI Study Buddy</text>
+    <rect x="344" y="524" width="204" height="56" rx="28" fill="#ffffff" opacity="0.08" />
+    <text x="446" y="561">Free to start</text>
   </g>
 </svg>

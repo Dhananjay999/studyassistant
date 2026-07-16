@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight, Loader2, Sparkles } from "lucide-react";
-import { FcGoogle } from "react-icons/fc";
+import { GoogleIcon } from "@/components/icons/BrandIcons";
 import { Button } from "@/components/ui/button";
 import { Seo } from "@/components/common/Seo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -181,7 +181,7 @@ function Welcome() {
           {signingIn ? (
             <Loader2 className="h-5 w-5 animate-spin text-brand-1" />
           ) : (
-            <FcGoogle className="h-5 w-5" />
+            <GoogleIcon className="h-5 w-5" />
           )}
           {signingIn ? "Signing you in…" : "Continue with Google"}
         </button>

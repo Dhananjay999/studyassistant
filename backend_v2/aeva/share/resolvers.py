@@ -19,7 +19,7 @@ from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.quiz import exam_patterns
 from aeva.quiz.quiz_engine import QuizEngine
 from aeva.quiz.quiz_repository import QuizRepository
-from aeva.quiz.share_og import render_quiz_og_png
+from aeva.quiz.share_og import render_quiz_og_png, render_result_og_png
 
 # Mints/reuses a companion share; passed into ``on_create`` so resolvers can
 # link related shares (e.g. a result share needs its quiz attemptable).
@@ -297,8 +297,19 @@ class QuizResultShareResolver(ShareResolver):
                 f"full result and attempt the quiz yourself on "
                 f"StudyAssistant."
             ),
-            "has_image": False,
+            "has_image": True,
         }
+
+    def og_image(self, share: dict[str, Any]) -> bytes | None:
+        """Render the dynamic score-card preview for a shared result."""
+        meta = share.get("metadata") or {}
+        return render_result_og_png(
+            meta.get("title") or "Quiz",
+            float(meta.get("score") or 0),
+            int(meta.get("correct_count") or 0),
+            int(meta.get("total") or 0),
+            int(meta.get("question_count") or 0),
+        )
 
 
 # ------------------------------------------------------------------------- #

@@ -30,8 +30,19 @@ import { BookmarkPreview } from "@/components/chat/BookmarkPreview";
 import { ChatComposer, type ChatComposerHandle } from "@/components/chat/ChatComposer";
 import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
 import { QuizSetup } from "@/components/chat/QuizSetup";
-import { QuizDrawer } from "@/components/chat/QuizDrawer";
-import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
+// Lazy chunks: these two pull the whole quiz/flashcard stack (runner, report,
+// share, PDF export...). Loading them on first open keeps the chat page's
+// critical request chain small (Lighthouse LCP finding).
+const QuizDrawer = lazy(() =>
+  import("@/components/chat/QuizDrawer").then((m) => ({
+    default: m.QuizDrawer,
+  })),
+);
+const FlashcardViewer = lazy(() =>
+  import("@/components/chat/FlashcardViewer").then((m) => ({
+    default: m.FlashcardViewer,
+  })),
+);
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
 import { useShell } from "@/components/layout/AppLayout";
@@ -1184,13 +1195,27 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <QuizDrawer quiz={activeQuiz} open={quizOpen} onOpenChange={setQuizOpen} />
+      {/* Mounted (and their chunks fetched) only once first opened; kept
+         mounted afterwards so close animations and state survive. */}
+      {activeQuiz && (
+        <Suspense fallback={null}>
+          <QuizDrawer
+            quiz={activeQuiz}
+            open={quizOpen}
+            onOpenChange={setQuizOpen}
+          />
+        </Suspense>
+      )}
 
-      <FlashcardViewer
-        setId={activeFlashcards}
-        open={flashcardsOpen}
-        onOpenChange={setFlashcardsOpen}
-      />
+      {activeFlashcards && (
+        <Suspense fallback={null}>
+          <FlashcardViewer
+            setId={activeFlashcards}
+            open={flashcardsOpen}
+            onOpenChange={setFlashcardsOpen}
+          />
+        </Suspense>
+      )}
 
       <OnboardingFlow
         open={showOnboarding}

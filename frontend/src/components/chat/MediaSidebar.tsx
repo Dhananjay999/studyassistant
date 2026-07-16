@@ -199,6 +199,7 @@ export function MediaSidebar({
                           fileName: m.file_name,
                         })
                   }
+                  aria-label={`Preview ${m.file_name}`}
                   className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-muted"
                 >
                   {isImage && m.signed_url ? (
@@ -206,6 +207,9 @@ export function MediaSidebar({
                       src={m.signed_url}
                       alt={m.file_name}
                       loading="lazy"
+                      decoding="async"
+                      width={36}
+                      height={36}
                       className="h-full w-full object-cover"
                     />
                   ) : isImage ? (

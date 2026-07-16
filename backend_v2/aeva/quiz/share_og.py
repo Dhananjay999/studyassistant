@@ -126,6 +126,59 @@ def _logo(draw: ImageDraw.ImageDraw, x: int, y: int, size: int) -> None:
     )
 
 
+def render_result_og_png(
+    title: str,
+    score: float,
+    correct_count: int,
+    total: int,
+    question_count: int,
+) -> bytes:
+    """Build the share card for a quiz RESULT and return PNG bytes.
+
+    Score-first layout: the big percentage is the hook, the quiz title gives
+    context, and the pills invite the viewer to attempt the quiz themselves.
+    """
+    img = _gradient()
+    draw = ImageDraw.Draw(img)
+
+    _logo(draw, MARGIN, 72, 64)
+    draw.text((MARGIN + 84, 86), "StudyAssistant", font=_font(38), fill=WHITE)
+
+    # Hero score.
+    score_font = _font(150)
+    score_text = f"{round(score)}%"
+    draw.text((MARGIN, 180), score_text, font=score_font, fill=WHITE)
+    score_w = draw.textlength(score_text, font=score_font)
+    if total > 0:
+        draw.text(
+            (MARGIN + score_w + 28, 268),
+            f"{correct_count}/{total} correct",
+            font=_font(40),
+            fill=(224, 224, 245),
+        )
+
+    # Quiz title under the score.
+    y = 372
+    title_font = _font(48)
+    for line in _wrap(draw, title or "Quiz", title_font, W - MARGIN * 2, 2):
+        draw.text((MARGIN, y), line, font=title_font, fill=WHITE)
+        y += 58
+
+    pill_font = _font(30)
+    px = MARGIN
+    py = H - MARGIN - 54
+    pills = ["Quiz result"]
+    if question_count:
+        pills.append(f"{question_count} Questions")
+    pills.append("Attempt this quiz")
+    for text in pills:
+        px = _pill(draw, px, py, text, pill_font) + 16
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def render_quiz_og_png(
     title: str,
     topic: str,

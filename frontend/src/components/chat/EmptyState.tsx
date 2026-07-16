@@ -59,7 +59,9 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08, duration: 0.5 }}
       >
-        <h2 className="text-gradient animate-gradient-pan bg-[length:200%_auto] font-display text-3xl font-bold">
+        {/* Static gradient: the panning background animated a non-composited
+           property (Lighthouse CLS/jank finding) on the page's LCP element. */}
+        <h2 className="text-gradient font-display text-3xl font-bold">
           Ask Aeva anything
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
