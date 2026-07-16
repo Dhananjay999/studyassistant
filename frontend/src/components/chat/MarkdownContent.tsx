@@ -16,7 +16,48 @@ import type { SourceInfo } from "@/types";
 
 /** Filename/title comparison key: lowercased, extension + surrounding space stripped. */
 function citeKey(value?: string): string {
-  return (value ?? "").toLowerCase().replace(/\.[a-z0-9]+$/i, "").trim();
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .trim();
+}
+
+const DOMAIN_MAX = 10;
+
+/** Bare hostname of an http(s) link ("www." stripped), or null. */
+function domainOf(href?: string): string | null {
+  try {
+    const url = new URL(href ?? "");
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.hostname.replace(/^www\./, "") || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Web citation chip: favicon + domain (truncated), instead of the full link
+ * text — keeps inline citations from eating a whole line. */
+function WebCitationChip({ href, domain }: { href?: string; domain: string }) {
+  const label =
+    domain.length > DOMAIN_MAX ? `${domain.slice(0, DOMAIN_MAX)}…` : domain;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={href}
+      className="mx-px inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/40 px-1 align-baseline text-[0.7em] font-medium leading-none text-muted-foreground no-underline transition-colors hover:bg-muted"
+    >
+      <img
+        src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="my-1 block h-2.5 w-2.5 shrink-0 self-center rounded-[3px]"
+      />
+      {label}
+    </a>
+  );
 }
 
 /** Compact, ChatGPT-style inline citation chip that opens the cited page. */
@@ -142,7 +183,11 @@ export function MarkdownContent({
             );
           }
           // External links (typically inline web-source citations) render as a
-          // compact chip so citations read as citations without disrupting flow.
+          // tiny favicon + domain chip — the full URL stays on hover/click.
+          const domain = domainOf(href);
+          if (domain) {
+            return <WebCitationChip href={href} domain={domain} />;
+          }
           return (
             <a
               href={href}

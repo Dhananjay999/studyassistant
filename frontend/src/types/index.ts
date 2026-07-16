@@ -84,10 +84,25 @@ export function isDocSource(s: SourceInfo): boolean {
   return Boolean((s.media_id || s.document_name) && !s.url);
 }
 
+/** Input widgets the clarification planner can request (mirrors backend). */
+export type ClarificationInputType =
+  | "short_text"
+  | "long_text"
+  | "number"
+  | "single_select"
+  | "multi_select"
+  | "chips"
+  | "dropdown"
+  | "radio"
+  | "toggle"
+  | "true_false";
+
 export interface ClarificationQuestion {
   id: string;
   text: string;
   options?: string[] | null;
+  /** Best-fit input widget; unknown/absent values render as chips. */
+  input_type?: ClarificationInputType | string;
 }
 
 export interface ClarificationData {

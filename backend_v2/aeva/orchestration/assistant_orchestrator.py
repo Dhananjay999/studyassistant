@@ -307,9 +307,13 @@ class AssistantOrchestrator:
             run = self._get_run(ctx.run_id, ctx.user_id)
             if not run:
                 raise CustomError(ERROR_CODES["CLARIFICATION_EXPIRED"])
+            plan_questions = (
+                (run.get("plan") or {}).get("clarification") or {}
+            ).get("questions") or []
             enriched_message = self._merge_clarification(
                 run["original_message"],
                 ctx.clarification,
+                {q["id"]: q["text"] for q in plan_questions if q.get("id")},
             )
             if (run.get("plan") or {}).get("kind") == "media_choice":
                 media_choice_ids = self._resolve_media_choice(
@@ -317,7 +321,11 @@ class AssistantOrchestrator:
                 )
             self._complete_run(ctx.run_id)
 
-        self.supabase.add_message(ctx.session_id, "user", ctx.message)
+        # Clarification replies are invisible: the answers are folded into the
+        # enriched message for the tool, but no user bubble is persisted — on
+        # reload the answer reads as a direct continuation of the original ask.
+        if not (ctx.run_id and ctx.clarification):
+            self.supabase.add_message(ctx.session_id, "user", ctx.message)
 
         # Deterministic plans (resolved file choice, popover-driven quiz/flash)
         # skip LLM planning entirely.
@@ -402,6 +410,12 @@ class AssistantOrchestrator:
         forces it. Follow-up chips are no longer decided here — they are derived
         from the finished answer in ``_attach_actions``.
         """
+        # Hard contract: once the user has responded to a clarification
+        # (answered OR skipped), this turn MUST answer. Never re-clarify.
+        if plan.get("action") == "clarify" and ctx.clarification is not None:
+            logger.info("Blocking repeat clarification after user response")
+            return self._fallback_tool_plan(ctx, enriched_message)
+
         if (
             plan.get("action") == "clarify"
             and not self._has_unresolved_reference(
@@ -962,10 +976,18 @@ class AssistantOrchestrator:
         )
         clar_hint = ""
         if clarification:
-            clar_hint = (
-                f"\nUser clarification action: "
-                f"{clarification.action}. Prefer run_tool."
-            )
+            if clarification.action == ClarificationAction.SKIP:
+                clar_hint = (
+                    "\nThe user SKIPPED the clarifying questions. You MUST "
+                    "choose run_tool and answer with the best reasonable "
+                    "assumptions. Choosing clarify again is forbidden."
+                )
+            else:
+                clar_hint = (
+                    "\nThe user has answered the clarifying questions (see "
+                    "the message). You MUST choose run_tool now; asking for "
+                    "more clarification is forbidden."
+                )
 
         rendered = prompts.PromptBuilder.build(
             prompts.PLAN_TURN_TEMPLATE,
@@ -1158,6 +1180,7 @@ class AssistantOrchestrator:
                 id=q["id"],
                 text=q["text"],
                 options=q.get("options"),
+                input_type=q.get("input_type") or "chips",
             )
             for q in clar.get("questions", [])
         ]
@@ -1185,7 +1208,12 @@ class AssistantOrchestrator:
                 "clarification": {
                     "reason": clar_req.reason,
                     "questions": [
-                        {"id": q.id, "text": q.text, "options": q.options}
+                        {
+                            "id": q.id,
+                            "text": q.text,
+                            "options": q.options,
+                            "input_type": q.input_type,
+                        }
                         for q in questions
                     ],
                 },
@@ -1202,18 +1230,34 @@ class AssistantOrchestrator:
     def _merge_clarification(
         original: str,
         response: object,
+        questions_by_id: dict[str, str] | None = None,
     ) -> str:
-        """Build enriched message from clarification response."""
+        """Build enriched message from clarification response.
+
+        ``questions_by_id`` maps question ids to their text so answers read
+        as "Question -> Answer" pairs instead of bare ids, which grounds the
+        answering model much better. A skip is made explicit so the model
+        answers with assumptions instead of asking again.
+        """
         action = response.action
         if action == ClarificationAction.SKIP:
-            return original
+            return (
+                f"{original}\n\n(The user skipped the clarifying questions. "
+                "Answer with the best reasonable assumptions from the "
+                "conversation, profile, and media — do not ask again.)"
+            )
         if action == ClarificationAction.CUSTOM and response.custom_text:
             return f"{original}\n\nAdditional context: {response.custom_text}"
         if action == ClarificationAction.ANSWER and response.answers:
+            labels = questions_by_id or {}
             parts = [
-                f"{qid}: {ans}" for qid, ans in response.answers.items()
+                f"- {labels.get(qid, qid)}: {ans}"
+                for qid, ans in response.answers.items()
             ]
-            return f"{original}\n\nClarifications:\n" + "\n".join(parts)
+            return (
+                f"{original}\n\nThe user answered the clarifying "
+                "questions:\n" + "\n".join(parts)
+            )
         return original
 
     @staticmethod

@@ -60,17 +60,24 @@ Choose "clarify" ONLY when the request cannot be completed accurately because re
 
 Clarify when:
 - The request refers to an unknown subject ("explain this", "summarize this", "solve this") and neither conversation nor media identifies it.
-- A quiz or flashcards are requested with no inferable topic.
+- Flashcards are requested with no inferable topic.
 - Multiple uploaded files make the reference ambiguous.
-- Uploaded media is selected and a quiz/flashcard request could reasonably refer either to the uploaded material or the recent discussion.
+- Uploaded media is selected and a flashcard request could reasonably refer
+  either to the uploaded material or the recent discussion.
 - Multiple valid interpretations would produce materially different results.
+- A broad open-ended request ("help me prepare for an exam") is missing
+  information that would materially change the answer.
 
 Do NOT clarify when:
 - The subject is explicitly stated.
 - The recent conversation clearly establishes the subject.
 - A reasonable default exists (count, difficulty, format, etc.).
-- The user is replying to a previous clarification.
+- The user is replying to a previous clarification — including a SKIPPED
+  one. After any clarification response you MUST run a tool and answer with
+  the best possible assumptions; never ask again.
 - The message is greeting, thanks, goodbye, or other small talk.
+- The request is a quiz request. Quizzes have their own dedicated setup
+  form — never use clarify for them.
 
 ================ TOOL SELECTION =================
 
@@ -148,11 +155,45 @@ Never choose a stronger model unless it provides a meaningful improvement in the
 - Omit optional parameters the student did not specify.
 - Choose exactly one tool.
 
+```text
 ================ CLARIFICATION =================
 
-When action="clarify", return:
-- reason: one short sentence.
-- questions: usually one question with 3-6 concise suggested options.
+Clarification is a LAST RESORT. Default to `run_tool`.
+
+Only choose `clarify` when the answer would likely be incorrect or materially misleading without additional information.
+
+Before clarifying, always use:
+- Current message
+- Conversation history
+- Previous clarification answers
+- User profile
+- Selected/uploaded media
+
+If the missing information can be reasonably inferred, do NOT clarify.
+
+Do NOT clarify for:
+- Follow-up requests whose subject can be resolved from conversation ("explain this", "summarize it", "make it simpler", "another example", "continue", etc.).
+- Greetings or casual conversation.
+- Quiz generation (uses its own dedicated configuration form).
+- Requests where only optional details are missing.
+
+Clarify only for requests such as:
+- Unknown references ("explain this", "compare these", "solve this") with no context.
+- Missing uploaded content ("summarize this", "analyze this image") when no media exists.
+- Broad requests where essential information is missing ("help me prepare for an exam").
+
+When clarifying:
+- Plan the COMPLETE clarification in one response.
+- Return the minimum questions required (prefer 1, maximum 3).
+- Choose the best input type for each question.
+- Prefer structured inputs over free text.
+- Do not include "Other" or "Custom" options (the client adds them automatically).
+
+After the frontend submits the clarification answers, NEVER ask another clarification question. Generate the final answer immediately.
+
+If the user closes or skips clarification, treat it as skipped and continue with reasonable assumptions. Never reopen clarification automatically.
+```
+
 
 Return only JSON matching the supplied schema.
 """,
@@ -175,8 +216,9 @@ PLAN_TURN_SCHEMA: dict = {
         "clarification": {
             "type": "object",
             "description": (
-                "Present only when action is clarify. One focused question "
-                "with 3-6 tappable options is the norm."
+                "Present only when action is clarify. The COMPLETE "
+                "clarification plan: every missing detail as its own "
+                "question, all in this one response (max 3)."
             ),
             "properties": {
                 "reason": {
@@ -192,13 +234,38 @@ PLAN_TURN_SCHEMA: dict = {
                         "properties": {
                             "id": {"type": "string"},
                             "text": {"type": "string"},
+                            "input_type": {
+                                "type": "string",
+                                "description": (
+                                    "Best-fit input widget for the answer. "
+                                    "Prefer structured types over free "
+                                    "text whenever options are knowable."
+                                ),
+                                "enum": [
+                                    "short_text",
+                                    "long_text",
+                                    "number",
+                                    "single_select",
+                                    "multi_select",
+                                    "chips",
+                                    "dropdown",
+                                    "radio",
+                                    "toggle",
+                                    "true_false",
+                                ],
+                            },
                             "options": {
                                 "type": "array",
                                 "items": {"type": "string"},
                                 "nullable": True,
+                                "description": (
+                                    "3-6 concise choices for option-based "
+                                    "types (up to 10 for dropdown). Never "
+                                    "include an Other/Custom option."
+                                ),
                             },
                         },
-                        "required": ["id", "text"],
+                        "required": ["id", "text", "input_type"],
                     },
                 },
             },

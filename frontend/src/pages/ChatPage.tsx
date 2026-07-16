@@ -386,6 +386,9 @@ export default function ChatPage() {
         flashcardOptions?: { count?: number };
         sourceContent?: string;
         displayText?: string;
+        /** Don't render a user bubble for this turn — the reply appears to
+         * continue the previous flow (used for clarification answers). */
+        silent?: boolean;
       },
     ) => {
       if (streaming) return;
@@ -429,7 +432,16 @@ export default function ChatPage() {
       // never sees a blank waiting state.
       setMessages((prev) => [
         ...prev,
-        { id: userMsgId, role: "user", content: display, createdAt: new Date() },
+        ...(opts?.silent
+          ? []
+          : [
+              {
+                id: userMsgId,
+                role: "user" as const,
+                content: display,
+                createdAt: new Date(),
+              },
+            ]),
         {
           id: streamId,
           role: "assistant",
@@ -629,7 +641,9 @@ export default function ChatPage() {
           ? answer.custom_text || "Custom answer"
           : Object.values(answer.answers ?? {}).join(", ") || "Submitted answer";
     setPendingClar(null);
-    send(label, { runId: pendingClar?.runId, clarification: answer });
+    // Silent: the clarification answers never appear as a chat bubble — the
+    // response simply continues generating in the same flow.
+    send(label, { runId: pendingClar?.runId, clarification: answer, silent: true });
   };
 
   const handleGenerateQuiz = (
@@ -1049,7 +1063,6 @@ export default function ChatPage() {
                   data={pendingClar.data}
                   busy={streaming}
                   onSubmit={handleClarify}
-                  onCancel={() => setPendingClar(null)}
                 />
               </div>
             )}

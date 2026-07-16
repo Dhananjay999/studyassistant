@@ -45,6 +45,22 @@ class FlashcardOptions:
     count: int | None = None
 
 
+# Input widgets the client can render for a clarifying question. The planner
+# picks the best fit per question; unknown values fall back to chips.
+CLARIFICATION_INPUT_TYPES = (
+    "short_text",
+    "long_text",
+    "number",
+    "single_select",
+    "multi_select",
+    "chips",
+    "dropdown",
+    "radio",
+    "toggle",
+    "true_false",
+)
+
+
 @dataclass
 class ClarificationQuestion:
     """A single clarifying question."""
@@ -52,6 +68,10 @@ class ClarificationQuestion:
     id: str
     text: str
     options: list[str] | None = None
+    # How the client should render the answer input (see
+    # CLARIFICATION_INPUT_TYPES). The client always adds its own
+    # "Other" escape hatch for option-based types.
+    input_type: str = "chips"
 
 
 @dataclass
