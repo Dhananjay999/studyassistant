@@ -1,4 +1,10 @@
-import { lazy, Suspense, useEffect, type ElementType } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  type ElementType,
+  type ReactNode,
+} from "react";
 import { HelmetProvider } from "react-helmet-async";
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -14,6 +20,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { useFeature } from "@/hooks/useFeature";
+import type { FeatureKey } from "@/types";
 import { PreferencesProvider } from "@/contexts/PreferencesContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -53,6 +61,7 @@ const SpaceWorkspacePage = lazy(() => import("@/pages/SpaceWorkspacePage"));
 const NotesPage = lazy(() => import("@/pages/NotesPage"));
 const NoteEditorPage = lazy(() => import("@/pages/NoteEditorPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
+const RevisionPage = lazy(() => import("@/pages/RevisionPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const ProfileSectionPage = lazy(() => import("@/pages/ProfileSectionPage"));
@@ -88,6 +97,19 @@ function AnalyticsTracker() {
     trackPageview(pathname + search);
   }, [pathname, search]);
   return null;
+}
+
+/** Redirects to /chat when the admin has disabled the route's feature, so
+ * deep-links to hidden features degrade gracefully instead of 404ing. */
+function FeatureRoute({
+  feature,
+  children,
+}: {
+  feature: FeatureKey;
+  children: ReactNode;
+}) {
+  const enabled = useFeature(feature);
+  return enabled ? <>{children}</> : <Navigate to="/chat" replace />;
 }
 
 function HomeRoute() {
@@ -164,17 +186,54 @@ export default function App() {
                         path="/flashcards"
                         element={<TabRoute Component={FlashcardsPage} />}
                       />
-                      <Route path="/spaces" element={<SpacesPage />} />
+                      <Route
+                        path="/spaces"
+                        element={
+                          <FeatureRoute feature="study_spaces">
+                            <SpacesPage />
+                          </FeatureRoute>
+                        }
+                      />
                       <Route
                         path="/spaces/:spaceId"
-                        element={<SpaceWorkspacePage />}
+                        element={
+                          <FeatureRoute feature="study_spaces">
+                            <SpaceWorkspacePage />
+                          </FeatureRoute>
+                        }
                       />
-                      <Route path="/notes" element={<NotesPage />} />
+                      <Route
+                        path="/notes"
+                        element={
+                          <FeatureRoute feature="notes">
+                            <NotesPage />
+                          </FeatureRoute>
+                        }
+                      />
                       <Route
                         path="/notes/:noteId"
-                        element={<NoteEditorPage />}
+                        element={
+                          <FeatureRoute feature="notes">
+                            <NoteEditorPage />
+                          </FeatureRoute>
+                        }
                       />
-                      <Route path="/analytics" element={<AnalyticsPage />} />
+                      <Route
+                        path="/analytics"
+                        element={
+                          <FeatureRoute feature="analytics">
+                            <AnalyticsPage />
+                          </FeatureRoute>
+                        }
+                      />
+                      <Route
+                        path="/revision"
+                        element={
+                          <FeatureRoute feature="revision_mode">
+                            <RevisionPage />
+                          </FeatureRoute>
+                        }
+                      />
                       <Route path="/files" element={<FilesPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
                       <Route

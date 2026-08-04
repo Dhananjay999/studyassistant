@@ -222,3 +222,13 @@ export interface AdminSearchResults {
   query: string;
   results: Partial<Record<"users" | ResourceKey, AdminSearchHit[]>>;
 }
+
+/** One global feature flag: registry metadata + current state.
+ * `updated_at` is null while the flag is still on its code default. */
+export interface AdminFeatureFlag {
+  key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  updated_at: string | null;
+}

@@ -1,10 +1,10 @@
 import {
   BarChart3,
-  Bookmark,
+  Brain,
+  Flame,
   Layers,
   ListChecks,
   MessageSquare,
-  RefreshCw,
 } from "lucide-react";
 import { Reveal } from "@/components/common/Reveal";
 
@@ -27,17 +27,17 @@ const STEPS = [
   {
     icon: BarChart3,
     title: "Analysis",
-    body: "Get AI performance feedback and see what to revise.",
+    body: "Get AI performance feedback that pinpoints your weak topics.",
   },
   {
-    icon: Bookmark,
-    title: "Bookmark",
-    body: "Save the important content into folders for later.",
+    icon: Brain,
+    title: "Revise",
+    body: "Aeva schedules spaced-repetition reviews so each topic comes back right before you'd forget it.",
   },
   {
-    icon: RefreshCw,
-    title: "Continue",
-    body: "Branch a fresh session from any saved item and keep going.",
+    icon: Flame,
+    title: "Keep the streak",
+    body: "Check in with a quick confidence rating, watch your memory strength climb, and build a daily streak.",
   },
 ];
 
@@ -53,8 +53,7 @@ export function HowItWorks() {
             The complete <span className="text-gradient">learning journey</span>
           </h2>
           <p className="mt-4 text-muted-foreground">
-            A flow designed to make you actually learn and revise — not just
-            chat.
+            A loop designed to make you actually remember — not just chat.
           </p>
         </Reveal>
 

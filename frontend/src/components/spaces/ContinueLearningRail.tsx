@@ -7,26 +7,17 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { useSpaces } from "@/hooks/api";
+import { useFeature } from "@/hooks/useFeature";
+import { lastStudied } from "@/lib/relativeTime";
 import { realSpaces, spaceColor, spaceIcon } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 
-function lastStudied(iso: string | null): string {
-  if (!iso) return "";
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-  });
-}
-
 export function ContinueLearningRail() {
   const navigate = useNavigate();
+  const spacesEnabled = useFeature("study_spaces");
   const { data } = useSpaces();
   const spaces = realSpaces(data).slice(0, 4);
-  if (spaces.length === 0) return null;
+  if (!spacesEnabled || spaces.length === 0) return null;
 
   return (
     <motion.div

@@ -17,7 +17,7 @@ import { Reveal } from "@/components/common/Reveal";
 export const FAQS = [
   {
     q: "What is an AI study assistant?",
-    a: "An AI study assistant is a tool that uses artificial intelligence to answer questions, explain concepts, and create practice material from your own study resources. StudyAssistant combines an AI chat, PDF chat, quiz generator, flashcards, and learning analytics in one free app for students.",
+    a: "An AI study assistant is a tool that uses artificial intelligence to answer questions, explain concepts, and create practice material from your own study resources. StudyAssistant combines an AI chat, PDF chat, quiz generator, flashcards, spaced-repetition revision, and learning analytics in one free app for students.",
   },
   {
     q: "Is StudyAssistant free?",
@@ -48,12 +48,24 @@ export const FAQS = [
     a: "Yes. StudyAssistant supports the full exam-prep loop: ask questions, summarize material, generate practice quizzes and flashcards, and review AI performance analysis that shows exactly which topics need more revision.",
   },
   {
+    q: "Does StudyAssistant help me revise with spaced repetition?",
+    a: "Yes. AI Revision Mode tracks a memory-strength score for every topic you study and schedules reviews just before you're likely to forget. Your revision dashboard shows what needs immediate revision, what's due today, and what you've recently mastered — each with a reason, like “You scored 58% on this 3 days ago” — and one tap starts a revision session, quiz, or flashcard review. After each session, a quick confidence check-in reschedules the topic.",
+  },
+  {
     q: "Does StudyAssistant adapt to how I learn?",
     a: "Yes. An optional learning profile — your education level, preferred language, and explanation style — personalizes every answer, so explanations match how you actually study.",
   },
   {
     q: "What subjects does StudyAssistant cover?",
     a: "Any subject. Students use StudyAssistant for biology, calculus, physics, chemistry, history, economics, literature, computer science, and more — it works from your own material, so it covers whatever you're studying.",
+  },
+  {
+    q: "Can I organize my study by subject?",
+    a: "Yes. Study Spaces are per-subject workspaces that keep your chats, notes, quizzes, flashcards, and files together. Each space tracks its own progress and weak topics, so you always know where you stand in every subject.",
+  },
+  {
+    q: "Can I share quizzes and notes with friends?",
+    a: "Yes. StudyAssistant creates public links for quizzes, quiz results, and notes. Friends can attempt a shared quiz without creating an account, so it works for group revision and comparing results.",
   },
   {
     q: "Is my data private?",

@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { MathText } from "@/components/common/MathText";
 import { FlashcardAnalytics } from "@/components/flashcard/FlashcardAnalytics";
+import { ConfidencePrompt } from "@/components/revision/ConfidencePrompt";
 import {
   useCreateSession,
   useFlashcardSet,
@@ -381,6 +382,16 @@ export function FlashcardViewer({
                       className="w-full"
                     />
                   )}
+
+                  {/* Confidence check-in feeds the revision schedule; the
+                     study batch is already flushed by finish() before this
+                     screen renders. */}
+                  <ConfidencePrompt
+                    topic={data.topic || data.title}
+                    source="flashcards"
+                    refId={data.set_id}
+                    className="w-full"
+                  />
 
                   {/* Actions */}
                   <div className="flex w-full flex-col gap-2">

@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import type {
+  ConfidenceInput,
   CreateBookmarkInput,
   ExamConfig,
   LearningProfileInput,
@@ -38,6 +39,10 @@ export const qk = {
     ["search", q, spaceId ?? null] as const,
   learningProfile: ["learning-profile"] as const,
   analytics: ["analytics"] as const,
+  // Nested under ["revision"] so one invalidation refreshes dashboard + home.
+  revision: ["revision"] as const,
+  revisionDashboard: ["revision", "dashboard"] as const,
+  revisionHome: ["revision", "home"] as const,
   config: ["config"] as const,
 };
 
@@ -47,8 +52,9 @@ export function useAppConfig() {
   return useQuery({
     queryKey: qk.config,
     queryFn: api.getAppConfig,
-    // Runtime limits rarely change; cache for the whole session.
-    staleTime: Infinity,
+    // Feature flags ride on /config: a modest stale window lets admin
+    // toggles propagate on navigation/focus without a reload.
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -257,10 +263,12 @@ export function useSubmitQuiz() {
       answers: Record<string, string[]>;
       timeTakenSeconds?: number;
     }) => api.submitQuiz(v.id, v.answers, v.timeTakenSeconds),
-    // Refresh the quizzes list + this quiz's attempt history.
+    // Refresh the quizzes list + this quiz's attempt history. The submit
+    // also moved the topic's revision schedule on the backend.
     onSuccess: (_data, v) => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
       qc.invalidateQueries({ queryKey: qk.quizAttempts(v.id) });
+      qc.invalidateQueries({ queryKey: qk.revision });
     },
   });
 }
@@ -348,11 +356,15 @@ export function useRecordStudy() {
 }
 
 export function useRecordStudyBatch() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (v: {
       setId: string;
       ratings: { flashcard_id: string; rating: StudyRating }[];
     }) => api.recordFlashcardStudyBatch(v.setId, v.ratings),
+    // The batch save also moved the topic's revision schedule.
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.revision }),
   });
 }
 
@@ -467,6 +479,40 @@ export function useAnalytics() {
     // Aggregates shift slowly; a short stale window avoids refetching on every
     // navigation back to the dashboard.
     staleTime: 2 * 60_000,
+  });
+}
+
+/* -------------------------------- revision -------------------------------- */
+
+export function useRevisionDashboard() {
+  return useQuery({
+    queryKey: qk.revisionDashboard,
+    queryFn: api.getRevisionDashboard,
+    // Due buckets move on study activity (invalidated by the mutations
+    // below), not on their own; a minute of staleness is fine.
+    staleTime: 60_000,
+  });
+}
+
+export function useRevisionHome(enabled = true) {
+  return useQuery({
+    queryKey: qk.revisionHome,
+    queryFn: api.getRevisionHome,
+    enabled,
+    // Greeting/recommendations shift slowly; matches useAnalytics' window.
+    staleTime: 2 * 60_000,
+  });
+}
+
+export function useSubmitConfidence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ConfidenceInput) =>
+      api.postRevisionConfidence(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.revision });
+      qc.invalidateQueries({ queryKey: qk.analytics });
+    },
   });
 }
 

@@ -8,6 +8,7 @@ import {
   BookMarked,
   Bug,
   FileText,
+  Flag,
   Layers,
   LayoutDashboard,
   ListChecks,
@@ -32,6 +33,7 @@ import { AdminSearch } from "@/pages/admin/AdminSearch";
 import { AdminDangerZone } from "@/pages/admin/AdminDangerZone";
 import { AdminDebugUsers } from "@/pages/admin/AdminDebugUsers";
 import { AdminDevTools } from "@/pages/admin/AdminDevTools";
+import { AdminFeatureFlags } from "@/pages/admin/AdminFeatureFlags";
 import type { ResourceKey } from "@/types/admin";
 
 type View =
@@ -41,6 +43,7 @@ type View =
   | { name: "resource"; resource: ResourceKey }
   | { name: "search" }
   | { name: "debug" }
+  | { name: "flags" }
   | { name: "devtools" }
   | { name: "danger" };
 
@@ -62,6 +65,7 @@ const NAV: AdminNavItem[] = [
   { key: "files", label: "Files", icon: FileText },
   { key: "search", label: "Search", icon: Search },
   { key: "debug", label: "Debug Users", icon: Bug },
+  { key: "flags", label: "Feature Flags", icon: Flag },
   { key: "devtools", label: "Dev Tools", icon: Smartphone },
   { key: "danger", label: "Danger Zone", icon: ShieldAlert },
 ];
@@ -87,6 +91,7 @@ function AdminInner() {
       key === "users" ||
       key === "search" ||
       key === "debug" ||
+      key === "flags" ||
       key === "devtools" ||
       key === "danger"
     ) {
@@ -129,6 +134,7 @@ function AdminInner() {
       {view.name === "search" && (
         <AdminSearch onOpenUser={(id) => setView({ name: "user", id })} />
       )}
+      {view.name === "flags" && <AdminFeatureFlags />}
       {view.name === "devtools" && <AdminDevTools />}
       {view.name === "danger" && <AdminDangerZone />}
     </AdminShell>

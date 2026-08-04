@@ -12,6 +12,7 @@ import { QuizExportButton } from "@/components/quiz/QuizExportButton";
 import { ShareQuizButton } from "@/components/quiz/ShareQuizButton";
 import { QuizRunner } from "@/components/quiz/QuizRunner";
 import { QuizAttemptReport } from "@/components/quiz/QuizAttemptReport";
+import { ConfidencePrompt } from "@/components/revision/ConfidencePrompt";
 import { QuizAttemptsTab } from "@/components/quiz/QuizAttemptsTab";
 import { ExamSummary } from "@/components/quiz/ExamSummary";
 import { useQuizAttempt, useQuizAttempts } from "@/hooks/api";
@@ -205,6 +206,13 @@ export function QuizDrawer({
               onClose={() => onOpenChange(false)}
               onBack={backToAttempts}
               onRetake={retake}
+              confidenceSlot={
+                <ConfidencePrompt
+                  topic={quiz.topic || quiz.title}
+                  source="quiz"
+                  refId={freshResult.attempt_id}
+                />
+              }
             />
           ) : detail ? (
             <QuizAttemptReport

@@ -1,14 +1,17 @@
 import {
-  Bookmark,
   BarChart3,
   Bot,
+  Brain,
   FileText,
   Globe,
+  Image as ImageIcon,
   Layers,
+  LibraryBig,
   ListChecks,
+  NotebookPen,
   Search,
+  Share2,
   Sparkles,
-  UserRound,
 } from "lucide-react";
 import { GlassCard } from "@/components/common/GlassCard";
 import { Reveal } from "@/components/common/Reveal";
@@ -16,6 +19,11 @@ import { Reveal } from "@/components/common/Reveal";
 // The headline learning features — given visual prominence. Card headings
 // deliberately match what students search for (quiz generator, flashcards…).
 const SPOTLIGHT = [
+  {
+    icon: Brain,
+    title: "AI Revision Mode",
+    body: "Spaced repetition, run by Aeva. Every topic gets a memory-strength score and a review date — your dashboard shows what needs revision, why, and one tap starts a revision session, quiz, or flashcard review.",
+  },
   {
     icon: ListChecks,
     title: "AI Quiz Generator",
@@ -26,11 +34,6 @@ const SPOTLIGHT = [
     title: "AI Flashcard Generator",
     body: "Auto-generate flashcard decks from responses, PDFs, or quizzes. Flip, shuffle, and study with Easy / Hard / Needs-Revision ratings.",
   },
-  {
-    icon: BarChart3,
-    title: "Learning Analytics",
-    body: "AI performance analysis after every quiz, plus mastery and revision tracking across all your flashcards and study sessions.",
-  },
 ];
 
 const FEATURES = [
@@ -40,9 +43,14 @@ const FEATURES = [
     body: "Meet Aeva — your AI tutor for homework help. Ask anything and get clear, streaming answers that pick the right tool automatically.",
   },
   {
-    icon: Globe,
-    title: "Live Web Search",
-    body: "Web-grounded answers with rich source cards, so everything is current and verifiable.",
+    icon: LibraryBig,
+    title: "Study Spaces",
+    body: "Give every subject its own workspace — chats, notes, quizzes, flashcards, and files together, with per-space progress and weak-topic tracking.",
+  },
+  {
+    icon: NotebookPen,
+    title: "Real Notes Editor",
+    body: "Write markdown notes, save any AI answer as a note and refine it, then export to PDF or share with a link.",
   },
   {
     icon: FileText,
@@ -50,19 +58,29 @@ const FEATURES = [
     body: "Upload PDFs, notes, and images — Aeva answers from your own material with page-level citations.",
   },
   {
-    icon: UserRound,
-    title: "Personalized Learning",
-    body: "Answers adapt to your education level, language, and preferred explanation style.",
+    icon: Globe,
+    title: "Live Web Search",
+    body: "Web-grounded answers with rich source cards, so everything is current and verifiable.",
   },
   {
-    icon: Bookmark,
-    title: "Bookmarks & Folders",
-    body: "Save responses, quizzes, and flashcards into folders, then resume learning anytime.",
+    icon: ImageIcon,
+    title: "AI Diagrams & Images",
+    body: "Ask for a labelled diagram or illustration and Aeva generates it right inside the chat answer.",
+  },
+  {
+    icon: Share2,
+    title: "Share with Friends",
+    body: "Share quizzes, quiz results, and notes with a public link — friends can attempt your quiz without an account.",
+  },
+  {
+    icon: BarChart3,
+    title: "Learning Analytics",
+    body: "Study time, streaks, quiz trends, subject breakdown, and achievements — one dashboard for your whole learning life.",
   },
   {
     icon: Search,
-    title: "Global Search",
-    body: "Instantly search across chats, quizzes, flashcards, files, and bookmarks.",
+    title: "Bookmarks & Global Search",
+    body: "Save responses, quizzes, and flashcards into folders — then find anything across chats, files, and decks instantly.",
   },
 ];
 
@@ -83,8 +101,8 @@ export function Features() {
             <span className="text-gradient">complete learning system</span>
           </h2>
           <p className="mt-4 text-muted-foreground">
-            Homework help, exam prep, and revision — discover, learn, save, and
-            revise in one place.
+            Homework help, exam prep, and spaced-repetition revision —
+            discover, learn, save, and remember in one place.
           </p>
         </Reveal>
 

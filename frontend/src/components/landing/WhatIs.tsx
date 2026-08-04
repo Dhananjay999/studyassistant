@@ -36,7 +36,17 @@ const CAPABILITIES = [
   {
     term: "Notes and summaries",
     detail:
-      "summarize chapters, lectures, and documents into revision-ready notes.",
+      "write real markdown notes, save any AI answer as a note, refine it, and export or share it.",
+  },
+  {
+    term: "Spaced-repetition revision",
+    detail:
+      "Aeva tracks memory strength for every topic and schedules reviews right before you'd forget — with a reason for every recommendation.",
+  },
+  {
+    term: "Study spaces",
+    detail:
+      "organize chats, notes, quizzes, flashcards, and files into per-subject workspaces with their own progress tracking.",
   },
 ];
 
@@ -70,7 +80,8 @@ export function WhatIs() {
               Its AI study buddy, Aeva, answers with live web search and cited
               sources, reads the PDFs and notes you upload, and turns any
               answer or document into quizzes, flashcards, and study plans —
-              then tracks your performance so you know what to revise next.
+              then tracks your performance and schedules spaced-repetition
+              revision so you review the right topic at the right time.
             </p>
           </div>
         </Reveal>

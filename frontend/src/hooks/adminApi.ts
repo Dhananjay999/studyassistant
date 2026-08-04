@@ -26,6 +26,7 @@ export const adminQk = {
     ["admin", "resource", resource, params] as const,
   search: (q: string) => ["admin", "search", q] as const,
   debugUsers: ["admin", "debug-users"] as const,
+  featureFlags: ["admin", "feature-flags"] as const,
 };
 
 export function useAdminOverview() {
@@ -95,6 +96,27 @@ export function useSetDebugUser() {
     mutationFn: (v: { id: string; enabled: boolean }) =>
       adminApi.setDebugUser(v.id, v.enabled),
     onSuccess: invalidate,
+  });
+}
+
+export function useAdminFeatureFlags() {
+  return useQuery({
+    queryKey: adminQk.featureFlags,
+    queryFn: adminApi.listFeatureFlags,
+  });
+}
+
+export function useSetFeatureFlag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { key: string; enabled: boolean }) =>
+      adminApi.setFeatureFlag(v.key, v.enabled),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminQk.featureFlags });
+      // The user app reads flags from GET /config; refresh it so a toggle
+      // shows up immediately in the same browser session.
+      qc.invalidateQueries({ queryKey: ["config"] });
+    },
   });
 }
 

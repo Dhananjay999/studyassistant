@@ -9,6 +9,7 @@
 import { API_BASE_URL } from "@/lib/api";
 import type {
   AdminDebugUser,
+  AdminFeatureFlag,
   AdminLoginResult,
   AdminOverview,
   AdminResourceList,
@@ -161,4 +162,11 @@ export const adminApi = {
       `/users/${id}/debug`,
       { method: "PUT", body: JSON.stringify({ enabled }) },
     ),
+  listFeatureFlags: () =>
+    unwrap<{ flags: AdminFeatureFlag[] }>("/feature-flags"),
+  setFeatureFlag: (key: string, enabled: boolean) =>
+    unwrap<{ key: string; enabled: boolean }>(`/feature-flags/${key}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    }),
 };

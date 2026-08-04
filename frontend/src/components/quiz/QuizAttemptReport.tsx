@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -48,6 +48,7 @@ export function QuizAttemptReport({
   onBack,
   onRetake,
   guest = false,
+  confidenceSlot,
 }: {
   quiz: QuizContent;
   evaluation: QuizEvaluation;
@@ -60,6 +61,9 @@ export function QuizAttemptReport({
   /** Guest (public share) mode: hide account-only actions (AI analysis,
    * bookmarking, create-flashcards) and show a promo CTA instead. */
   guest?: boolean;
+  /** Rendered under the score hero. Only passed for a fresh submission —
+   * historical attempts and guest shares never re-ask for confidence. */
+  confidenceSlot?: ReactNode;
 }) {
   const navigate = useNavigate();
   const createSession = useCreateSession();
@@ -194,6 +198,8 @@ export function QuizAttemptReport({
               </>
             )}
           </motion.div>
+
+          {confidenceSlot}
 
           {/* Marks breakdown (exam attempts only) */}
           {isExam && (

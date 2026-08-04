@@ -1,13 +1,17 @@
 import {
   BarChart3,
   Bookmark,
+  Brain,
   FileText,
   Globe,
+  Image as ImageIcon,
   Layers,
+  LibraryBig,
   ListChecks,
   MessageSquare,
   NotebookPen,
   Search,
+  Share2,
   UserRound,
 } from "lucide-react";
 import { Seo } from "@/components/common/Seo";
@@ -21,6 +25,11 @@ import {
 } from "@/lib/seo";
 
 const FEATURES = [
+  {
+    icon: Brain,
+    title: "AI Revision Mode with spaced repetition",
+    body: "StudyAssistant tracks a memory-strength score for every topic and schedules reviews just before you forget. Your dashboard shows what needs immediate revision, what's due today, and what you've recently mastered — with a reason for each, and one-tap actions to revise, quiz, or review flashcards.",
+  },
   {
     icon: MessageSquare,
     title: "AI chat that understands your material",
@@ -47,14 +56,29 @@ const FEATURES = [
     body: "Generate flashcard decks from your material, then flip, shuffle, and rate each card to track your mastery over time.",
   },
   {
+    icon: LibraryBig,
+    title: "Study Spaces for every subject",
+    body: "Create a workspace per subject that keeps chats, notes, quizzes, flashcards, and files together. Each space tracks its own progress and weak topics, so you always know where you stand.",
+  },
+  {
     icon: NotebookPen,
-    title: "Summaries and study notes",
-    body: "Condense chapters, lectures, and long documents into revision-ready notes and summaries — ideal for exam preparation.",
+    title: "A real notes editor",
+    body: "Write markdown notes, save any AI answer as a note and refine it, condense chapters into revision-ready summaries, then export to PDF or share with a link.",
+  },
+  {
+    icon: ImageIcon,
+    title: "AI diagrams and images",
+    body: "Ask for a labelled diagram or an illustration and Aeva generates it right inside the answer — great for processes, setups, and flows you need to see.",
+  },
+  {
+    icon: Share2,
+    title: "Share quizzes, results, and notes",
+    body: "Create a public link for any quiz, quiz result, or note. Friends can attempt your shared quiz without an account — perfect for group revision.",
   },
   {
     icon: BarChart3,
     title: "Performance analytics",
-    body: "See how you're doing across quizzes and topics, and get AI analysis of exactly what to revise next.",
+    body: "See study time, streaks, quiz trends, a subject-by-subject breakdown, and achievements — plus AI analysis of exactly what to revise next.",
   },
   {
     icon: UserRound,
@@ -96,7 +120,7 @@ export default function FeaturesPage() {
       />
       <PublicPage
         title="AI study tools for everything you're learning"
-        intro="StudyAssistant is a complete AI study assistant — chat, PDF analysis, quizzes, flashcards, and analytics working together, not a collection of disconnected tools."
+        intro="StudyAssistant is a complete AI study assistant — chat, PDF analysis, quizzes, flashcards, spaced-repetition revision, and analytics working together, not a collection of disconnected tools."
       >
         <div className="grid gap-6 sm:grid-cols-2">
           {FEATURES.map((f) => (

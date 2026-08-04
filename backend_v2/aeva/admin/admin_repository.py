@@ -19,6 +19,7 @@ from flask import current_app
 
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import success_response
+from aeva.feature_flag import feature_flag_service
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
@@ -294,6 +295,36 @@ class AdminRepository:
             "total_flashcards": counts.get("flashcards", 0),
             "storage_used": counts.get("storage_used", 0),
         }
+
+    # ------------------------------------------------------------------
+    # Feature flags
+    # ------------------------------------------------------------------
+
+    def list_feature_flags(self) -> dict[str, Any]:
+        """Registry merged with DB overrides, in registry order."""
+        return success_response(
+            "Feature flags",
+            {"flags": feature_flag_service.list_flags_with_meta()},
+        )
+
+    def set_feature_flag(self, key: str, enabled: bool) -> dict[str, Any]:
+        """Upsert one flag override; 404 on a key not in the registry."""
+        if key not in feature_flag_service.FLAG_KEYS:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        self.client.table("feature_flags").upsert({
+            "key": key,
+            "enabled": enabled,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }).execute()
+        feature_flag_service.invalidate_cache()
+        logger.info(
+            "Admin %s feature %s",
+            "enabled" if enabled else "disabled",
+            key,
+        )
+        return success_response(
+            "Feature flag updated", {"key": key, "enabled": enabled}
+        )
 
     # ------------------------------------------------------------------
     # Developer Mode (debug users)

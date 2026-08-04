@@ -1,5 +1,6 @@
 """Assistant orchestrator — clarification then tool execution."""
 
+import copy
 import json
 import logging
 import re
@@ -8,6 +9,7 @@ from collections.abc import Generator
 from typing import Any
 
 from aeva.common.errors import ERROR_CODES, CustomError
+from aeva.feature_flag import feature_flag_service
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
 from aeva.mcp.base import (
@@ -581,8 +583,26 @@ class AssistantOrchestrator:
         """
         tool_info = plan.get("tool") or {}
         name = tool_info.get("name", "general")
+        params = tool_info.get("params") or {}
+        # Belt and braces: even if a flag-disabled tool slips through the
+        # planner filter (forced/cached/fallback plans), downgrade it to a
+        # plain text answer rather than running it.
+        if not AssistantOrchestrator._tool_enabled(
+            name, feature_flag_service.get_flags()
+        ):
+            logger.warning(
+                "Tool %s disabled by feature flag; downgrading to general",
+                name,
+            )
+            query = (
+                params.get("query")
+                or params.get("prompt")
+                or params.get("topic")
+                or ""
+            )
+            name, params = "general", {"query": query}
         model = resolve_model(name, tool_info.get("model"))
-        return name, model, tool_info.get("params") or {}
+        return name, model, params
 
     def _attach_actions(
         self,
@@ -1090,9 +1110,11 @@ class AssistantOrchestrator:
         tool's full JSON schema is redundant), and no personalization block —
         the planner emits JSON, never prose, so none of that changes its output.
         """
+        flags = feature_flag_service.get_flags()
         tools_desc = "\n".join(
             self._tool_line(t)
             for t in self.registry.list_definitions()
+            if self._tool_enabled(t.name, flags)
         )
         media_hint = (
             f"User has selected media IDs: {ctx.media_ids}"
@@ -1123,11 +1145,32 @@ class AssistantOrchestrator:
         )
         return self.llm.generate_structured(
             rendered.user_message,
-            prompts.PLAN_TURN_SCHEMA,
+            self._plan_schema_for(flags),
             history=self._history_for_planner(history),
             system_prompt=rendered.system_prompt,
             log_label="orchestrator",
         )
+
+    @staticmethod
+    def _tool_enabled(name: str, flags: dict[str, bool]) -> bool:
+        """Whether a tool passes the feature flags (unmapped = always on)."""
+        flag_key = feature_flag_service.TOOL_FLAG_MAP.get(name)
+        return flag_key is None or flags.get(flag_key, True)
+
+    @staticmethod
+    def _plan_schema_for(flags: dict[str, bool]) -> dict[str, Any]:
+        """PLAN_TURN_SCHEMA with flag-disabled tools removed from the enum.
+
+        Deep-copies the module-level schema — never mutate the shared dict.
+        """
+        schema = copy.deepcopy(prompts.PLAN_TURN_SCHEMA)
+        name_spec = schema["properties"]["tool"]["properties"]["name"]
+        name_spec["enum"] = [
+            n
+            for n in name_spec["enum"]
+            if AssistantOrchestrator._tool_enabled(n, flags)
+        ]
+        return schema
 
     @staticmethod
     def _has_unresolved_reference(
@@ -1235,7 +1278,12 @@ class AssistantOrchestrator:
         # Only reach for the web when the message clearly needs fresh, external
         # facts; otherwise Aeva answers from its own knowledge (no needless
         # search on greetings, identity questions, or concept explanations).
-        tool_name = "web_search" if _needs_fresh_info(text) else "general"
+        tool_name = (
+            "web_search"
+            if _needs_fresh_info(text)
+            and feature_flag_service.is_enabled("web_search")
+            else "general"
+        )
         return {
             "action": "run_tool",
             "tool": {"name": tool_name, "params": {"query": message}},

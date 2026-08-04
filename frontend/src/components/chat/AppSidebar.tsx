@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   Bookmark,
+  BrainCircuit,
   FolderOpen,
   Layers,
   LibraryBig,
@@ -18,6 +19,7 @@ import {
   Search,
   Settings,
   Trash2,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -31,20 +33,27 @@ import { BrandLogo } from "@/components/common/BrandLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { usePinnedSessions } from "@/hooks/usePinnedSessions";
-import { useConvertToSpace, useSpaces } from "@/hooks/api";
+import { useAppConfig, useConvertToSpace, useSpaces } from "@/hooks/api";
 import { realSpaces, spaceColor, spaceIcon } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import { formatShortcut } from "@/lib/platform";
-import type { Session } from "@/types";
+import type { FeatureKey, Session } from "@/types";
 
-const NAV = [
+// `feature` marks entries hidden when the admin disables that flag.
+const NAV: Array<{
+  label: string;
+  icon: LucideIcon;
+  to: string;
+  feature?: FeatureKey;
+}> = [
   { label: "Chats", icon: MessageSquare, to: "/chat" },
-  { label: "Study Spaces", icon: LibraryBig, to: "/spaces" },
-  { label: "Notes", icon: NotebookPen, to: "/notes" },
+  { label: "Revision", icon: BrainCircuit, to: "/revision", feature: "revision_mode" },
+  { label: "Study Spaces", icon: LibraryBig, to: "/spaces", feature: "study_spaces" },
+  { label: "Notes", icon: NotebookPen, to: "/notes", feature: "notes" },
   { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
-  { label: "Analytics", icon: BarChart3, to: "/analytics" },
+  { label: "Analytics", icon: BarChart3, to: "/analytics", feature: "analytics" },
   { label: "Files", icon: FolderOpen, to: "/files" },
 ];
 
@@ -109,10 +118,16 @@ export function AppSidebar({
   const { pinnedIds, isPinned, togglePin } = usePinnedSessions();
   const onChats = location.pathname === "/chat";
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Admin-managed feature flags hide their nav entries entirely.
+  const features = useAppConfig().data?.features;
+  const nav = NAV.filter(
+    (item) => !item.feature || features?.[item.feature] !== false,
+  );
+  const spacesEnabled = features?.study_spaces !== false;
   // Study Spaces are opt-in: the mini-list below renders only when the user
   // has created at least one real space, so non-adopters see no change.
   const { data: allSpaces } = useSpaces();
-  const spaces = realSpaces(allSpaces).slice(0, 4);
+  const spaces = spacesEnabled ? realSpaces(allSpaces).slice(0, 4) : [];
   const convertToSpace = useConvertToSpace();
   const [convertingId, setConvertingId] = useState<string | null>(null);
 
@@ -320,7 +335,7 @@ export function AppSidebar({
 
       {/* Main navigation */}
       <nav className="flex flex-col gap-1 px-3 pb-2">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const Icon = item.icon;
           const active =
             item.to === "/chat"

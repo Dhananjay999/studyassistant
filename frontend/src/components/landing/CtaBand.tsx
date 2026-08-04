@@ -17,9 +17,9 @@ export function CtaBand() {
               <span className="text-gradient">a complete AI learning system.</span>
             </h2>
             <p className="mx-auto mt-3 max-w-md text-muted-foreground">
-              Homework help, PDF chat, quizzes, flashcards, and progress
-              tracking — everything you need to study with AI. Start free with
-              Aeva today.
+              Homework help, PDF chat, quizzes, flashcards, study spaces —
+              and spaced-repetition revision that tells you exactly what to
+              review next. Start free with Aeva today.
             </p>
             <div className="mt-8 flex justify-center">
               <GoogleButton label="Start learning free" />

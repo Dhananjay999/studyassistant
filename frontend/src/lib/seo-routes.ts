@@ -36,6 +36,8 @@ export const CORE_KEYWORDS = [
   "AI exam preparation",
   "AI for students",
   "best AI study app",
+  "spaced repetition app",
+  "AI revision tool",
 ];
 
 /**
@@ -49,20 +51,20 @@ export const PAGES = {
     path: "/",
     title: `${SITE_NAME} — Free AI Study Assistant & Study Buddy`,
     description:
-      "StudyAssistant is a free AI study assistant for students. Chat with " +
-      "your PDFs, search the web, and turn any topic into quizzes, " +
-      "flashcards, and study plans.",
+      "Free AI study assistant for students: chat with your PDFs, generate " +
+      "quizzes and flashcards, and let spaced-repetition revision tell you " +
+      "what to review next.",
     keywords: CORE_KEYWORDS,
     changefreq: "weekly",
     priority: 1.0,
   },
   features: {
     path: "/features",
-    title: `AI Quiz Generator, Flashcards & PDF Chat — ${SITE_NAME}`,
+    title: `AI Revision, Quiz Generator & Flashcards — ${SITE_NAME}`,
     description:
-      "Explore StudyAssistant's AI study tools: chat with PDFs and notes, " +
-      "live web search, one-click quiz and flashcard generation, learning " +
-      "analytics, and global search.",
+      "Explore StudyAssistant's AI study tools: spaced-repetition revision, " +
+      "study spaces, notes, quizzes, flashcards, PDF chat, sharing, and " +
+      "analytics.",
     // CORE_KEYWORDS already covers quiz generator / flashcards — only the
     // page-specific extras are listed here to avoid duplicate terms.
     keywords: ["AI study tools", "PDF AI chat", "study analytics", ...CORE_KEYWORDS],
@@ -111,6 +113,9 @@ export const DISALLOWED_PREFIXES = [
   "/quizzes",
   "/flashcards",
   "/analytics",
+  "/revision",
+  "/spaces",
+  "/notes",
   "/files",
   "/admin",
   "/auth",

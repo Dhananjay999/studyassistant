@@ -34,6 +34,7 @@ import {
   useNote,
   useUpdateNote,
 } from "@/hooks/api";
+import { useFeature } from "@/hooks/useFeature";
 import { createShare } from "@/lib/api";
 import { printNote } from "@/lib/printReport";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,7 @@ export default function NoteEditorPage() {
   const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<"preview" | "edit">("preview");
   const [sharing, setSharing] = useState(false);
+  const sharingEnabled = useFeature("sharing");
   // The rendered preview node — its innerHTML feeds the print export.
   const previewRef = useRef<HTMLDivElement>(null);
   const seededId = useRef<string | null>(null);
@@ -226,20 +228,22 @@ export default function NoteEditorPage() {
               >
                 <Printer className="h-3.5 w-3.5" /> Export
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1.5 text-xs text-muted-foreground"
-                disabled={sharing}
-                onClick={share}
-              >
-                {sharing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Share2 className="h-3.5 w-3.5" />
-                )}
-                Share
-              </Button>
+              {sharingEnabled && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 text-xs text-muted-foreground"
+                  disabled={sharing}
+                  onClick={share}
+                >
+                  {sharing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Share2 className="h-3.5 w-3.5" />
+                  )}
+                  Share
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"

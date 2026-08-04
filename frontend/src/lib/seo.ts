@@ -58,7 +58,7 @@ export function organizationSchema(): Record<string, unknown> {
       height: 512,
     },
     description:
-      "AI study assistant for students: chat with your PDFs, search the web, and auto-generate quizzes and flashcards.",
+      "AI study assistant for students: chat with your PDFs, auto-generate quizzes and flashcards, and revise with AI spaced repetition.",
   };
 }
 
@@ -71,7 +71,7 @@ export function websiteSchema(): Record<string, unknown> {
     url: SITE_URL,
     name: SITE_NAME,
     description:
-      "A complete AI learning system for students — chat, quizzes, flashcards, and analytics.",
+      "A complete AI learning system for students — chat, quizzes, flashcards, spaced-repetition revision, and analytics.",
     publisher: { "@id": `${SITE_URL}/#organization` },
   };
 }
@@ -90,11 +90,18 @@ export function softwareApplicationSchema(): Record<string, unknown> {
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     screenshot: `${SITE_URL}/og-image.png`,
     featureList: [
+      "AI revision mode with topic-level spaced repetition",
+      "Memory-strength tracking with reasons and one-tap revision actions",
+      "Study streaks and post-session confidence check-ins",
       "AI chat with web search and cited sources",
       "Chat with PDFs, notes, and images (page-level citations)",
       "AI quiz generator with instant grading and feedback",
       "AI flashcard generator with mastery tracking",
-      "Learning analytics and AI performance analysis",
+      "Study spaces — per-subject workspaces with progress tracking",
+      "Markdown notes editor with PDF export and sharing",
+      "Public sharing of quizzes, quiz results, and notes",
+      "AI-generated diagrams and images in answers",
+      "Analytics dashboard: study time, streaks, quiz trends, achievements",
       "Personalized explanations from your learning profile",
       "Bookmarks, folders, and global search",
     ],

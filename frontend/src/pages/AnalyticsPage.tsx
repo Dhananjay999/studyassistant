@@ -6,7 +6,6 @@ import {
   Brain,
   Clock,
   FileText,
-  Flame,
   Layers,
   ListChecks,
   MessageSquare,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { GlassCard } from "@/components/common/GlassCard";
+import { StreakCard } from "@/components/common/StreakCard";
 import {
   ChartContainer,
   ChartTooltip,
@@ -89,26 +89,7 @@ function Dashboard({ data }: { data: AnalyticsOverview }) {
   return (
     <>
       {/* Streak banner */}
-      <GlassCard className="flex items-center gap-4 bg-brand-1/5 p-5">
-        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-brand-1/10">
-          <Flame
-            className={cn(
-              "h-7 w-7",
-              streak > 0 ? "text-orange-500" : "text-muted-foreground",
-            )}
-          />
-        </div>
-        <div>
-          <p className="font-display text-2xl font-extrabold">
-            {streak} day{streak === 1 ? "" : "s"}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {streak > 0
-              ? "Study streak — keep the momentum going!"
-              : "Ask a question or take a quiz to start a streak."}
-          </p>
-        </div>
-      </GlassCard>
+      <StreakCard streak={streak} />
 
       {/* Learning Overview */}
       <Section title="Learning Overview" icon={BarChart3}>

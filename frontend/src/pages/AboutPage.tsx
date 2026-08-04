@@ -45,11 +45,14 @@ export default function AboutPage() {
 
           <h2>How it works</h2>
           <p>
-            Chat with Aeva using your own notes and PDFs, or search the live web
-            with cited sources. From any response you can generate practice
-            quizzes and flashcards, track your performance with AI analysis, and
-            save everything with bookmarks and global search. It's one connected
-            learning system rather than a pile of separate tools.
+            Chat with Aeva using your own notes and PDFs, or search the live
+            web with cited sources. From any response you can generate
+            practice quizzes and flashcards, keep everything organized in
+            study spaces and notes, and track your performance with AI
+            analysis. Then AI Revision Mode takes over: it tracks how well
+            you know each topic and schedules spaced-repetition reviews so
+            you remember what you learned. It's one connected learning system
+            rather than a pile of separate tools.
           </p>
 
           <h2>Built for students</h2>

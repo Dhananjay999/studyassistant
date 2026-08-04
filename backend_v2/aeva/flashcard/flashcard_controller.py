@@ -1,5 +1,6 @@
 """Flashcard controller."""
 
+import logging
 from typing import Any
 
 from flask import request
@@ -18,6 +19,19 @@ from aeva.flashcard.schema.flashcard_schema import (
     StudyBatchSchema,
     StudySchema,
 )
+from aeva.revision.revision_service import RevisionService
+
+logger = logging.getLogger(__name__)
+
+
+def _record_revision(
+    user_id: str, set_id: str, ratings: list[tuple[str, str]]
+) -> None:
+    """Best-effort spaced-repetition update — never blocks the study save."""
+    try:
+        RevisionService().record_flashcard_study(user_id, set_id, ratings)
+    except Exception:  # noqa: BLE001
+        logger.debug("Revision update failed", exc_info=True)
 
 blueprint = Blueprint(
     "flashcard",
@@ -74,6 +88,11 @@ class FlashcardStudyEndpoint(MethodView):
             request_data.flashcard_id,
             request_data.rating,
         )
+        _record_revision(
+            current_user.id,
+            set_id,
+            [(request_data.flashcard_id, request_data.rating)],
+        )
         return success_response("Study recorded", analytics)
 
 
@@ -90,11 +109,13 @@ class FlashcardStudyBatchEndpoint(MethodView):
         set_id: str,
     ) -> dict[str, Any]:
         """Persist all card ratings from a completed study session at once."""
+        ratings = [
+            (r.flashcard_id, r.rating) for r in request_data.ratings
+        ]
         analytics = FlashcardRepository().record_study_batch(
-            current_user.id,
-            set_id,
-            [(r.flashcard_id, r.rating) for r in request_data.ratings],
+            current_user.id, set_id, ratings
         )
+        _record_revision(current_user.id, set_id, ratings)
         return success_response("Study recorded", analytics)
 
 

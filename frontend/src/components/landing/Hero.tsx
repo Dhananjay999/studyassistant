@@ -67,8 +67,8 @@ export function Hero() {
           >
             StudyAssistant helps with homework, exam prep, and everyday
             learning: chat with your PDFs and notes, search the web, and turn
-            any answer into flashcards, practice quizzes, and study plans — a
-            complete AI learning platform, not just a chatbot.
+            any answer into flashcards, quizzes, and notes — then Aeva
+            remembers what you studied and tells you exactly what to revise.
           </motion.p>
 
           <motion.div

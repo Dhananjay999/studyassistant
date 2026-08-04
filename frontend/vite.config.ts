@@ -68,15 +68,23 @@ function seoAssets(siteUrl: string): Plugin {
         `> ${SITE_NAME} is a free AI study assistant for students. ` +
         `Its assistant, Aeva, answers questions with live web search, chats ` +
         `with uploaded PDFs, notes, and images (with page-level citations), ` +
-        `and turns any topic or document into practice quizzes, flashcards, ` +
-        `and study plans with AI performance analysis.\n\n` +
+        `turns any topic or document into practice quizzes and flashcards, ` +
+        `and runs a spaced-repetition revision schedule that tells students ` +
+        `exactly what to review next.\n\n` +
         `Key facts:\n` +
         `- Pricing: free to start; sign in with Google.\n` +
         `- Platform: web app (installable PWA).\n` +
         `- Core tools: AI chat, chat with PDF, AI quiz generator (single/multi ` +
         `choice and true-false questions with instant grading), AI flashcard ` +
-        `generator with mastery tracking, learning analytics, bookmarks, and ` +
+        `generator with mastery tracking, markdown notes with PDF export, ` +
+        `AI-generated diagrams and images, learning analytics, bookmarks, and ` +
         `global search.\n` +
+        `- Revision: topic-level spaced repetition with memory-strength ` +
+        `scores, due dates, reasons for every recommendation, confidence ` +
+        `check-ins, and study streaks.\n` +
+        `- Organization & sharing: per-subject study spaces with progress ` +
+        `tracking; public share links for quizzes, quiz results, and notes ` +
+        `(no account needed to attempt a shared quiz).\n` +
         `- Personalization: answers adapt to the student's education level, ` +
         `language, and preferred explanation style.\n` +
         `- Privacy: a student's sessions, uploads, quizzes, and flashcards ` +

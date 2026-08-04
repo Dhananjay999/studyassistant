@@ -19,6 +19,7 @@ import { ShareLinkPanel } from "@/components/quiz/ShareLinkPanel";
 import { createShare } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useBackClose } from "@/hooks/useBackClose";
+import { useFeature } from "@/hooks/useFeature";
 import { nativeShare } from "@/lib/share";
 
 export function ShareQuizButton({
@@ -37,6 +38,7 @@ export function ShareQuizButton({
   size?: ButtonProps["size"];
 }) {
   const isMobile = useIsMobile();
+  const sharingEnabled = useFeature("sharing");
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState("");
@@ -71,6 +73,9 @@ export function ShareQuizButton({
       setBusy(false);
     }
   };
+
+  // Admin kill switch: hiding here covers every call site at once.
+  if (!sharingEnabled) return null;
 
   return (
     <>

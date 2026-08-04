@@ -662,9 +662,22 @@ export interface QuizSetupDraft {
   exam: ExamConfig;
 }
 
+/** Admin-managed global feature flags. Keys mirror the backend registry in
+ * aeva/feature_flag/feature_flag_service.py. */
+export type FeatureKey =
+  | "image_generation"
+  | "web_search"
+  | "revision_mode"
+  | "study_spaces"
+  | "notes"
+  | "analytics"
+  | "sharing";
+
 // Public, non-secret runtime config from GET /config.
 export interface AppConfig {
   max_quiz_questions: number;
+  /** Optional so a frontend deployed ahead of the backend still works. */
+  features?: Partial<Record<FeatureKey, boolean>>;
 }
 
 /* ------------------------------- flashcards ------------------------------- */
@@ -823,6 +836,80 @@ export interface AnalyticsOverview {
     progress: number;
     target: number;
   }>;
+}
+
+/* -------------------------------- revision -------------------------------- */
+
+export type ConfidenceLevel = "confused" | "better" | "mastered";
+export type RevisionAction = "quiz" | "flashcards" | "review";
+
+/** One topic on the spaced-repetition schedule. */
+export interface RevisionTopicItem {
+  id: string;
+  topic: string;
+  space_id: string | null;
+  status: "learning" | "reviewing" | "mastered";
+  /** Position on the interval ladder (0..max_strength). */
+  strength: number;
+  max_strength: number;
+  due_at: string | null;
+  overdue_days: number;
+  last_reviewed_at: string | null;
+  last_quiz_score: number | null;
+  last_confidence: ConfidenceLevel | null;
+  recommended_action: RevisionAction;
+  /** The "why" behind the recommendation — always rendered. */
+  reason: string;
+  sources: { quiz_id?: string | null; set_id?: string | null };
+}
+
+export interface RevisionDashboard {
+  needs_revision: RevisionTopicItem[];
+  due_today: RevisionTopicItem[];
+  recently_mastered: RevisionTopicItem[];
+  streak_days: number;
+  continue_learning: {
+    id: string;
+    title: string;
+    space_id: string | null;
+    updated_at: string;
+  } | null;
+  counts: { total_topics: number; due: number; mastered: number };
+}
+
+export interface RevisionRecommendation {
+  action: RevisionAction;
+  topic: string;
+  reason: string;
+  quiz_id?: string | null;
+  set_id?: string | null;
+}
+
+export interface RevisionHome {
+  greeting: {
+    name: string | null;
+    streak_days: number;
+    due_count: number;
+  };
+  yesterday_topics: string[];
+  recent_topics: string[];
+  recommendations: RevisionRecommendation[];
+}
+
+export interface ConfidenceInput {
+  topic: string;
+  confidence: ConfidenceLevel;
+  source?: "quiz" | "flashcards" | "manual";
+  ref_id?: string;
+  space_id?: string;
+}
+
+export interface ConfidenceResult {
+  topic: string;
+  strength: number;
+  status: RevisionTopicItem["status"];
+  due_at: string;
+  next_review_in_days: number;
 }
 
 /* --------------------------------- search --------------------------------- */

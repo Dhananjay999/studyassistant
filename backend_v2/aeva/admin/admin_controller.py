@@ -21,6 +21,8 @@ from aeva.admin.schema.admin_schema import (
     AdminLoginSchema,
     DebugUserToggleData,
     DebugUserToggleSchema,
+    FeatureFlagToggleData,
+    FeatureFlagToggleSchema,
     ResourceListQuery,
     ResourceListQuerySchema,
     SearchQuery,
@@ -160,6 +162,31 @@ class AdminUserDebugFlag(MethodView):
         return repo.set_debug_user(user_id, body.enabled)
 
 
+class AdminFeatureFlags(MethodView):
+    """Global feature flags (registry merged with DB overrides)."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str) -> dict[str, Any]:
+        """List every flag with its label, description and state."""
+        return repo.list_feature_flags()
+
+
+class AdminFeatureFlag(MethodView):
+    """Enable/disable one feature globally."""
+
+    @staticmethod
+    @blueprint.arguments(FeatureFlagToggleSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def put(
+        _admin: str, body: FeatureFlagToggleData, key: str
+    ) -> dict[str, Any]:
+        """Set a flag's enabled state (404 on unknown key)."""
+        return repo.set_feature_flag(key, body.enabled)
+
+
 class AdminSession(MethodView):
     """A single session's full conversation history."""
 
@@ -271,4 +298,14 @@ blueprint.add_url_rule(
 )
 blueprint.add_url_rule(
     "/search", view_func=AdminSearch, endpoint="admin_search"
+)
+blueprint.add_url_rule(
+    "/feature-flags",
+    view_func=AdminFeatureFlags,
+    endpoint="admin_feature_flags",
+)
+blueprint.add_url_rule(
+    "/feature-flags/<key>",
+    view_func=AdminFeatureFlag,
+    endpoint="admin_feature_flag",
 )

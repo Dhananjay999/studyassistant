@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import {
   Bookmark,
+  BrainCircuit,
   Clock,
   FileText,
   FolderTree,
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/command";
 import { useBookmarks, useCollections, useSearch } from "@/hooks/api";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useFeature } from "@/hooks/useFeature";
 
 const RECENTS_KEY = "aeva_recent_searches";
 
@@ -56,6 +58,7 @@ export function GlobalCommandPalette({
   onSelectSession: (id: string) => void;
 }) {
   const navigate = useNavigate();
+  const revisionEnabled = useFeature("revision_mode");
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme !== "light";
 
@@ -154,6 +157,15 @@ export function GlobalCommandPalette({
             >
               <MessageSquarePlus className="h-4 w-4" /> New chat
             </CommandItem>
+            {revisionEnabled && (
+              <CommandItem
+                value="open revision"
+                onSelect={() => run(() => navigate("/revision"))}
+                className="gap-2"
+              >
+                <BrainCircuit className="h-4 w-4" /> Open revision
+              </CommandItem>
+            )}
             <CommandItem
               value="open bookmarks"
               onSelect={() => run(() => navigate("/bookmarks"))}

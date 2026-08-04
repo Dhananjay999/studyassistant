@@ -60,6 +60,26 @@ class DebugUserToggleSchema(Schema):
 
 
 @dataclass(frozen=True)
+class FeatureFlagToggleData:
+    """Validated body for enabling/disabling a global feature flag."""
+
+    enabled: bool
+
+
+class FeatureFlagToggleSchema(Schema):
+    """Body for ``PUT /admin/feature-flags/<key>``."""
+
+    enabled = fields.Bool(required=True)
+
+    @post_load
+    def make_data(
+        self, data: dict, **_kwargs: object
+    ) -> FeatureFlagToggleData:
+        """Convert to dataclass."""
+        return FeatureFlagToggleData(**data)
+
+
+@dataclass(frozen=True)
 class UserListQuery:
     """Validated filters for the paginated user list."""
 

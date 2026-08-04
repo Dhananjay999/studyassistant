@@ -44,7 +44,7 @@ const FlashcardViewer = lazy(() =>
   })),
 );
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
-import { EmptyState } from "@/components/chat/EmptyState";
+import { WelcomeHome } from "@/components/chat/WelcomeHome";
 import { ContinueLearningRail } from "@/components/spaces/ContinueLearningRail";
 import { useShell } from "@/components/layout/AppLayout";
 import { DRAWER_EDGE_SIZE } from "@/components/layout/MobileNavDrawer";
@@ -1052,7 +1052,9 @@ export default function ChatPage() {
                 <ChatSkeleton />
               ) : messages.length === 0 && !streaming ? (
                 <div className="h-full">
-                  <EmptyState onPick={(t) => send(t)} />
+                  {/* Rich revision-aware welcome; falls back to EmptyState
+                     for brand-new users. */}
+                  <WelcomeHome onPick={(t) => send(t)} />
                   {/* Opt-in: renders nothing until real Study Spaces exist. */}
                   <ContinueLearningRail />
                 </div>

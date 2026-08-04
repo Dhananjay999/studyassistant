@@ -8,6 +8,8 @@ import type {
   AssistantRequest,
   Bookmark,
   BookmarkCollection,
+  ConfidenceInput,
+  ConfidenceResult,
   CreateBookmarkInput,
   ExamConfig,
   ExamPattern,
@@ -33,6 +35,8 @@ import type {
   Note,
   NoteListItem,
   NoteSourceType,
+  RevisionDashboard,
+  RevisionHome,
   SearchResults,
   Session,
   SpaceOverview,
@@ -91,6 +95,9 @@ export const ENDPOINTS = {
   LEARNING_PROFILE: "/learning-profile/",
   LEARNING_PROFILE_SKIP: "/learning-profile/skip",
   ANALYTICS_OVERVIEW: "/analytics/overview",
+  REVISION_DASHBOARD: "/revision/dashboard",
+  REVISION_HOME: "/revision/home",
+  REVISION_CONFIDENCE: "/revision/confidence",
   CONFIG: "/config",
 } as const;
 
@@ -648,6 +655,24 @@ export const skipPersonalization = () =>
 
 export const getAnalytics = () =>
   unwrap<AnalyticsOverview>(ENDPOINTS.ANALYTICS_OVERVIEW);
+
+/* -------------------------------- revision -------------------------------- */
+
+// Local timezone offset (minutes east of UTC) so the backend buckets
+// "due today" / "yesterday" against the student's calendar day.
+const tzQuery = () => `?tz_offset_minutes=${-new Date().getTimezoneOffset()}`;
+
+export const getRevisionDashboard = () =>
+  unwrap<RevisionDashboard>(`${ENDPOINTS.REVISION_DASHBOARD}${tzQuery()}`);
+
+export const getRevisionHome = () =>
+  unwrap<RevisionHome>(`${ENDPOINTS.REVISION_HOME}${tzQuery()}`);
+
+export const postRevisionConfidence = (input: ConfidenceInput) =>
+  unwrap<ConfidenceResult>(ENDPOINTS.REVISION_CONFIDENCE, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 
 /* --------------------------------- search --------------------------------- */
 

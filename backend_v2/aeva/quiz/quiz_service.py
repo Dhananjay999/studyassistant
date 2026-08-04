@@ -12,6 +12,7 @@ from aeva.llm.llm_client import LLMClient
 from aeva.quiz import exam_patterns
 from aeva.quiz.quiz_engine import QuizEngine
 from aeva.quiz.quiz_repository import QuizRepository
+from aeva.revision.revision_service import RevisionService
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
@@ -164,6 +165,13 @@ class QuizService:
             self._update_space_memory(quiz, evaluation, user_id)
         except Exception:  # noqa: BLE001
             logger.debug("Space memory update failed", exc_info=True)
+        # Best-effort: move the topic's spaced-repetition schedule.
+        try:
+            RevisionService().record_quiz_attempt(
+                user_id, quiz, evaluation
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("Revision update failed", exc_info=True)
         return success_response("Quiz submitted", {
             "attempt_id": attempt["id"],
             "evaluation": evaluation,

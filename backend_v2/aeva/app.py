@@ -20,12 +20,14 @@ from aeva.common.errors import CustomError
 from aeva.common.logging_config import preview, setup_logging
 from aeva.containers import Container
 from aeva.delay.delay_controller import blueprint as delay_bp
+from aeva.feature_flag import feature_flag_service
 from aeva.flashcard.flashcard_controller import blueprint as flashcard_bp
 from aeva.learning_profile.learning_profile_controller import (
     blueprint as learning_profile_bp,
 )
 from aeva.media.media_controller import blueprint as media_bp
 from aeva.quiz.quiz_controller import blueprint as quiz_bp
+from aeva.revision.revision_controller import blueprint as revision_bp
 from aeva.search.search_controller import blueprint as search_bp
 from aeva.note.note_controller import blueprint as note_bp
 from aeva.session.session_controller import blueprint as session_bp
@@ -231,6 +233,35 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
         os.environ.get("QUIZ_MAX_QUESTIONS", "10")
     )
 
+    # AI Revision Mode (spaced repetition). Interval ladder + signal
+    # thresholds; the quiz thresholds mirror weak(<60)/strong(>=80) used by
+    # space stats and space memory so "weak topic" means the same thing
+    # everywhere.
+    app.config["REVISION_INTERVALS_DAYS"] = os.environ.get(
+        "REVISION_INTERVALS_DAYS", "1,3,7,14,30"
+    )
+    app.config["REVISION_QUIZ_GOOD"] = float(
+        os.environ.get("REVISION_QUIZ_GOOD", "80")
+    )
+    app.config["REVISION_QUIZ_OK"] = float(
+        os.environ.get("REVISION_QUIZ_OK", "60")
+    )
+    app.config["REVISION_FLASHCARD_GOOD"] = float(
+        os.environ.get("REVISION_FLASHCARD_GOOD", "0.75")
+    )
+    app.config["REVISION_FLASHCARD_BAD"] = float(
+        os.environ.get("REVISION_FLASHCARD_BAD", "0.4")
+    )
+    app.config["REVISION_OVERDUE_URGENT_DAYS"] = int(
+        os.environ.get("REVISION_OVERDUE_URGENT_DAYS", "2")
+    )
+    app.config["REVISION_MASTERED_RECENT_DAYS"] = int(
+        os.environ.get("REVISION_MASTERED_RECENT_DAYS", "14")
+    )
+    app.config["REVISION_BACKFILL_LIMIT"] = int(
+        os.environ.get("REVISION_BACKFILL_LIMIT", "500")
+    )
+
     # How many recent messages of a session are sent to the LLM as
     # conversation context each turn. 0 (or negative) sends the full session.
     app.config["CHAT_HISTORY_LIMIT"] = int(
@@ -381,6 +412,7 @@ def create_app() -> Flask:
     api.register_blueprint(bookmark_bp)
     api.register_blueprint(search_bp)
     api.register_blueprint(flashcard_bp)
+    api.register_blueprint(revision_bp)
     api.register_blueprint(learning_profile_bp)
     api.register_blueprint(analytics_bp)
     api.register_blueprint(admin_bp)
@@ -422,7 +454,14 @@ def create_app() -> Flask:
 
     @app.route("/config")
     def public_config() -> dict[str, Any]:
-        """Public, non-secret runtime config the frontend needs (limits)."""
-        return {"max_quiz_questions": app.config["QUIZ_MAX_QUESTIONS"]}
+        """Public, non-secret runtime config the frontend needs (limits).
+
+        ``features`` carries the global feature-flag states the frontend
+        uses to show/hide optional surfaces. Flag states are not secrets.
+        """
+        return {
+            "max_quiz_questions": app.config["QUIZ_MAX_QUESTIONS"],
+            "features": feature_flag_service.get_flags(),
+        }
 
     return app
