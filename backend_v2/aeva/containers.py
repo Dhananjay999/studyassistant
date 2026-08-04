@@ -6,6 +6,7 @@ from aeva.llm.llm_client import LLMClient
 from aeva.mcp.registry import ToolRegistry
 from aeva.mcp.tools.flashcard_generator import FlashcardGeneratorTool
 from aeva.mcp.tools.general import GeneralAnswerTool
+from aeva.mcp.tools.image_generator import ImageGeneratorTool
 from aeva.mcp.tools.media_llm import MediaLLMTool
 from aeva.mcp.tools.quiz_generator import QuizGeneratorTool
 from aeva.mcp.tools.web_search import WebSearchTool
@@ -19,6 +20,7 @@ def build_tool_registry(
     media_llm: LLMClient,
     quiz_llm: LLMClient,
     flashcard_llm: LLMClient,
+    image_llm: LLMClient,
     embed_llm: LLMClient,
     supabase: SupabaseService,
 ) -> ToolRegistry:
@@ -34,6 +36,7 @@ def build_tool_registry(
     registry.register(
         FlashcardGeneratorTool(llm=flashcard_llm, supabase=supabase)
     )
+    registry.register(ImageGeneratorTool(llm=image_llm, supabase=supabase))
     return registry
 
 
@@ -65,6 +68,10 @@ class Container(containers.DeclarativeContainer):
         LLMClient,
         config_key="LLM_FLASHCARD_MODEL",
     )
+    llm_image = providers.Singleton(
+        LLMClient,
+        config_key="LLM_IMAGE_MODEL",
+    )
     llm_embedding = providers.Singleton(
         LLMClient,
         config_key="LLM_EMBEDDING_MODEL",
@@ -84,6 +91,7 @@ class Container(containers.DeclarativeContainer):
         media_llm=llm_media,
         quiz_llm=llm_quiz,
         flashcard_llm=llm_flashcard,
+        image_llm=llm_image,
         embed_llm=llm_embedding,
         supabase=supabase_service,
     )

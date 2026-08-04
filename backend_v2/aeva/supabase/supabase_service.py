@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
@@ -206,33 +207,48 @@ class SupabaseService:
         user_id: str,
         title: str = "New chat",
         mode: str = "media",
+        space_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a new chat session."""
-        result = (
-            self.client.table("sessions")
-            .insert({"user_id": user_id, "title": title, "mode": mode})
-            .execute()
-        )
+        row: dict[str, Any] = {
+            "user_id": user_id,
+            "title": title,
+            "mode": mode,
+        }
+        if space_id:
+            row["space_id"] = space_id
+        result = self.client.table("sessions").insert(row).execute()
         return result.data[0]
 
-    def list_sessions(self, user_id: str) -> list[dict[str, Any]]:
+    def list_sessions(
+        self, user_id: str, space_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """List user sessions ordered by updated_at."""
-        result = (
+        query = (
             self.client.table("sessions")
             .select("*")
             .eq("user_id", user_id)
-            .order("updated_at", desc=True)
-            .execute()
         )
+        if space_id:
+            query = query.eq("space_id", space_id)
+        result = query.order("updated_at", desc=True).execute()
         return result.data or []
 
     def get_session(
         self, session_id: str, user_id: str
     ) -> dict[str, Any] | None:
-        """Get session if owned by user."""
+        """Get session if owned by user (with its space embedded).
+
+        The embedded ``study_spaces`` relation rides the same query, so space
+        context (name/subject, default or not) costs no extra roundtrip on the
+        chat hot path. Rows predating migration 016 simply embed nothing.
+        """
         result = (
             self.client.table("sessions")
-            .select("*")
+            .select(
+                "*, study_spaces("
+                "id,name,subject,description,is_default,settings)"
+            )
             .eq("id", session_id)
             .eq("user_id", user_id)
             .maybe_single()
@@ -282,16 +298,148 @@ class SupabaseService:
         )
         return result.data[0]
 
-    def get_messages(self, session_id: str) -> list[dict[str, Any]]:
-        """Get all messages for a session."""
-        result = (
+    def get_messages(
+        self, session_id: str, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Messages for a session in chronological order.
+
+        With ``limit``, only the *newest* ``limit`` rows are fetched (still
+        returned oldest-first) so long sessions don't transfer their entire
+        history just to use the tail as LLM context.
+        """
+        query = (
             self.client.table("messages")
             .select("*")
             .eq("session_id", session_id)
-            .order("created_at")
+        )
+        if limit is not None and limit > 0:
+            result = (
+                query.order("created_at", desc=True).limit(limit).execute()
+            )
+            return list(reversed(result.data or []))
+        result = query.order("created_at").execute()
+        return result.data or []
+
+    # --- Study Spaces ---
+
+    def list_spaces(self, user_id: str) -> list[dict[str, Any]]:
+        """User's spaces, most recently active first."""
+        result = (
+            self.client.table("study_spaces")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("last_activity_at", desc=True)
             .execute()
         )
         return result.data or []
+
+    def get_space(
+        self, space_id: str, user_id: str
+    ) -> dict[str, Any] | None:
+        """Get a space if owned by user."""
+        result = (
+            self.client.table("study_spaces")
+            .select("*")
+            .eq("id", space_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data if result else None
+
+    def create_space(
+        self, user_id: str, fields: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Insert a study space row."""
+        result = (
+            self.client.table("study_spaces")
+            .insert({"user_id": user_id, **fields})
+            .execute()
+        )
+        return result.data[0]
+
+    def update_space(
+        self, space_id: str, user_id: str, **fields: Any
+    ) -> dict[str, Any] | None:
+        """Patch space fields."""
+        result = (
+            self.client.table("study_spaces")
+            .update(fields)
+            .eq("id", space_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    def delete_space(self, space_id: str, user_id: str) -> bool:
+        """Delete a space row (content re-filing happens in the repository)."""
+        self.client.table("study_spaces").delete().eq("id", space_id).eq(
+            "user_id", user_id
+        ).execute()
+        return True
+
+    def get_or_create_default_space(self, user_id: str) -> dict[str, Any]:
+        """The user's General space, created idempotently on first need.
+
+        Backfilled users already have one (migration 016); brand-new users get
+        theirs here. The partial unique index (one default per user) makes a
+        create race collapse to the existing row on retry.
+        """
+        result = (
+            self.client.table("study_spaces")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("is_default", True)
+            .maybe_single()
+            .execute()
+        )
+        if result and result.data:
+            return result.data
+        try:
+            return self.create_space(
+                user_id,
+                {"name": "General", "is_default": True, "icon": "sparkles"},
+            )
+        except Exception:  # unique-index race: another request created it
+            retry = (
+                self.client.table("study_spaces")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("is_default", True)
+                .maybe_single()
+                .execute()
+            )
+            if retry and retry.data:
+                return retry.data
+            raise
+
+    def resolve_space(
+        self,
+        user_id: str,
+        space_id: str | None = None,
+        session_id: str | None = None,
+    ) -> str:
+        """Resolve the space a new content row should be filed into.
+
+        Precedence: an explicitly requested space (ownership-verified) → the
+        session's space → the user's General space. Content therefore always
+        lands in exactly one space, with General as the invisible default.
+        """
+        if space_id:
+            space = self.get_space(space_id, user_id)
+            if space:
+                return str(space["id"])
+        if session_id:
+            session = self.get_session(session_id, user_id)
+            if session and session.get("space_id"):
+                return str(session["space_id"])
+        return str(self.get_or_create_default_space(user_id)["id"])
+
+    def touch_space(self, space_id: str) -> None:
+        """Bump a space's activity clock (drives Continue Learning order)."""
+        self.client.table("study_spaces").update(
+            {"last_activity_at": datetime.now(UTC).isoformat()}
+        ).eq("id", space_id).execute()
 
     # --- Media ---
 
@@ -303,28 +451,29 @@ class SupabaseService:
         storage_path: str,
         size_bytes: int,
         session_id: str | None = None,
+        space_id: str | None = None,
     ) -> dict[str, Any]:
         """Insert media metadata row."""
-        result = (
-            self.client.table("media")
-            .insert({
-                "user_id": user_id,
-                "session_id": session_id,
-                "file_name": file_name,
-                "mime_type": mime_type,
-                "storage_path": storage_path,
-                "size_bytes": size_bytes,
-            })
-            .execute()
-        )
+        row: dict[str, Any] = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "file_name": file_name,
+            "mime_type": mime_type,
+            "storage_path": storage_path,
+            "size_bytes": size_bytes,
+        }
+        if space_id:
+            row["space_id"] = space_id
+        result = self.client.table("media").insert(row).execute()
         return result.data[0]
 
     def list_media(
         self,
         user_id: str,
         session_id: str | None = None,
+        space_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List media for user, optionally filtered by session."""
+        """List media for user, optionally filtered by session or space."""
         query = (
             self.client.table("media")
             .select("*")
@@ -333,6 +482,8 @@ class SupabaseService:
         )
         if session_id:
             query = query.eq("session_id", session_id)
+        if space_id:
+            query = query.eq("space_id", space_id)
         result = query.execute()
         return result.data or []
 

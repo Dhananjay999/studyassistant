@@ -14,6 +14,7 @@ EMPTY: dict[str, list[Any]] = {
     "quizzes": [],
     "media": [],
     "flashcards": [],
+    "notes": [],
 }
 
 
@@ -21,13 +22,18 @@ class SearchRepository:
     """Full-text + substring search across the user's content."""
 
     @staticmethod
-    def search(current_user: UserData, query: str) -> dict[str, Any]:
+    def search(
+        current_user: UserData,
+        query: str,
+        space_id: str | None = None,
+    ) -> dict[str, Any]:
         """Rank results with Postgres full-text search; ILIKE as a fallback.
 
         Prefers the ``search_all`` RPC (tsvector + ``ts_rank`` for relevance
         ranking, combined with ILIKE for partial/exact substring matches). If
-        that RPC is missing — e.g. migration ``008`` hasn't been applied yet — it
-        degrades gracefully to a plain ILIKE scan so search keeps working.
+        that RPC is missing — e.g. migration ``008``/``018`` hasn't been
+        applied yet — it degrades gracefully to a plain ILIKE scan so search
+        keeps working. ``space_id`` scopes every category to one Study Space.
         """
         q = query.strip()
         if not q:
@@ -35,25 +41,30 @@ class SearchRepository:
 
         supabase = SupabaseService()
         uid = current_user.id
-        # Any DB error (most likely: migration 008 not yet applied, so the RPC
-        # is missing) falls back to the substring scan below.
+        # Any DB error (most likely: the RPC migration not yet applied)
+        # falls back to the substring scan below.
         try:
-            results = SearchRepository._search_fts(supabase, uid, q)
+            results = SearchRepository._search_fts(supabase, uid, q, space_id)
         except Exception:  # noqa: BLE001
             logger.warning(
                 "Full-text search unavailable; using ILIKE fallback",
                 exc_info=True,
             )
-            results = SearchRepository._search_ilike(supabase, uid, q)
+            results = SearchRepository._search_ilike(
+                supabase, uid, q, space_id
+            )
         return success_response("Search results", results)
 
     @staticmethod
     def _search_fts(
-        supabase: SupabaseService, uid: str, q: str
+        supabase: SupabaseService,
+        uid: str,
+        q: str,
+        space_id: str | None = None,
     ) -> dict[str, Any]:
         """Ranked full-text search via the ``search_all`` RPC."""
         result = supabase.client.rpc(
-            "search_all", {"p_user": uid, "p_q": q}
+            "search_all", {"p_user": uid, "p_q": q, "p_space": space_id}
         ).execute()
         data = result.data
         # A jsonb-returning function comes back as the object itself; tolerate a
@@ -68,25 +79,36 @@ class SearchRepository:
 
     @staticmethod
     def _search_ilike(
-        supabase: SupabaseService, uid: str, q: str
+        supabase: SupabaseService,
+        uid: str,
+        q: str,
+        space_id: str | None = None,
     ) -> dict[str, Any]:
         """Substring (ILIKE) search fallback."""
         like = f"%{q}%"
 
+        def scoped(query: Any) -> Any:
+            return query.eq("space_id", space_id) if space_id else query
+
         sessions = (
-            supabase.client.table("sessions")
-            .select("id, title, updated_at")
-            .eq("user_id", uid)
+            scoped(
+                supabase.client.table("sessions")
+                .select("id, title, updated_at")
+                .eq("user_id", uid)
+            )
             .ilike("title", like)
             .limit(8)
             .execute()
         ).data or []
 
-        # Messages have no user_id; scope by the user's own session ids.
+        # Messages have no user_id; scope by the user's own session ids
+        # (space-filtered when in-space search is requested).
         owned = (
-            supabase.client.table("sessions")
-            .select("id, title")
-            .eq("user_id", uid)
+            scoped(
+                supabase.client.table("sessions")
+                .select("id, title")
+                .eq("user_id", uid)
+            )
             .execute()
         ).data or []
         title_by_id = {s["id"]: s["title"] for s in owned}
@@ -103,18 +125,40 @@ class SearchRepository:
             for m in messages:
                 m["session_title"] = title_by_id.get(m["session_id"], "")
 
-        quizzes = SearchRepository._search_quizzes(supabase, uid, like)
+        quizzes = SearchRepository._search_quizzes(
+            supabase, uid, like, space_id
+        )
 
         media = (
-            supabase.client.table("media")
-            .select("id, file_name, mime_type, created_at")
-            .eq("user_id", uid)
+            scoped(
+                supabase.client.table("media")
+                .select("id, file_name, mime_type, created_at")
+                .eq("user_id", uid)
+            )
             .ilike("file_name", like)
             .limit(8)
             .execute()
         ).data or []
 
-        flashcards = SearchRepository._search_flashcards(supabase, uid, like)
+        flashcards = SearchRepository._search_flashcards(
+            supabase, uid, like, space_id
+        )
+
+        notes: dict[str, dict[str, Any]] = {}
+        for column in ("title", "content_md"):
+            rows = (
+                scoped(
+                    supabase.client.table("notes")
+                    .select("id, title, content_md, updated_at")
+                    .eq("user_id", uid)
+                )
+                .ilike(column, like)
+                .limit(8)
+                .execute()
+            ).data or []
+            for r in rows:
+                r["preview"] = (r.pop("content_md", "") or "")[:160]
+                notes[r["id"]] = r
 
         return {
             "sessions": sessions,
@@ -122,6 +166,7 @@ class SearchRepository:
             "quizzes": quizzes,
             "media": media,
             "flashcards": flashcards,
+            "notes": list(notes.values()),
         }
 
     @staticmethod
@@ -129,18 +174,19 @@ class SearchRepository:
         supabase: SupabaseService,
         uid: str,
         like: str,
+        space_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Match flashcard sets on title or topic, de-duplicated by id."""
         by_id: dict[str, dict[str, Any]] = {}
         for column in ("title", "topic"):
-            rows = (
+            query = (
                 supabase.client.table("flashcard_sets")
                 .select("id, title, topic, created_at")
                 .eq("user_id", uid)
-                .ilike(column, like)
-                .limit(8)
-                .execute()
-            ).data or []
+            )
+            if space_id:
+                query = query.eq("space_id", space_id)
+            rows = query.ilike(column, like).limit(8).execute().data or []
             for r in rows:
                 by_id[r["id"]] = r
         return list(by_id.values())
@@ -150,18 +196,19 @@ class SearchRepository:
         supabase: SupabaseService,
         uid: str,
         like: str,
+        space_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Match quizzes on title or topic, de-duplicated by id."""
         by_id: dict[str, dict[str, Any]] = {}
         for column in ("title", "topic"):
-            rows = (
+            query = (
                 supabase.client.table("quizzes")
                 .select("id, title, topic, session_id, created_at")
                 .eq("user_id", uid)
-                .ilike(column, like)
-                .limit(8)
-                .execute()
-            ).data or []
+            )
+            if space_id:
+                query = query.eq("space_id", space_id)
+            rows = query.ilike(column, like).limit(8).execute().data or []
             for r in rows:
                 by_id[r["id"]] = r
         return list(by_id.values())

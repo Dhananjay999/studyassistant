@@ -186,6 +186,35 @@ class GeminiProvider(LLMProvider):
             if chunk.text:
                 yield chunk.text
 
+    def generate_image(self, prompt: str) -> tuple[bytes, str, str]:
+        """Generate one image with a Gemini image model.
+
+        Requires an image-capable model on this provider instance (e.g.
+        ``gemini-2.5-flash-image`` — see ``LLM_IMAGE_MODEL``). Returns the
+        first image part plus any accompanying text as the caption.
+        """
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+            ),
+        )
+        image: bytes | None = None
+        mime = "image/png"
+        caption_parts: list[str] = []
+        for candidate in response.candidates or []:
+            for part in (candidate.content and candidate.content.parts) or []:
+                if part.inline_data and part.inline_data.data and image is None:
+                    image = part.inline_data.data
+                    mime = part.inline_data.mime_type or mime
+                elif part.text:
+                    caption_parts.append(part.text)
+        if image is None:
+            msg = "Gemini returned no image data"
+            raise ValueError(msg)
+        return image, mime, "\n".join(caption_parts).strip()
+
     def embed(
         self,
         texts: list[str],

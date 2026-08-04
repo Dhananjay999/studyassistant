@@ -29,17 +29,19 @@ class MediaUpload(MethodView):
         """Upload media files."""
         files = request.files.getlist("files")
         session_id = request.form.get("session_id")
+        space_id = request.form.get("space_id")
         return MediaRepository.upload_media(
-            current_user, files, session_id
+            current_user, files, session_id, space_id
         )
 
     @staticmethod
     @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def get(current_user: UserData) -> dict[str, Any]:
-        """List media files."""
+        """List media files (optionally ?session_id= / ?space_id= scoped)."""
         session_id = request.args.get("session_id")
-        return MediaRepository.list_media(current_user, session_id)
+        space_id = request.args.get("space_id")
+        return MediaRepository.list_media(current_user, session_id, space_id)
 
 
 class MediaDetail(MethodView):

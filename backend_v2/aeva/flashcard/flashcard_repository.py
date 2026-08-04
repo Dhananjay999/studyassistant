@@ -23,6 +23,7 @@ class FlashcardRepository:
         session_id: str | None,
         data: dict[str, Any],
         source_type: str = "chat",
+        space_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a flashcard set and its cards from LLM output."""
         set_row = (
@@ -30,6 +31,8 @@ class FlashcardRepository:
             .insert({
                 "user_id": user_id,
                 "session_id": session_id,
+                # Keeps the set inside the session's Study Space.
+                "space_id": space_id,
                 "title": data.get("title", "Flashcards"),
                 "topic": data.get("topic", ""),
                 "source_type": source_type,
@@ -65,15 +68,18 @@ class FlashcardRepository:
             "cards": cards_out,
         }
 
-    def list_sets(self, user_id: str) -> list[dict[str, Any]]:
+    def list_sets(
+        self, user_id: str, space_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """List the user's flashcard sets with card counts and progress."""
-        sets = (
+        query = (
             self.supabase.client.table("flashcard_sets")
             .select("*")
             .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .execute()
-        ).data or []
+        )
+        if space_id:
+            query = query.eq("space_id", space_id)
+        sets = query.order("created_at", desc=True).execute().data or []
         if not sets:
             return []
 

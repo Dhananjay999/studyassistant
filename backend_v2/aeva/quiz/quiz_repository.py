@@ -22,6 +22,7 @@ class QuizRepository:
         user_id: str,
         session_id: str,
         quiz_data: dict[str, Any],
+        space_id: str | None = None,
     ) -> dict[str, Any]:
         """Create quiz and questions from LLM output."""
         quiz_row = (
@@ -29,6 +30,8 @@ class QuizRepository:
             .insert({
                 "user_id": user_id,
                 "session_id": session_id,
+                # Keeps the quiz inside the session's Study Space.
+                "space_id": space_id,
                 "title": quiz_data.get("title", "Quiz"),
                 "topic": quiz_data.get("topic", ""),
                 # Persisted so the quizzes list can show difficulty without
@@ -85,15 +88,18 @@ class QuizRepository:
         rows = result.data or []
         return rows[0] if rows else None
 
-    def list_quizzes(self, user_id: str) -> list[dict[str, Any]]:
+    def list_quizzes(
+        self, user_id: str, space_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """List the user's quizzes with counts and best-attempt summary."""
-        quizzes = (
+        query = (
             self.supabase.client.table("quizzes")
             .select("*")
             .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .execute()
-        ).data or []
+        )
+        if space_id:
+            query = query.eq("space_id", space_id)
+        quizzes = query.order("created_at", desc=True).execute().data or []
         if not quizzes:
             return []
 

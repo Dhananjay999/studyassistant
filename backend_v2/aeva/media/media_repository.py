@@ -34,9 +34,14 @@ class MediaRepository:
         current_user: UserData,
         files: list[FileStorage],
         session_id: str | None = None,
+        space_id: str | None = None,
     ) -> dict[str, Any]:
         """Upload, compress, and store media files."""
         supabase = SupabaseService()
+        # Every upload is filed into a space: explicit > session's > General.
+        resolved_space = supabase.resolve_space(
+            current_user.id, space_id, session_id
+        )
         uploaded = []
 
         for file in files:
@@ -71,6 +76,7 @@ class MediaRepository:
                 storage_path=storage_path,
                 size_bytes=len(compressed),
                 session_id=session_id,
+                space_id=resolved_space,
             )
             record["signed_url"] = supabase.get_signed_url(storage_path)
             uploaded.append(record)
@@ -88,10 +94,11 @@ class MediaRepository:
     def list_media(
         current_user: UserData,
         session_id: str | None = None,
+        space_id: str | None = None,
     ) -> dict[str, Any]:
         """List media for user."""
         supabase = SupabaseService()
-        items = supabase.list_media(current_user.id, session_id)
+        items = supabase.list_media(current_user.id, session_id, space_id)
         for item in items:
             item["signed_url"] = supabase.get_signed_url(
                 item["storage_path"]

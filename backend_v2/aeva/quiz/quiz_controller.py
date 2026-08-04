@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Any, cast
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
@@ -37,7 +38,9 @@ class QuizListEndpoint(MethodView):
     @user_required
     def get(current_user: UserData) -> dict[str, Any]:
         """List quizzes (newest first) with counts and attempt summary."""
-        return QuizService().list_quizzes(current_user.id)
+        return QuizService().list_quizzes(
+            current_user.id, request.args.get("space_id")
+        )
 
 
 class QuizExamPatternsEndpoint(MethodView):

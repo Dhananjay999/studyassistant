@@ -12,6 +12,8 @@ class CreateSessionData:
     title: str = "New chat"
     mode: str = "media"
     media_ids: list[str] = field(default_factory=list)
+    # Study Space the chat should live in; None files it into General.
+    space_id: str | None = None
 
 
 class CreateSessionSchema(Schema):
@@ -23,6 +25,7 @@ class CreateSessionSchema(Schema):
         validate=validate.OneOf(["media", "web_search"]),
     )
     media_ids = fields.List(fields.Str(), load_default=list)
+    space_id = fields.Str(load_default=None, allow_none=True)
 
     @post_load
     def make_data(self, data: dict, **_kwargs: object) -> CreateSessionData:

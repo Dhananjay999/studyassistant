@@ -29,6 +29,8 @@ export interface AdminUserRow {
   total_quizzes: number;
   total_flashcards: number;
   storage_used: number;
+  /** Developer Mode enabled for this user. */
+  is_debug_user?: boolean;
 }
 
 export interface AdminUserList {
@@ -36,6 +38,15 @@ export interface AdminUserList {
   total: number;
   page: number;
   page_size: number;
+}
+
+/** A user with Developer Mode enabled (GET /admin/debug-users). */
+export interface AdminDebugUser {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+  created_at: string | null;
 }
 
 export interface AdminLearningProfile {

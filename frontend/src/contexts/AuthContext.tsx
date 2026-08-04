@@ -24,6 +24,10 @@ interface AuthContextValue {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  /** Developer Mode: true only for admin-flagged debug users. The single
+   * switch every debug-only UI must check — normal users never see debug
+   * information. */
+  isDebugUser: boolean;
   loading: boolean;
   signingIn: boolean;
   signInWithGoogle: () => void;
@@ -95,6 +99,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const tokenRef = useRef<string | null>(null);
   const refreshTimer = useRef<number>();
 
+  // True once the initial token restore has settled. Session teardowns that
+  // happen *during* boot (dead token found at startup) must clear quietly —
+  // a page refresh there would loop forever (boot → 401 → reload → boot).
+  const bootDoneRef = useRef(false);
+
   const clearSession = useCallback(() => {
     Object.values(STORAGE).forEach((k) => localStorage.removeItem(k));
     tokenRef.current = null;
@@ -102,6 +111,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
   }, []);
+
+  // Full teardown + hard refresh: drop the session and every in-memory trace
+  // of the user (keep-alive tabs, query cache, streams), then leave via a
+  // hard replace so the page fully reloads onto the landing/welcome screen
+  // and the back button can never reach a signed-in view.
+  const hardLogout = useCallback(() => {
+    clearSession();
+    queryClient.clear();
+    window.location.replace("/");
+  }, [clearSession]);
+
+  // The session became invalid behind the user's back (401 from the API or a
+  // failed pre-emptive refresh). After boot, refresh the page like an
+  // explicit logout — never leave a signed-out user on a stale page. During
+  // boot, just clear state and let the normal render take over.
+  const onSessionInvalid = useCallback(() => {
+    if (bootDoneRef.current) hardLogout();
+    else clearSession();
+  }, [hardLogout, clearSession]);
 
   const doRefresh = useCallback(async (): Promise<boolean> => {
     const rt = localStorage.getItem(STORAGE.refresh);
@@ -125,11 +153,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // holding a dead token.
       refreshTimer.current = window.setTimeout(() => {
         void doRefresh().then((ok) => {
-          if (!ok) clearSession();
+          if (!ok) onSessionInvalid();
         });
       }, ms);
     },
-    [doRefresh, clearSession],
+    [doRefresh, onSessionInvalid],
   );
 
   const persist = useCallback(
@@ -175,8 +203,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setTokenGetter(() => tokenRef.current);
-    // Any 401 from the API means the token expired/was revoked — log out.
-    setUnauthorizedHandler(clearSession);
+    // Any 401 from the API means the token expired/was revoked — log out
+    // (with a page refresh once the app is past boot).
+    setUnauthorizedHandler(onSessionInvalid);
 
     (async () => {
       const at = localStorage.getItem(STORAGE.access);
@@ -202,6 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       setLoading(false);
+      bootDoneRef.current = true;
     })();
 
     return () => {
@@ -273,20 +303,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener("message", onMessage);
   }, [setSession]);
 
-  // Explicit sign-out: drop the auth session and every in-memory trace of the
-  // user, then leave via a hard replace. The reload guarantees no user data
-  // survives in memory (keep-alive tabs, query cache, streams), lands on the
-  // landing page — or the app welcome screen in app mode via HomeRoute — and,
-  // because the current history entry is replaced and the tokens are gone,
-  // the back button can only reach ProtectedRoute redirects, never a
-  // signed-in page. Persisted per-user niceties (pins, recents) deliberately
+  // Explicit sign-out: the same full teardown + page refresh as any other
+  // session end. Persisted per-user niceties (pins, recents) deliberately
   // stay: `reconcileUserState` wipes them at next login if the account
   // differs.
-  const logout = useCallback(() => {
-    clearSession();
-    queryClient.clear();
-    window.location.replace("/");
-  }, [clearSession]);
+  const logout = hardLogout;
 
   return (
     <AuthContext.Provider
@@ -294,6 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         token,
         isAuthenticated: !!user && !!token,
+        isDebugUser: !!user?.is_debug_user,
         loading,
         signingIn,
         signInWithGoogle,

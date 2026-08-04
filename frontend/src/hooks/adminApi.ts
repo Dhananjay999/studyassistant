@@ -25,6 +25,7 @@ export const adminQk = {
   resource: (resource: ResourceKey, params: AdminResourcesParams) =>
     ["admin", "resource", resource, params] as const,
   search: (q: string) => ["admin", "search", q] as const,
+  debugUsers: ["admin", "debug-users"] as const,
 };
 
 export function useAdminOverview() {
@@ -79,6 +80,22 @@ export function useAdminSearch(q: string) {
 function useInvalidateAdmin() {
   const qc = useQueryClient();
   return () => qc.invalidateQueries({ queryKey: ["admin"] });
+}
+
+export function useAdminDebugUsers() {
+  return useQuery({
+    queryKey: adminQk.debugUsers,
+    queryFn: adminApi.listDebugUsers,
+  });
+}
+
+export function useSetDebugUser() {
+  const invalidate = useInvalidateAdmin();
+  return useMutation({
+    mutationFn: (v: { id: string; enabled: boolean }) =>
+      adminApi.setDebugUser(v.id, v.enabled),
+    onSuccess: invalidate,
+  });
 }
 
 export function useDeleteUser() {

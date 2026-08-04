@@ -45,6 +45,13 @@ import {
 } from "@/components/layout/tabPages";
 import { useShellViewport } from "@/components/layout/shellViewport";
 const BookmarkDetailPage = lazy(() => import("@/pages/BookmarkDetailPage"));
+// Study Spaces (opt-in subject workspaces) — lazy: most sessions never leave
+// the chat-first flow.
+const SpacesPage = lazy(() => import("@/pages/SpacesPage"));
+const SpaceWorkspacePage = lazy(() => import("@/pages/SpaceWorkspacePage"));
+// AI Notes (editable markdown saved from answers).
+const NotesPage = lazy(() => import("@/pages/NotesPage"));
+const NoteEditorPage = lazy(() => import("@/pages/NoteEditorPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
@@ -156,6 +163,16 @@ export default function App() {
                       <Route
                         path="/flashcards"
                         element={<TabRoute Component={FlashcardsPage} />}
+                      />
+                      <Route path="/spaces" element={<SpacesPage />} />
+                      <Route
+                        path="/spaces/:spaceId"
+                        element={<SpaceWorkspacePage />}
+                      />
+                      <Route path="/notes" element={<NotesPage />} />
+                      <Route
+                        path="/notes/:noteId"
+                        element={<NoteEditorPage />}
                       />
                       <Route path="/analytics" element={<AnalyticsPage />} />
                       <Route path="/files" element={<FilesPage />} />

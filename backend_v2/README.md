@@ -35,7 +35,8 @@ poetry run poe run             # http://localhost:8000
 See `.env.sample` for the full list. Required: `SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`. Key optional ones: `SUPABASE_JWT_SECRET`,
 `SUPABASE_STORAGE_BUCKET`, `LLM_MODEL` + per‑capability `LLM_*_MODEL` / `LLM_*_PROVIDER`,
-`ALLOWED_ORIGINS`, `FRONTEND_URL`, `COOKIE_SECURE`, `MAX_UPLOAD_MB`, `QUIZ_MAX_QUESTIONS`.
+`ALLOWED_ORIGINS`, `FRONTEND_URL`, `COOKIE_SECURE`, `MAX_UPLOAD_MB`, `QUIZ_MAX_QUESTIONS`,
+`CHAT_HISTORY_LIMIT` (recent messages sent to the LLM per turn; 0 = whole session).
 
 ## API endpoints
 

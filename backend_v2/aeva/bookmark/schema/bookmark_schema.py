@@ -18,6 +18,8 @@ class CreateBookmarkData:
     item_ref: str | None = None
     collection_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Study Space the bookmark belongs to; None files it into General.
+    space_id: str | None = None
 
 
 class CreateBookmarkSchema(Schema):
@@ -32,6 +34,7 @@ class CreateBookmarkSchema(Schema):
     item_ref = fields.Str(load_default=None, allow_none=True)
     collection_id = fields.Str(load_default=None, allow_none=True)
     metadata = fields.Dict(load_default=dict)
+    space_id = fields.Str(load_default=None, allow_none=True)
 
     @post_load
     def make_data(self, data: dict, **_kwargs: object) -> CreateBookmarkData:

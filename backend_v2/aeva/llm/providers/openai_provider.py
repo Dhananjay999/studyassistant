@@ -353,6 +353,30 @@ class OpenAIProvider(LLMProvider):
             if delta:
                 yield delta
 
+    def generate_image(self, prompt: str) -> tuple[bytes, str, str]:
+        """Generate one image via OpenAI's Images API.
+
+        ``gpt-image-1`` always returns base64 (and rejects the
+        ``response_format`` parameter); DALL·E models default to URLs, so
+        base64 is requested explicitly for them. The Images API produces no
+        accompanying text — the caption is always empty and the tool supplies
+        its own answer line.
+        """
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "prompt": prompt,
+            "n": 1,
+            "size": "1024x1024",
+        }
+        if self.model.startswith("dall-e"):
+            kwargs["response_format"] = "b64_json"
+        response = self.client.images.generate(**kwargs)
+        data = (response.data or [None])[0]
+        if data is None or not data.b64_json:
+            msg = "OpenAI returned no image data"
+            raise ValueError(msg)
+        return base64.b64decode(data.b64_json), "image/png", ""
+
     def embed(
         self,
         texts: list[str],

@@ -26,8 +26,14 @@ class SearchEndpoint(MethodView):
     @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def get(current_user: UserData, args: dict) -> dict[str, Any]:
-        """Search across the user's chats, quizzes, and files."""
-        return SearchRepository.search(current_user, args.get("q", ""))
+        """Search chats, notes, quizzes, flashcards and files.
+
+        ``space_id`` scopes every category to one Study Space (in-space
+        search); omitted, it searches everything.
+        """
+        return SearchRepository.search(
+            current_user, args.get("q", ""), args.get("space_id")
+        )
 
 
 blueprint.add_url_rule("/", view_func=SearchEndpoint, endpoint="search")

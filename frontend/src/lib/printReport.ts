@@ -93,6 +93,11 @@ export function printAttemptReport(
 <footer>Generated with StudyAssistant</footer>
 </body></html>`;
 
+  printHtmlDocument(html);
+}
+
+/** Print a self-contained HTML document via a temporary hidden iframe. */
+function printHtmlDocument(html: string): void {
   const frame = document.createElement("iframe");
   frame.style.position = "fixed";
   frame.style.right = "0";
@@ -118,4 +123,34 @@ export function printAttemptReport(
     frame.contentWindow?.print();
     window.setTimeout(() => frame.remove(), 60_000);
   }, 150);
+}
+
+/**
+ * Print a note as a clean document. ``bodyHtml`` is the note's ALREADY
+ * RENDERED markdown (the preview node's innerHTML), so tables, code blocks
+ * and KaTeX math print exactly as displayed — no second renderer needed.
+ */
+export function printNote(title: string, bodyHtml: string): void {
+  const html = `<!doctype html><html><head><meta charset="utf-8">
+<title>${esc(title)}</title>
+<style>
+  body { font-family: system-ui, sans-serif; color: #111; margin: 2rem;
+         line-height: 1.6; font-size: 0.95rem; }
+  h1.note-title { font-size: 1.4rem; margin: 0 0 1rem; }
+  h1, h2, h3 { line-height: 1.3; }
+  pre { background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px;
+        padding: 0.7rem; overflow-x: auto; font-size: 0.8rem; }
+  code { font-family: ui-monospace, monospace; }
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #ccc; padding: 0.3rem 0.6rem; font-size: 0.85rem; }
+  blockquote { border-left: 3px solid #ccc; margin-left: 0;
+               padding-left: 0.8rem; color: #555; }
+  img { max-width: 100%; }
+  footer { margin-top: 1.5rem; color: #999; font-size: 0.75rem; }
+</style></head><body>
+<h1 class="note-title">${esc(title)}</h1>
+${bodyHtml}
+<footer>Generated with StudyAssistant</footer>
+</body></html>`;
+  printHtmlDocument(html);
 }

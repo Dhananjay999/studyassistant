@@ -65,6 +65,50 @@ Never mention the profile to the student.
 """
 
 
+def build_space_block(space: dict[str, Any] | None) -> str:
+    """System-prompt fragment for the active Study Space, or ''.
+
+    Only real (non-default) spaces produce context — the invisible General
+    space renders nothing, so users who never adopt Study Spaces get exactly
+    the same prompts as before the feature existed.
+    """
+    if not space or space.get("is_default"):
+        return ""
+    name = str(space.get("name") or "").strip()
+    if not name:
+        return ""
+    lines = [f"- Space: {name}"]
+    subject = str(space.get("subject") or "").strip()
+    if subject:
+        lines.append(f"- Subject: {subject}")
+    description = str(space.get("description") or "").strip()
+    if description:
+        lines.append(f"- About: {description}")
+
+    # Memory digest (rolled up from quiz attempts — see QuizService): lets
+    # Aeva acknowledge progress and lean into weak topics unprompted.
+    memory = (space.get("settings") or {}).get("memory") or {}
+    recent = memory.get("recent_quizzes") or []
+    if recent:
+        summary = ", ".join(
+            f"{r.get('topic')} ({r.get('score')}%)" for r in recent[:3]
+        )
+        lines.append(f"- Recent quiz results: {summary}")
+    weak = memory.get("weak_topics") or []
+    if weak:
+        lines.append(
+            "- Topics the student is struggling with: " + ", ".join(weak)
+        )
+
+    return (
+        "Active Study Space (the student's dedicated workspace for this "
+        "subject):\n" + "\n".join(lines) + "\n"
+        "Anchor answers in this subject's context when relevant; assume "
+        "questions relate to it unless clearly stated otherwise. When weak "
+        "topics are listed, offer extra clarity and encouragement there.\n\n"
+    )
+
+
 def build_personalization_block(profile: dict[str, Any] | None) -> str:
     """Build a system-prompt fragment from a profile, or '' when not set.
 

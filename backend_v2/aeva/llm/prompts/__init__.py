@@ -37,7 +37,10 @@ from aeva.llm.prompts.orchestrator import (
     PLAN_TURN_SCHEMA,
     PLAN_TURN_TEMPLATE,
 )
-from aeva.llm.prompts.personalization import build_personalization_block
+from aeva.llm.prompts.personalization import (
+    build_personalization_block,
+    build_space_block,
+)
 from aeva.llm.prompts.quiz_analysis import (
     QUIZ_ANALYSIS_SCHEMA,
     QUIZ_ANALYSIS_TEMPLATE,
@@ -86,5 +89,6 @@ __all__ = [
     "PromptTemplate",
     "RenderedPrompt",
     "build_personalization_block",
+    "build_space_block",
     "user_profile_segment",
 ]

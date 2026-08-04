@@ -27,7 +27,9 @@ from aeva.learning_profile.learning_profile_controller import (
 from aeva.media.media_controller import blueprint as media_bp
 from aeva.quiz.quiz_controller import blueprint as quiz_bp
 from aeva.search.search_controller import blueprint as search_bp
+from aeva.note.note_controller import blueprint as note_bp
 from aeva.session.session_controller import blueprint as session_bp
+from aeva.space.space_controller import blueprint as space_bp
 from aeva.share.share_controller import (
     legacy_blueprint as share_legacy_bp,
 )
@@ -119,6 +121,11 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["LLM_QUIZ_ANALYSIS_MODEL"] = os.environ.get(
         "LLM_QUIZ_ANALYSIS_MODEL", app.config["LLM_QUIZ_MODEL"]
     )
+    # Image generation must run on an image-capable model; it never falls
+    # back to the (text) default model. Pairs with LLM_IMAGE_PROVIDER below.
+    app.config["LLM_IMAGE_MODEL"] = os.environ.get(
+        "LLM_IMAGE_MODEL", "gpt-image-1"
+    )
     app.config["LLM_FLASHCARD_MODEL"] = os.environ.get(
         "LLM_FLASHCARD_MODEL", default_model
     )
@@ -133,6 +140,7 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     )
     app.config["MEDIA_LLM_MODELS"] = os.environ.get("MEDIA_LLM_MODELS", "")
     app.config["QUIZ_LLM_MODELS"] = os.environ.get("QUIZ_LLM_MODELS", "")
+    app.config["IMAGE_LLM_MODELS"] = os.environ.get("IMAGE_LLM_MODELS", "")
     app.config["FLASHCARD_LLM_MODELS"] = os.environ.get(
         "FLASHCARD_LLM_MODELS", ""
     )
@@ -168,6 +176,11 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     )
     app.config["LLM_FLASHCARD_PROVIDER"] = os.environ.get(
         "LLM_FLASHCARD_PROVIDER", default_provider
+    )
+    # Image generation runs on OpenAI by default (independent of the text
+    # provider); needs OPENAI_API_KEY. Set both to move it elsewhere.
+    app.config["LLM_IMAGE_PROVIDER"] = os.environ.get(
+        "LLM_IMAGE_PROVIDER", "openai"
     )
     app.config["LLM_EMBEDDING_PROVIDER"] = os.environ.get(
         "LLM_EMBEDDING_PROVIDER", default_provider
@@ -216,6 +229,12 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
 
     app.config["QUIZ_MAX_QUESTIONS"] = int(
         os.environ.get("QUIZ_MAX_QUESTIONS", "10")
+    )
+
+    # How many recent messages of a session are sent to the LLM as
+    # conversation context each turn. 0 (or negative) sends the full session.
+    app.config["CHAT_HISTORY_LIMIT"] = int(
+        os.environ.get("CHAT_HISTORY_LIMIT", "20")
     )
 
     origins = os.environ.get(
@@ -350,6 +369,8 @@ def create_app() -> Flask:
 
     api.register_blueprint(auth_bp)
     api.register_blueprint(session_bp)
+    api.register_blueprint(space_bp)
+    api.register_blueprint(note_bp)
     api.register_blueprint(media_bp)
     api.register_blueprint(chat_bp)
     api.register_blueprint(assistant_bp)

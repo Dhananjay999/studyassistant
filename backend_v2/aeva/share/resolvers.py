@@ -319,6 +319,54 @@ class QuizResultShareResolver(ShareResolver):
 _REGISTRY: dict[str, ShareResolver] = {}
 
 
+# ------------------------------------------------------------------------- #
+#                                   Note                                     #
+# ------------------------------------------------------------------------- #
+
+
+class NoteShareResolver(ShareResolver):
+    """Share a note: guests get a read-only rendered view."""
+
+    content_type = "note"
+
+    def _load(self, content_id: str, owner_user_id: str) -> dict[str, Any]:
+        from aeva.note.note_repository import NoteRepository
+
+        return NoteRepository()._fetch(owner_user_id, content_id)  # noqa: SLF001
+
+    def snapshot(self, content_id: str, owner_user_id: str) -> dict[str, Any]:
+        """Ownership check + preview metadata for a note."""
+        note = self._load(content_id, owner_user_id)
+        body = note.get("content_md") or ""
+        return {
+            "title": note.get("title") or "Note",
+            "preview": body[:200],
+            "word_count": len(body.split()),
+        }
+
+    def resolve(self, share: dict[str, Any]) -> dict[str, Any]:
+        """Guest note payload — title + markdown, no internal ids."""
+        note = self._load(share["content_id"], share["owner_user_id"])
+        return {
+            "title": note.get("title") or "Note",
+            "content_md": note.get("content_md") or "",
+            "updated_at": note.get("updated_at"),
+        }
+
+    def og_meta(self, share: dict[str, Any]) -> dict[str, Any]:
+        """Social preview copy for a shared note (text-only, no image)."""
+        meta = share.get("metadata") or {}
+        preview = (meta.get("preview") or "").replace("\n", " ").strip()
+        return {
+            "title": f"{meta.get('title') or 'Note'} | StudyAssistant",
+            "description": (
+                preview[:150]
+                or "Study notes created with Aeva on StudyAssistant."
+            ),
+            "has_image": False,
+        }
+
+
 def register(resolver: ShareResolver) -> None:
     """Register a resolver for its content type."""
     _REGISTRY[resolver.content_type] = resolver
@@ -339,3 +387,4 @@ def supported_content_types() -> list[str]:
 
 register(QuizShareResolver())
 register(QuizResultShareResolver())
+register(NoteShareResolver())

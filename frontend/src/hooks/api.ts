@@ -15,6 +15,13 @@ import type {
 
 export const qk = {
   sessions: ["sessions"] as const,
+  spaces: ["spaces"] as const,
+  // Nested under ["spaces"] so invalidating qk.spaces refreshes overviews too.
+  spaceOverview: (id: string) => ["spaces", id, "overview"] as const,
+  spaceStats: (id: string) => ["spaces", id, "stats"] as const,
+  notes: (spaceId?: string) =>
+    spaceId ? (["notes", { spaceId }] as const) : (["notes"] as const),
+  note: (id: string) => ["notes", "detail", id] as const,
   media: ["media"] as const,
   // Nested under ["media"] so invalidating qk.media also invalidates per-item.
   mediaItem: (id: string) => ["media", id] as const,
@@ -27,7 +34,8 @@ export const qk = {
     ["quiz-attempts", quizId, attemptId] as const,
   flashcards: ["flashcards"] as const,
   flashcardSet: (id: string) => ["flashcards", id] as const,
-  search: (q: string) => ["search", q] as const,
+  search: (q: string, spaceId?: string) =>
+    ["search", q, spaceId ?? null] as const,
   learningProfile: ["learning-profile"] as const,
   analytics: ["analytics"] as const,
   config: ["config"] as const,
@@ -50,6 +58,124 @@ export function useSessions() {
   return useQuery({ queryKey: qk.sessions, queryFn: api.listSessions });
 }
 
+/* ------------------------------ Study Spaces ------------------------------ */
+
+export function useSpaces() {
+  return useQuery({ queryKey: qk.spaces, queryFn: api.listSpaces });
+}
+
+export function useSpaceOverview(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.spaceOverview(id ?? ""),
+    queryFn: () => api.getSpaceOverview(id!),
+    enabled: !!id,
+  });
+}
+
+export function useSpaceStats(id: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: qk.spaceStats(id ?? ""),
+    queryFn: () => api.getSpaceStats(id!),
+    enabled: !!id && enabled,
+    // Stats aggregate several tables — don't refetch on every focus.
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateSpace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.createSpace,
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.spaces }),
+  });
+}
+
+export function useUpdateSpace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      id: string;
+      patch: api.SpaceStyleInput & { name?: string };
+    }) => api.updateSpace(v.id, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.spaces }),
+  });
+}
+
+export function useDeleteSpace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; mode?: "move" | "purge" }) =>
+      api.deleteSpace(v.id, v.mode),
+    // Contents moved to General (or were purged) — every scoped list may
+    // have changed.
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
+export function useConvertToSpace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.convertSessionToSpace,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.spaces });
+      qc.invalidateQueries({ queryKey: qk.sessions });
+    },
+  });
+}
+
+/* ---------------------------------- notes --------------------------------- */
+
+export function useNotes(spaceId?: string) {
+  return useQuery({
+    queryKey: qk.notes(spaceId),
+    queryFn: () => api.listNotes(spaceId),
+  });
+}
+
+export function useNote(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.note(id ?? ""),
+    queryFn: () => api.getNote(id!),
+    enabled: !!id,
+  });
+}
+
+/** Invalidate every notes-derived surface (lists, space overviews). */
+function invalidateNotes(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["notes"] });
+  qc.invalidateQueries({ queryKey: qk.spaces });
+}
+
+export function useCreateNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.createNote,
+    onSuccess: () => invalidateNotes(qc),
+  });
+}
+
+export function useUpdateNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      id: string;
+      patch: { title?: string; content_md?: string; space_id?: string | null };
+    }) => api.updateNote(v.id, v.patch),
+    onSuccess: (note) => {
+      qc.setQueryData(qk.note(note.id), note);
+      invalidateNotes(qc);
+    },
+  });
+}
+
+export function useDeleteNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteNote(id),
+    onSuccess: () => invalidateNotes(qc),
+  });
+}
+
 export function useCreateSession() {
   const qc = useQueryClient();
   return useMutation({
@@ -57,7 +183,8 @@ export function useCreateSession() {
       title?: string;
       mode?: "media" | "web_search";
       mediaIds?: string[];
-    }) => api.createSession(v.title, v.mode, v.mediaIds),
+      spaceId?: string;
+    }) => api.createSession(v.title, v.mode, v.mediaIds, v.spaceId),
     // The POST already returns the full session row, so optimistically prepend
     // it to the cached list instead of firing a second GET /sessions. The
     // sidebar updates instantly and no redundant network request is made.
@@ -231,11 +358,11 @@ export function useRecordStudyBatch() {
 
 /* --------------------------------- search --------------------------------- */
 
-export function useSearch(query: string) {
+export function useSearch(query: string, spaceId?: string) {
   const q = query.trim();
   return useQuery({
-    queryKey: qk.search(q),
-    queryFn: () => api.searchAll(q),
+    queryKey: qk.search(q, spaceId),
+    queryFn: () => api.searchAll(q, spaceId),
     enabled: q.length >= 2,
     staleTime: 30_000,
   });

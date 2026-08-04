@@ -16,12 +16,15 @@ class SessionRepository:
         current_user: UserData,
         request_data: CreateSessionData,
     ) -> dict[str, Any]:
-        """Create a new chat session."""
+        """Create a new chat session (always filed into a space)."""
         supabase = SupabaseService()
         session = supabase.create_session(
             user_id=current_user.id,
             title=request_data.title,
             mode=request_data.mode,
+            space_id=supabase.resolve_space(
+                current_user.id, request_data.space_id
+            ),
         )
         if request_data.media_ids:
             supabase.attach_media_to_session(
@@ -32,10 +35,12 @@ class SessionRepository:
         return success_response("Session created", session)
 
     @staticmethod
-    def list_sessions(current_user: UserData) -> dict[str, Any]:
-        """List all sessions for user."""
+    def list_sessions(
+        current_user: UserData, space_id: str | None = None
+    ) -> dict[str, Any]:
+        """List sessions for user, optionally scoped to one space."""
         supabase = SupabaseService()
-        sessions = supabase.list_sessions(current_user.id)
+        sessions = supabase.list_sessions(current_user.id, space_id=space_id)
         return success_response("Sessions retrieved", sessions)
 
     @staticmethod

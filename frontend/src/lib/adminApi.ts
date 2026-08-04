@@ -8,6 +8,7 @@
 
 import { API_BASE_URL } from "@/lib/api";
 import type {
+  AdminDebugUser,
   AdminLoginResult,
   AdminOverview,
   AdminResourceList,
@@ -153,4 +154,11 @@ export const adminApi = {
     ),
   search: (q: string) =>
     unwrap<AdminSearchResults>(`/search?q=${encodeURIComponent(q)}`),
+  listDebugUsers: () =>
+    unwrap<{ users: AdminDebugUser[] }>("/debug-users"),
+  setDebugUser: (id: string, enabled: boolean) =>
+    unwrap<{ user_id: string; is_debug_user: boolean }>(
+      `/users/${id}/debug`,
+      { method: "PUT", body: JSON.stringify({ enabled }) },
+    ),
 };

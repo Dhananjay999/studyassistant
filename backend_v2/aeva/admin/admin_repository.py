@@ -287,12 +287,50 @@ class AdminRepository:
             "joined_at": row.get("created_at"),
             "personalization_status": row.get("personalization_status")
             or "pending",
+            "is_debug_user": bool(row.get("is_debug_user")),
             "last_active": counts.get("last_active"),
             "total_chats": counts.get("sessions", 0),
             "total_quizzes": counts.get("quizzes", 0),
             "total_flashcards": counts.get("flashcards", 0),
             "storage_used": counts.get("storage_used", 0),
         }
+
+    # ------------------------------------------------------------------
+    # Developer Mode (debug users)
+    # ------------------------------------------------------------------
+
+    def list_debug_users(self) -> dict[str, Any]:
+        """All users with Developer Mode currently enabled."""
+        res = (
+            self.client.table("profiles")
+            .select("id,email,full_name,avatar_url,created_at")
+            .eq("is_debug_user", True)
+            .order("email")
+            .execute()
+        )
+        return success_response(
+            "Debug users loaded", {"users": res.data or []}
+        )
+
+    def set_debug_user(self, user_id: str, enabled: bool) -> dict[str, Any]:
+        """Enable/disable Developer Mode for one user (role-independent)."""
+        res = (
+            self.client.table("profiles")
+            .update({"is_debug_user": enabled})
+            .eq("id", user_id)
+            .execute()
+        )
+        if not res.data:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        logger.info(
+            "Admin %s Developer Mode for user %s",
+            "enabled" if enabled else "disabled",
+            user_id,
+        )
+        return success_response(
+            "Debug flag updated",
+            {"user_id": user_id, "is_debug_user": enabled},
+        )
 
     # ------------------------------------------------------------------
     # User detail

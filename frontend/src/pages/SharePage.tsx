@@ -7,6 +7,10 @@ import { Seo } from "@/components/common/Seo";
 import { Button } from "@/components/ui/button";
 import { SharedQuizView } from "@/components/share/SharedQuizView";
 import { SharedResultView } from "@/components/share/SharedResultView";
+import {
+  SharedNoteView,
+  type SharedNoteContent,
+} from "@/components/share/SharedNoteView";
 import { resolveShare } from "@/lib/api";
 import type {
   QuizContent,
@@ -35,10 +39,15 @@ function QuizResultRenderer({ share }: { share: ResolvedShare }) {
   );
 }
 
+function NoteRenderer({ share }: { share: ResolvedShare }) {
+  return <SharedNoteView content={share.content as SharedNoteContent} />;
+}
+
 /** content_type → renderer. Extend here for future shareable features. */
 const RENDERERS: Record<string, ComponentType<{ share: ResolvedShare }>> = {
   quiz: QuizRenderer,
   quiz_result: QuizResultRenderer,
+  note: NoteRenderer,
 };
 
 /** Browser-tab title derived from the share's preview metadata. */

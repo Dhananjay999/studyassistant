@@ -61,6 +61,9 @@ class ToolContext:
     message: str
     enriched_message: str
     media_ids: list[str] | None
+    # Study Space the session lives in; generated content (quizzes, flashcard
+    # sets) is stamped with it so it stays inside the same space.
+    space_id: str | None = None
     history: list[dict[str, str]] = field(default_factory=list)
     # Optional system-prompt fragment built from the user's learning profile;
     # empty when the user has not completed onboarding.

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
@@ -31,7 +32,9 @@ class BookmarkList(MethodView):
     @user_required
     def get(current_user: UserData) -> dict[str, Any]:
         """List all bookmarks."""
-        return BookmarkRepository.list_bookmarks(current_user)
+        return BookmarkRepository.list_bookmarks(
+            current_user, space_id=request.args.get("space_id")
+        )
 
     @staticmethod
     @blueprint.arguments(CreateBookmarkSchema)

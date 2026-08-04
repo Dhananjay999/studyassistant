@@ -196,6 +196,19 @@ class LLMClient:
         self._log_response(log_label, result)
         return result
 
+    def generate_image(self, prompt: str) -> tuple[bytes, str, str]:
+        """Generate one image: ``(bytes, mime_type, caption)``."""
+        self._log_request("image", prompt)
+        with self._timed("image", prompt):
+            image, mime, caption = self._provider.generate_image(prompt)
+        logger.info(
+            "LLM image ← %d bytes (%s) | caption=%dchars",
+            len(image),
+            mime,
+            len(caption),
+        )
+        return image, mime, caption
+
     def generate_structured(
         self,
         user_message: str,

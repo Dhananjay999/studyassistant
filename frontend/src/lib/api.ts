@@ -30,9 +30,15 @@ import type {
   ShareContentType,
   ShareLink,
   ShareVisibility,
+  Note,
+  NoteListItem,
+  NoteSourceType,
   SearchResults,
   Session,
+  SpaceOverview,
+  SpaceStats,
   StudyRating,
+  StudySpace,
   User,
 } from "@/types";
 
@@ -47,6 +53,13 @@ export const ENDPOINTS = {
   SESSIONS: "/sessions/",
   SESSION: (id: string) => `/sessions/${id}`,
   SESSION_MESSAGES: (id: string) => `/sessions/${id}/messages`,
+  SPACES: "/spaces/",
+  SPACE: (id: string) => `/spaces/${id}`,
+  SPACE_OVERVIEW: (id: string) => `/spaces/${id}/overview`,
+  SPACE_STATS: (id: string) => `/spaces/${id}/stats`,
+  SPACE_CONVERT: "/spaces/convert",
+  NOTES: "/notes/",
+  NOTE: (id: string) => `/notes/${id}`,
   MEDIA: "/media/",
   MEDIA_ITEM: (id: string) => `/media/${id}`,
   MEDIA_STATUS: (id: string) => `/media/${id}/status`,
@@ -181,11 +194,103 @@ export const createSession = (
   title = "New chat",
   mode: "media" | "web_search" = "media",
   mediaIds: string[] = [],
+  spaceId?: string,
 ) =>
   unwrap<Session>(ENDPOINTS.SESSIONS, {
     method: "POST",
-    body: JSON.stringify({ title, mode, media_ids: mediaIds }),
+    body: JSON.stringify({
+      title,
+      mode,
+      media_ids: mediaIds,
+      space_id: spaceId ?? null,
+    }),
   });
+
+/* ------------------------------ Study Spaces ------------------------------ */
+
+export interface SpaceStyleInput {
+  subject?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+}
+
+export const listSpaces = () => unwrap<StudySpace[]>(ENDPOINTS.SPACES);
+
+export const createSpace = (input: SpaceStyleInput & { name: string }) =>
+  unwrap<StudySpace>(ENDPOINTS.SPACES, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+export const updateSpace = (
+  id: string,
+  patch: SpaceStyleInput & { name?: string },
+) =>
+  unwrap<StudySpace>(ENDPOINTS.SPACE(id), {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+/** mode "move" re-files contents into General; "purge" deletes them. */
+export const deleteSpace = (id: string, mode: "move" | "purge" = "move") =>
+  unwrap<{ id: string; mode: string }>(
+    `${ENDPOINTS.SPACE(id)}?mode=${mode}`,
+    { method: "DELETE" },
+  );
+
+export const getSpaceOverview = (id: string) =>
+  unwrap<SpaceOverview>(ENDPOINTS.SPACE_OVERVIEW(id));
+
+export const getSpaceStats = (id: string) =>
+  unwrap<SpaceStats>(ENDPOINTS.SPACE_STATS(id));
+
+export const convertSessionToSpace = (
+  input: SpaceStyleInput & { session_id: string; name?: string },
+) =>
+  unwrap<StudySpace>(ENDPOINTS.SPACE_CONVERT, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+/* ---------------------------------- notes ---------------------------------- */
+
+export interface CreateNoteInput {
+  title?: string;
+  content_md?: string;
+  source_type?: NoteSourceType;
+  source_ref?: string;
+  space_id?: string;
+  /** Locates the Study Space when saving from a chat. */
+  session_id?: string;
+}
+
+export const listNotes = (spaceId?: string) =>
+  unwrap<NoteListItem[]>(
+    spaceId
+      ? `${ENDPOINTS.NOTES}?space_id=${encodeURIComponent(spaceId)}`
+      : ENDPOINTS.NOTES,
+  );
+
+export const getNote = (id: string) => unwrap<Note>(ENDPOINTS.NOTE(id));
+
+export const createNote = (input: CreateNoteInput) =>
+  unwrap<Note>(ENDPOINTS.NOTES, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+export const updateNote = (
+  id: string,
+  patch: { title?: string; content_md?: string; space_id?: string | null },
+) =>
+  unwrap<Note>(ENDPOINTS.NOTE(id), {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+export const deleteNote = (id: string) =>
+  unwrap<{ id: string }>(ENDPOINTS.NOTE(id), { method: "DELETE" });
 
 export const renameSession = (id: string, title: string) =>
   unwrap<Session>(ENDPOINTS.SESSION(id), {
@@ -221,6 +326,10 @@ export async function getMessages(id: string): Promise<Message[]> {
         // sources live under metadata.content on the backend, not top-level.
         sources: (inner.sources as Message["meta"]["sources"]) || [],
         tool_used: toolUsed,
+        // Present only for Developer Mode users (backend attaches them).
+        model: inner.model as string | undefined,
+        debug: inner.debug as Message["meta"]["debug"],
+        images: inner.images as Message["meta"]["images"],
         status: md.status as Message["meta"]["status"],
         run_id: md.run_id as string | undefined,
         clarification: md.clarification as Message["meta"]["clarification"],
@@ -542,8 +651,21 @@ export const getAnalytics = () =>
 
 /* --------------------------------- search --------------------------------- */
 
-export const searchAll = (q: string) =>
-  unwrap<SearchResults>(`${ENDPOINTS.SEARCH}?q=${encodeURIComponent(q)}`);
+export const searchAll = (q: string, spaceId?: string) =>
+  unwrap<SearchResults>(
+    `${ENDPOINTS.SEARCH}?q=${encodeURIComponent(q)}` +
+      (spaceId ? `&space_id=${encodeURIComponent(spaceId)}` : ""),
+  );
+
+/** Download the whole space as a markdown document (raw text response). */
+export async function exportSpaceMarkdown(id: string): Promise<string> {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE_URL}/spaces/${id}/export`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) throw new Error(`Export failed (${res.status})`);
+  return res.text();
+}
 
 /** Absolute URL for the SSE assistant stream (used by useAssistantStream). */
 export const assistantStreamUrl = `${API_BASE_URL}${ENDPOINTS.ASSISTANT_STREAM}`;

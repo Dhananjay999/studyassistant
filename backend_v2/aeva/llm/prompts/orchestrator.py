@@ -285,6 +285,7 @@ PLAN_TURN_SCHEMA: dict = {
                         "media_llm",
                         "quiz_generator",
                         "flashcard_generator",
+                        "image_generator",
                     ],
                 },
                 "model": {

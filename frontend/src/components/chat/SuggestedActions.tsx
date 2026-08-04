@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Check, Copy, Loader2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  Copy,
+  Loader2,
+  NotebookPen,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -67,6 +73,7 @@ export function SuggestedActions({
   onGenerateQuiz,
   onCreateFlashcards,
   onCopy,
+  onSaveNote,
 }: {
   /** Action keys the backend says apply to this response (undefined = all). */
   availableActions?: string[];
@@ -86,9 +93,14 @@ export function SuggestedActions({
   onGenerateQuiz: (options: QuizOptions) => void;
   onCreateFlashcards: () => void;
   onCopy: () => Promise<boolean>;
+  /** Save this answer as an editable note; resolves true on success. */
+  onSaveNote?: () => Promise<boolean>;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [noteState, setNoteState] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
 
   // Render only the actions the backend exposed for this response. Undefined
   // (e.g. older messages) falls back to the full set for compatibility.
@@ -249,6 +261,31 @@ export function SuggestedActions({
       {/* Secondary utility actions — icons that expand to labels on hover */}
       <div className="mt-2.5 flex items-center gap-1 border-t border-border/40 pt-2">
         <BookmarkButton item={bookmarkItem} hoverExpand />
+        {onSaveNote && (
+          <button
+            type="button"
+            onClick={async () => {
+              if (noteState !== "idle") return;
+              setNoteState("saving");
+              const ok = await onSaveNote();
+              setNoteState(ok ? "saved" : "idle");
+              if (ok) window.setTimeout(() => setNoteState("idle"), 2000);
+            }}
+            aria-label="Save as note"
+            className="group inline-flex h-7 items-center rounded-full px-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            {noteState === "saving" ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+            ) : noteState === "saved" ? (
+              <Check className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <NotebookPen className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs opacity-0 transition-all duration-200 ease-out group-hover:ml-1.5 group-hover:max-w-[90px] group-hover:opacity-100">
+              {noteState === "saved" ? "Saved" : "Save note"}
+            </span>
+          </button>
+        )}
         <button
           type="button"
           onClick={copy}

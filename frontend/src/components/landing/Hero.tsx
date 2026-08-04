@@ -1,10 +1,10 @@
 import { motion } from "framer-motion";
-import { ArrowRight, Bot, FileText, Layers, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { AuroraBackground } from "@/components/common/AuroraBackground";
 import { RotatingWords } from "@/components/common/RotatingWords";
 import { Marquee } from "@/components/common/Marquee";
-import { GlassCard } from "@/components/common/GlassCard";
 import { GoogleButton } from "@/components/landing/GoogleButton";
+import { HeroDemo } from "@/components/landing/HeroDemo";
 
 const SUBJECTS = [
   "Biology",
@@ -90,7 +90,7 @@ export function Hero() {
           transition={{ duration: 0.7, delay: 0.25 }}
           className="mx-auto mt-14 max-w-3xl"
         >
-          <HeroPreview />
+          <HeroDemo />
         </motion.div>
 
         <div className="mt-12 pb-4">
@@ -98,45 +98,5 @@ export function Hero() {
         </div>
       </div>
     </section>
-  );
-}
-
-/** Decorative mock of a chat exchange — hidden from assistive tech. */
-function HeroPreview() {
-  return (
-    <GlassCard
-      strong
-      aria-hidden="true"
-      className="animate-float p-4 shadow-glow-lg sm:p-6"
-      style={{ animationDuration: "7s" }}
-    >
-      <div className="space-y-4 text-left">
-        <div className="flex justify-end">
-          <span className="rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
-            Explain how a B-tree index works
-          </span>
-        </div>
-        <div className="flex gap-3">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-gradient text-white">
-            <Bot className="h-4 w-4" />
-          </span>
-          <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted/70 px-4 py-3 text-sm leading-relaxed">
-            A B-tree index keeps data sorted in a balanced tree so lookups stay
-            fast even on huge tables…
-            <span className="mt-3 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full border border-brand-1/40 px-2.5 py-1 text-xs font-medium text-brand-1">
-                <Sparkles className="h-3 w-3" /> Create Quiz
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-brand-1/40 px-2.5 py-1 text-xs font-medium text-brand-1">
-                <Layers className="h-3 w-3" /> Create Flashcards
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-card px-2.5 py-1 text-xs text-muted-foreground">
-                <FileText className="h-3 w-3" /> 2 sources
-              </span>
-            </span>
-          </div>
-        </div>
-      </div>
-    </GlassCard>
   );
 }

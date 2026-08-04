@@ -25,6 +25,7 @@ _TOOL_MODELS: dict[str, tuple[str, str]] = {
     "media_llm": ("MEDIA_LLM_MODELS", "LLM_MEDIA_MODEL"),
     "quiz_generator": ("QUIZ_LLM_MODELS", "LLM_QUIZ_MODEL"),
     "flashcard_generator": ("FLASHCARD_LLM_MODELS", "LLM_FLASHCARD_MODEL"),
+    "image_generator": ("IMAGE_LLM_MODELS", "LLM_IMAGE_MODEL"),
 }
 
 

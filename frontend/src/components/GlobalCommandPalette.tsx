@@ -12,6 +12,7 @@ import {
   MessageSquarePlus,
   MessagesSquare,
   Moon,
+  NotebookPen,
   Sun,
 } from "lucide-react";
 import {
@@ -115,7 +116,8 @@ export function GlobalCommandPalette({
       results.messages.length > 0 ||
       results.quizzes.length > 0 ||
       results.media.length > 0 ||
-      results.flashcards.length > 0);
+      results.flashcards.length > 0 ||
+      (results.notes?.length ?? 0) > 0);
   const anything =
     hasResults || matchedBookmarks.length > 0 || matchedFolders.length > 0;
 
@@ -229,6 +231,22 @@ export function GlobalCommandPalette({
               >
                 <ListChecks className="h-4 w-4 shrink-0" />
                 <span className="truncate">{qz.title}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        ) : null}
+
+        {searching && results?.notes?.length ? (
+          <CommandGroup heading="Notes">
+            {results.notes.map((n) => (
+              <CommandItem
+                key={`n-${n.id}`}
+                value={`note ${n.id} ${n.title} ${n.preview}`}
+                onSelect={() => go(() => navigate(`/notes/${n.id}`))}
+                className="gap-2"
+              >
+                <NotebookPen className="h-4 w-4 shrink-0" />
+                <span className="truncate">{n.title}</span>
               </CommandItem>
             ))}
           </CommandGroup>

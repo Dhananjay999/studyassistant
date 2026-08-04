@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
@@ -28,8 +29,10 @@ class SessionList(MethodView):
     @blueprint.response(200, ResponseEnvelopeSchema)
     @user_required
     def get(current_user: UserData) -> dict[str, Any]:
-        """List user sessions."""
-        return SessionRepository.list_sessions(current_user)
+        """List user sessions (optionally ?space_id=… scoped)."""
+        return SessionRepository.list_sessions(
+            current_user, space_id=request.args.get("space_id")
+        )
 
     @staticmethod
     @blueprint.arguments(CreateSessionSchema)

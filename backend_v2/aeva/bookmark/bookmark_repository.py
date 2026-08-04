@@ -167,16 +167,19 @@ class BookmarkRepository:
         return success_response("Collection deleted", {"id": collection_id})
 
     @staticmethod
-    def list_bookmarks(current_user: UserData) -> dict[str, Any]:
-        """List all bookmarks for the user, newest first."""
+    def list_bookmarks(
+        current_user: UserData, space_id: str | None = None
+    ) -> dict[str, Any]:
+        """List bookmarks for the user, optionally scoped to one space."""
         supabase = SupabaseService()
-        result = (
+        query = (
             supabase.client.table("bookmarks")
             .select("*")
             .eq("user_id", current_user.id)
-            .order("created_at", desc=True)
-            .execute()
         )
+        if space_id:
+            query = query.eq("space_id", space_id)
+        result = query.order("created_at", desc=True).execute()
         bookmarks = BookmarkRepository._attach_session_ids(
             supabase,
             current_user.id,
@@ -231,6 +234,10 @@ class BookmarkRepository:
                 "title": request_data.title,
                 "content": request_data.content,
                 "metadata": request_data.metadata,
+                # Always filed into a space (explicit > General).
+                "space_id": supabase.resolve_space(
+                    current_user.id, request_data.space_id
+                ),
             })
             .execute()
         )

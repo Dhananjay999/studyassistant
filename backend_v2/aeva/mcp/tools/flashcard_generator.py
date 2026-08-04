@@ -124,6 +124,7 @@ class FlashcardGeneratorTool(BaseTool):
             session_id=ctx.session_id,
             data=data,
             source_type=source_type,
+            space_id=ctx.space_id,
         )
         return {
             "set_id": fset["set_id"],

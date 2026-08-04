@@ -45,6 +45,7 @@ const FlashcardViewer = lazy(() =>
 );
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { EmptyState } from "@/components/chat/EmptyState";
+import { ContinueLearningRail } from "@/components/spaces/ContinueLearningRail";
 import { useShell } from "@/components/layout/AppLayout";
 import { DRAWER_EDGE_SIZE } from "@/components/layout/MobileNavDrawer";
 import { useHeaderSlot } from "@/components/layout/HeaderSlot";
@@ -62,6 +63,7 @@ import { useSwipe } from "@/hooks/useSwipe";
 import type { ThinkingHint } from "@/lib/loadingMessages";
 import {
   qk,
+  useCreateNote,
   useCreateSession,
   useDeleteSession,
   useDeleteMedia,
@@ -118,6 +120,7 @@ export default function ChatPage() {
   const sessionsQuery = useSessions();
   const sessions = sessionsQuery.data ?? [];
   const createSession = useCreateSession();
+  const createNote = useCreateNote();
   const deleteSession = useDeleteSession();
 
   const urlId = searchParams.get("sessionId");
@@ -456,7 +459,14 @@ export default function ChatPage() {
       let sid = activeId;
       if (!sid) {
         try {
-          const s = await createSession.mutateAsync({});
+          // Inherit the Study Space when the chat was opened from one
+          // (/chat?spaceId=…). Read at call time to avoid a stale closure;
+          // absent → the backend files the chat into General.
+          const s = await createSession.mutateAsync({
+            spaceId:
+              new URLSearchParams(window.location.search).get("spaceId") ??
+              undefined,
+          });
           sid = s.id;
           newChatRef.current = false;
           loadedSession.current = sid;
@@ -508,6 +518,10 @@ export default function ChatPage() {
                         tool_used: toolUsed,
                         sources:
                           (content.sources as Message["meta"]["sources"]) || [],
+                        // Present only for Developer Mode users.
+                        model: content.model as string | undefined,
+                        debug: content.debug as Message["meta"]["debug"],
+                        images: content.images as Message["meta"]["images"],
                         quiz,
                         flashcards,
                         available_actions: content.available_actions as
@@ -527,6 +541,11 @@ export default function ChatPage() {
             // Surface a freshly generated resource in the sidebar workspace.
             if (quiz) qc.invalidateQueries({ queryKey: qk.quizzes });
             if (flashcards) qc.invalidateQueries({ queryKey: qk.flashcards });
+            // Generated images are media rows — refresh the library so the
+            // sidebar/Files page (and stale-URL re-resolution) see them.
+            if ((content.images as unknown[] | undefined)?.length) {
+              qc.invalidateQueries({ queryKey: qk.media });
+            }
             // Auto-open the study panel right after a set is generated.
             if (flashcards?.set_id) {
               setActiveFlashcards(flashcards.set_id);
@@ -1034,6 +1053,8 @@ export default function ChatPage() {
               ) : messages.length === 0 && !streaming ? (
                 <div className="h-full">
                   <EmptyState onPick={(t) => send(t)} />
+                  {/* Opt-in: renders nothing until real Study Spaces exist. */}
+                  <ContinueLearningRail />
                 </div>
               ) : (
                 <ChatMessages
@@ -1041,6 +1062,29 @@ export default function ChatPage() {
                   mediaAvailable={selected.size > 0}
                   quizBusy={streaming}
                   thinkingHint={thinkingHint}
+                  onSaveNote={async (messageId, content, topic) => {
+                    try {
+                      const note = await createNote.mutateAsync({
+                        title:
+                          (topic || content).slice(0, 80).trim() ||
+                          "Untitled note",
+                        content_md: content,
+                        source_type: "response",
+                        source_ref: messageId,
+                        session_id: activeId ?? undefined,
+                      });
+                      toast.success("Saved to Notes", {
+                        action: {
+                          label: "Open",
+                          onClick: () => navigate(`/notes/${note.id}`),
+                        },
+                      });
+                      return true;
+                    } catch {
+                      toast.error("Couldn't save the note");
+                      return false;
+                    }
+                  }}
                   onAction={(message, sourceContent) =>
                     send(message, { sourceContent, displayText: message })
                   }

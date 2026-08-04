@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import time
 from collections.abc import Generator
 from typing import Any
 
@@ -94,6 +95,11 @@ class AssistantOrchestrator:
         self._llm = llm
         self._registry = registry
         self._supabase = supabase
+        # Developer Mode flag for the CURRENT turn's user. Set by
+        # _setup_and_plan from the profile row it already fetches, so normal
+        # users pay no extra lookup. One orchestrator instance serves one
+        # request (see assistant_repository), so instance state is safe.
+        self._debug_enabled = False
 
     @property
     def llm(self) -> LLMClient:
@@ -117,9 +123,12 @@ class AssistantOrchestrator:
 
     def run(self, ctx: AssistantContext) -> AssistantResult:
         """Execute one assistant turn (non-streaming)."""
+        t_start = time.perf_counter()
         session, history, enriched_message, plan, personalization = (
             self._setup_and_plan(ctx)
         )
+        planning_ms = int((time.perf_counter() - t_start) * 1000)
+        debug_enabled = self._debug_enabled
 
         # Quiz requested but not yet configured -> ALWAYS open the setup popover
         # first, pre-filled with whatever the planner detected. The user then
@@ -141,16 +150,24 @@ class AssistantOrchestrator:
         tool_model, tool_config_key = self._fast_override(plan, tool_model)
         tool_ctx = self._build_tool_ctx(
             ctx, enriched_message, history, personalization,
-            tool_model, tool_config_key,
+            tool_model, tool_config_key, session.get("space_id"),
         )
 
+        t_tool = time.perf_counter()
         result = self.registry.execute(tool_name, tool_ctx, tool_params)
+        tool_ms = int((time.perf_counter() - t_tool) * 1000)
         answer, meta = self._split_answer_meta(result.get("answer", ""))
         if answer:
             result["answer"] = answer
         self._attach_actions(tool_name, result, meta=meta)
         display_text = self._format_display(tool_name, result)
-        badge = self._model_badge(tool_model)
+        if debug_enabled:
+            result["model"] = tool_model
+            result["debug"] = self._debug_info(
+                plan, ctx, history, tool_name, tool_model, tool_config_key,
+                planning_ms, tool_ms, t_start, streamed=False,
+            )
+        badge = self._model_badge(tool_model, debug_enabled)
         if badge:
             result["model"] = tool_model
             display_text += badge
@@ -176,9 +193,12 @@ class AssistantOrchestrator:
             len(ctx.media_ids or []),
             (ctx.message or "")[:80],
         )
+        t_start = time.perf_counter()
         session, history, enriched_message, plan, personalization = (
             self._setup_and_plan(ctx)
         )
+        planning_ms = int((time.perf_counter() - t_start) * 1000)
+        debug_enabled = self._debug_enabled
         logger.info(
             "Turn planned | action=%s | tool=%s",
             plan.get("action"),
@@ -216,12 +236,13 @@ class AssistantOrchestrator:
         )
         tool_ctx = self._build_tool_ctx(
             ctx, enriched_message, history, personalization,
-            tool_model, tool_config_key,
+            tool_model, tool_config_key, session.get("space_id"),
         )
         tool = self.registry.get(tool_name)
 
         result: dict[str, Any] = {}
         meta: dict[str, Any] | None = None
+        t_tool = time.perf_counter()
         if tool.can_stream():
             # Stream only the answer; the follow-up metadata trailer the model
             # appends is held back here and parsed (no second LLM call).
@@ -244,9 +265,17 @@ class AssistantOrchestrator:
             display_text = self._format_display(tool_name, result)
             yield LLMClient.format_sse_chunk(display_text)
 
+        tool_ms = int((time.perf_counter() - t_tool) * 1000)
+        if debug_enabled:
+            result["model"] = tool_model
+            result["debug"] = self._debug_info(
+                plan, ctx, history, tool_name, tool_model, tool_config_key,
+                planning_ms, tool_ms, t_start, streamed=tool.can_stream(),
+            )
+
         # Optional "powered by: <model>" badge — streamed as a trailing chunk
         # and folded into the persisted display text (never into the answer).
-        badge = self._model_badge(tool_model)
+        badge = self._model_badge(tool_model, debug_enabled)
         if badge:
             result["model"] = tool_model
             display_text = (display_text or "") + badge
@@ -285,8 +314,16 @@ class AssistantOrchestrator:
         if not session:
             raise CustomError(ERROR_CODES["NOT_FOUND"])
 
-        personalization = prompts.build_personalization_block(
-            self.supabase.get_profile(ctx.user_id)
+        profile = self.supabase.get_profile(ctx.user_id)
+        # Developer Mode rides the profile row that personalization already
+        # needs — deciding it costs normal users nothing extra.
+        self._debug_enabled = bool((profile or {}).get("is_debug_user"))
+        personalization = prompts.build_personalization_block(profile)
+        # Study Space context rides the session fetch (embedded relation, no
+        # extra query). General/legacy sessions contribute nothing, so
+        # non-adopters get byte-identical prompts.
+        personalization += prompts.build_space_block(
+            session.get("study_spaces")
         )
         history = self._get_history(ctx.session_id)
         enriched_message = ctx.message
@@ -328,15 +365,18 @@ class AssistantOrchestrator:
             self.supabase.add_message(ctx.session_id, "user", ctx.message)
 
         # Deterministic plans (resolved file choice, popover-driven quiz/flash)
-        # skip LLM planning entirely.
+        # skip LLM planning entirely. Each path stamps `_source` (internal,
+        # never persisted) so Developer Mode can show WHY a tool was chosen.
         forced = self._forced_plan(ctx, media_choice_ids)
         if forced is not None:
+            forced["_source"] = "forced"
             return session, history, enriched_message, forced, personalization
 
         # Several files selected + a vague request -> ask which file to use.
         if not ctx.clarification and ctx.media_ids and len(ctx.media_ids) > 1:
             decision = self._disambiguate_media(ctx, enriched_message)
             if decision is not None:
+                decision["_source"] = "media_choice"
                 return (
                     session, history, enriched_message, decision,
                     personalization,
@@ -347,18 +387,21 @@ class AssistantOrchestrator:
         cont = self._continuation_plan(ctx, enriched_message)
         if cont is not None:
             logger.info("Turn → continuation of last tool: %s", cont["tool"])
+            cont["_source"] = "continuation"
             return session, history, enriched_message, cont, personalization
 
         # Deterministic outcome -> skip the planner LLM call entirely.
         fast = self._fast_path_plan(ctx, enriched_message, history)
         if fast is not None:
             logger.info("Turn planned deterministically (no plan LLM call)")
+            fast["_source"] = "fast_path"
             return session, history, enriched_message, fast, personalization
 
         plan = self._plan_turn(
             ctx, history, enriched_message, ctx.clarification
         )
         plan = self._refine_plan(plan, ctx, enriched_message, history)
+        plan["_source"] = "planner"
         return session, history, enriched_message, plan, personalization
 
     def _forced_plan(
@@ -454,18 +497,62 @@ class AssistantOrchestrator:
         return model, key
 
     @staticmethod
-    def _model_badge(model: str | None) -> str:
+    def _model_badge(model: str | None, debug_enabled: bool = False) -> str:
         """Return a "powered by: <model>" trailer (empty unless enabled).
 
-        Gated on ``SHOW_MODEL_BADGE`` (a dev/QA aid) so it never leaks into
-        production answers. Display-only: it is appended to the display text,
-        never to ``result["answer"]``, so the stored answer stays clean.
+        Shown to Developer Mode users (``profiles.is_debug_user``, managed
+        from the admin panel) or when the global ``SHOW_MODEL_BADGE`` env
+        override is on (local dev/QA) — never to normal users. Display-only:
+        it is appended to the display text, never to ``result["answer"]``, so
+        the stored answer stays clean.
         """
         from flask import current_app
 
-        if not model or not current_app.config.get("SHOW_MODEL_BADGE"):
+        enabled = debug_enabled or bool(
+            current_app.config.get("SHOW_MODEL_BADGE")
+        )
+        if not model or not enabled:
             return ""
         return f"\n\n---\n_⚡ powered by: {model}_"
+
+    @staticmethod
+    def _debug_info(
+        plan: dict[str, Any],
+        ctx: AssistantContext,
+        history: list[dict[str, str]],
+        tool_name: str,
+        tool_model: str | None,
+        tool_config_key: str | None,
+        planning_ms: int,
+        tool_ms: int,
+        t_start: float,
+        streamed: bool,
+    ) -> dict[str, Any]:
+        """Diagnostics block attached to responses for Developer Mode users.
+
+        Rides ``result["debug"]`` so it streams with the done frame, persists
+        under ``metadata.content.debug``, and reloads with history. Only ever
+        attached when the user is a debug user — normal responses carry no
+        trace of it. Extend freely: the client renders unknown keys
+        generically.
+        """
+        return {
+            # Orchestrator
+            "tool": tool_name,
+            "model": tool_model,
+            "model_config_key": tool_config_key,
+            "plan_source": plan.get("_source", "planner"),
+            "plan_action": plan.get("action", "run_tool"),
+            "clarification_round": bool(ctx.run_id and ctx.clarification),
+            # Context size
+            "history_messages": len(history),
+            "media_count": len(ctx.media_ids or []),
+            # Timings
+            "planning_ms": planning_ms,
+            "tool_ms": tool_ms,
+            "total_ms": int((time.perf_counter() - t_start) * 1000),
+            "streamed": streamed,
+        }
 
     @staticmethod
     def _tool_line(t: "ToolDefinition") -> str:
@@ -717,6 +804,7 @@ class AssistantOrchestrator:
         personalization: str,
         model: str | None = None,
         config_key: str | None = None,
+        space_id: str | None = None,
     ) -> ToolContext:
         """Build the runtime context passed to a tool.
 
@@ -732,6 +820,7 @@ class AssistantOrchestrator:
             message=ctx.message,
             enriched_message=enriched_message,
             media_ids=ctx.media_ids,
+            space_id=space_id,
             history=history,
             personalization=personalization,
             model=model,
@@ -761,6 +850,11 @@ class AssistantOrchestrator:
             self.supabase.update_session(
                 ctx.session_id, ctx.user_id, title=ctx.message[:60]
             )
+        # Bump the space's activity clock (Continue Learning order) — only
+        # for real spaces, so General-only users pay no extra write.
+        space = session.get("study_spaces")
+        if space and not space.get("is_default") and session.get("space_id"):
+            self.supabase.touch_space(session["space_id"])
         return msg
 
     @staticmethod
@@ -862,10 +956,29 @@ class AssistantOrchestrator:
         }
         return f"data: {json.dumps(payload)}\n\n"
 
+    @staticmethod
+    def _history_limit() -> int:
+        """Configured number of recent messages to send as LLM context.
+
+        Read from ``CHAT_HISTORY_LIMIT`` (see ``app.py``); ``0`` or a negative
+        value means the whole session. Falls back to the config default when
+        called outside an app context (unit tests).
+        """
+        try:
+            from flask import current_app
+
+            return int(current_app.config.get("CHAT_HISTORY_LIMIT", 20))
+        except RuntimeError:
+            return 20
+
     def _get_history(
-        self, session_id: str, limit: int = 10
+        self, session_id: str, limit: int | None = None
     ) -> list[dict[str, str]]:
         """Recent message history, in chronological order.
+
+        ``limit`` defaults to the ``CHAT_HISTORY_LIMIT`` config (env-driven);
+        non-positive values include the full session. Trimming happens in the
+        database query, so only the tail of long sessions is transferred.
 
         Each assistant turn also carries the ``tool`` that produced it (from the
         persisted ``metadata.tool_used``) so the planner can route follow-ups by
@@ -873,8 +986,11 @@ class AssistantOrchestrator:
         LLM providers (they read only ``role``/``content``), so the same list
         doubles as the untagged history handed to the answer model.
         """
-        messages = self.supabase.get_messages(session_id)
-        recent = messages[-limit:] if len(messages) > limit else messages
+        if limit is None:
+            limit = self._history_limit()
+        recent = self.supabase.get_messages(
+            session_id, limit=limit if limit > 0 else None
+        )
         history: list[dict[str, str]] = []
         for m in recent:
             item = {"role": m["role"], "content": m["content"]}
@@ -934,6 +1050,15 @@ class AssistantOrchestrator:
             or any(w in text for w in ("quiz", "practice test", "test me"))
             or "flashcard" in text
             or "flash card" in text
+            # Possible image request ("draw…", "diagram of…") — the planner
+            # decides between image_generator and a text answer.
+            or any(
+                w in text
+                for w in (
+                    "draw", "image", "picture", "diagram", "illustrat",
+                    "sketch", "infographic", "visualize", "visualise",
+                )
+            )
             # A demonstrative with nothing to resolve it must be clarified.
             or self._has_unresolved_reference(message, ctx, history)
             # Genuinely open-ended -> let the planner decide clarify vs tool.

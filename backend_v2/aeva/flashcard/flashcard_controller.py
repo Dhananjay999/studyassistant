@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
@@ -34,7 +35,9 @@ class FlashcardList(MethodView):
     @user_required
     def get(current_user: UserData) -> dict[str, Any]:
         """List the user's flashcard sets with progress."""
-        sets = FlashcardRepository().list_sets(current_user.id)
+        sets = FlashcardRepository().list_sets(
+            current_user.id, request.args.get("space_id")
+        )
         return success_response("Flashcard sets retrieved", sets)
 
 

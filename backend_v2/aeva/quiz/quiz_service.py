@@ -1,6 +1,8 @@
 """Quiz business logic."""
 
 import json
+import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from aeva.common.errors import ERROR_CODES, CustomError
@@ -11,6 +13,8 @@ from aeva.quiz import exam_patterns
 from aeva.quiz.quiz_engine import QuizEngine
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
+
+logger = logging.getLogger(__name__)
 
 
 class QuizService:
@@ -65,10 +69,12 @@ class QuizService:
             raise CustomError(ERROR_CODES["QUIZ_NOT_FOUND"])
         return success_response("Quiz export loaded", quiz)
 
-    def list_quizzes(self, user_id: str) -> dict[str, Any]:
-        """List the user's quizzes."""
+    def list_quizzes(
+        self, user_id: str, space_id: str | None = None
+    ) -> dict[str, Any]:
+        """List the user's quizzes, optionally scoped to one space."""
         return success_response(
-            "Quizzes retrieved", self.repo.list_quizzes(user_id)
+            "Quizzes retrieved", self.repo.list_quizzes(user_id, space_id)
         )
 
     @staticmethod
@@ -152,10 +158,60 @@ class QuizService:
         )
         evaluation["time_taken_seconds"] = max(int(time_taken_seconds), 0)
         attempt = self.repo.save_attempt(quiz_id, user_id, answers, evaluation)
+        # Best-effort: fold this result into the space's memory digest so
+        # Aeva's context knows recent performance. Never blocks the submit.
+        try:
+            self._update_space_memory(quiz, evaluation, user_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("Space memory update failed", exc_info=True)
         return success_response("Quiz submitted", {
             "attempt_id": attempt["id"],
             "evaluation": evaluation,
         })
+
+    def _update_space_memory(
+        self,
+        quiz: dict[str, Any],
+        evaluation: dict[str, Any],
+        user_id: str,
+    ) -> None:
+        """Roll this attempt into ``study_spaces.settings.memory``.
+
+        The digest (last few quiz results + currently weak topics) is what
+        ``build_space_block`` injects into Aeva's prompts, so the assistant
+        "remembers" how the student is doing in this subject. Only real
+        spaces keep memory — General stays contextless by design.
+        """
+        space_id = quiz.get("space_id")
+        if not space_id:
+            return
+        space = self.supabase.get_space(space_id, user_id)
+        if not space or space.get("is_default"):
+            return
+
+        score = round(float(evaluation.get("score") or 0))
+        entry = {
+            "topic": (quiz.get("topic") or quiz.get("title") or "").strip()
+            or "General",
+            "score": score,
+            "at": datetime.now(UTC).isoformat(),
+        }
+        settings = dict(space.get("settings") or {})
+        memory = dict(settings.get("memory") or {})
+        recent = [entry, *(memory.get("recent_quizzes") or [])][:5]
+
+        # Weak = latest score per topic below 60 across the recent window.
+        latest: dict[str, int] = {}
+        for r in recent:
+            latest.setdefault(str(r.get("topic")), int(r.get("score") or 0))
+        weak = [t for t, s in latest.items() if s < 60][:5]
+
+        settings["memory"] = {
+            "recent_quizzes": recent,
+            "weak_topics": weak,
+            "updated_at": entry["at"],
+        }
+        self.supabase.update_space(space_id, user_id, settings=settings)
 
     def analyze(
         self, quiz_id: str, attempt_id: str, user_id: str

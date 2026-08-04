@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Helmet } from "react-helmet-async";
 import {
   BookMarked,
+  Bug,
   FileText,
   Layers,
   LayoutDashboard,
@@ -29,6 +30,7 @@ import { AdminUserDetail } from "@/pages/admin/AdminUserDetail";
 import { AdminResources } from "@/pages/admin/AdminResources";
 import { AdminSearch } from "@/pages/admin/AdminSearch";
 import { AdminDangerZone } from "@/pages/admin/AdminDangerZone";
+import { AdminDebugUsers } from "@/pages/admin/AdminDebugUsers";
 import { AdminDevTools } from "@/pages/admin/AdminDevTools";
 import type { ResourceKey } from "@/types/admin";
 
@@ -38,6 +40,7 @@ type View =
   | { name: "user"; id: string }
   | { name: "resource"; resource: ResourceKey }
   | { name: "search" }
+  | { name: "debug" }
   | { name: "devtools" }
   | { name: "danger" };
 
@@ -58,6 +61,7 @@ const NAV: AdminNavItem[] = [
   { key: "bookmarks", label: "Bookmarks", icon: BookMarked },
   { key: "files", label: "Files", icon: FileText },
   { key: "search", label: "Search", icon: Search },
+  { key: "debug", label: "Debug Users", icon: Bug },
   { key: "devtools", label: "Dev Tools", icon: Smartphone },
   { key: "danger", label: "Danger Zone", icon: ShieldAlert },
 ];
@@ -82,6 +86,7 @@ function AdminInner() {
       key === "overview" ||
       key === "users" ||
       key === "search" ||
+      key === "debug" ||
       key === "devtools" ||
       key === "danger"
     ) {
@@ -107,6 +112,7 @@ function AdminInner() {
       onLogout={logout}
     >
       {view.name === "overview" && <AdminOverview />}
+      {view.name === "debug" && <AdminDebugUsers />}
       {view.name === "users" && (
         <AdminUsers onSelectUser={(id) => setView({ name: "user", id })} />
       )}

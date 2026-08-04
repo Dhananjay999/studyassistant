@@ -40,6 +40,26 @@ class AdminLoginSchema(Schema):
 
 
 @dataclass(frozen=True)
+class DebugUserToggleData:
+    """Validated body for enabling/disabling Developer Mode on a user."""
+
+    enabled: bool
+
+
+class DebugUserToggleSchema(Schema):
+    """Body for ``PUT /admin/users/<id>/debug``."""
+
+    enabled = fields.Bool(required=True)
+
+    @post_load
+    def make_data(
+        self, data: dict, **_kwargs: object
+    ) -> DebugUserToggleData:
+        """Convert to dataclass."""
+        return DebugUserToggleData(**data)
+
+
+@dataclass(frozen=True)
 class UserListQuery:
     """Validated filters for the paginated user list."""
 

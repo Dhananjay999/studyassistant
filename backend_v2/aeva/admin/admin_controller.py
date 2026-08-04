@@ -19,6 +19,8 @@ from aeva.admin.admin_repository import AdminRepository
 from aeva.admin.schema.admin_schema import (
     AdminLoginData,
     AdminLoginSchema,
+    DebugUserToggleData,
+    DebugUserToggleSchema,
     ResourceListQuery,
     ResourceListQuerySchema,
     SearchQuery,
@@ -133,6 +135,31 @@ class AdminUserResource(MethodView):
         return repo.clear_user_resource(user_id, resource)
 
 
+class AdminDebugUsers(MethodView):
+    """Users with Developer Mode enabled."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str) -> dict[str, Any]:
+        """List all active debug users."""
+        return repo.list_debug_users()
+
+
+class AdminUserDebugFlag(MethodView):
+    """Enable/disable Developer Mode for one user."""
+
+    @staticmethod
+    @blueprint.arguments(DebugUserToggleSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def put(
+        _admin: str, body: DebugUserToggleData, user_id: str
+    ) -> dict[str, Any]:
+        """Set the user's debug flag (independent of any role)."""
+        return repo.set_debug_user(user_id, body.enabled)
+
+
 class AdminSession(MethodView):
     """A single session's full conversation history."""
 
@@ -211,6 +238,16 @@ blueprint.add_url_rule(
     "/users/<user_id>/reset-learning-profile",
     view_func=AdminUserResetProfile,
     endpoint="admin_user_reset_profile",
+)
+blueprint.add_url_rule(
+    "/debug-users",
+    view_func=AdminDebugUsers,
+    endpoint="admin_debug_users",
+)
+blueprint.add_url_rule(
+    "/users/<user_id>/debug",
+    view_func=AdminUserDebugFlag,
+    endpoint="admin_user_debug_flag",
 )
 blueprint.add_url_rule(
     "/users/<user_id>/resources/<resource>",

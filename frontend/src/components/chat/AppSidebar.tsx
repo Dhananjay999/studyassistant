@@ -5,9 +5,11 @@ import {
   Bookmark,
   FolderOpen,
   Layers,
+  LibraryBig,
   ListChecks,
   Loader2,
   MessageSquare,
+  NotebookPen,
   PanelLeft,
   PanelLeftClose,
   Pin,
@@ -17,6 +19,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,12 +31,16 @@ import { BrandLogo } from "@/components/common/BrandLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { usePinnedSessions } from "@/hooks/usePinnedSessions";
+import { useConvertToSpace, useSpaces } from "@/hooks/api";
+import { realSpaces, spaceColor, spaceIcon } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import { formatShortcut } from "@/lib/platform";
 import type { Session } from "@/types";
 
 const NAV = [
   { label: "Chats", icon: MessageSquare, to: "/chat" },
+  { label: "Study Spaces", icon: LibraryBig, to: "/spaces" },
+  { label: "Notes", icon: NotebookPen, to: "/notes" },
   { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
@@ -102,6 +109,12 @@ export function AppSidebar({
   const { pinnedIds, isPinned, togglePin } = usePinnedSessions();
   const onChats = location.pathname === "/chat";
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Study Spaces are opt-in: the mini-list below renders only when the user
+  // has created at least one real space, so non-adopters see no change.
+  const { data: allSpaces } = useSpaces();
+  const spaces = realSpaces(allSpaces).slice(0, 4);
+  const convertToSpace = useConvertToSpace();
+  const [convertingId, setConvertingId] = useState<string | null>(null);
 
   // Pinned sessions float to the top in most-recently-pinned order; everything
   // else falls through to the normal recency grouping.
@@ -126,6 +139,23 @@ export function AppSidebar({
   const go = (to: string) => {
     onNavigate?.();
     navigate(to);
+  };
+
+  // Promote a chat into its own Study Space (name defaults to the title;
+  // the user can restyle it from the space page afterwards).
+  const handleConvert = (s: Session) => {
+    setConvertingId(s.id);
+    convertToSpace.mutate(
+      { session_id: s.id },
+      {
+        onSuccess: (space) => {
+          toast.success(`“${space.name}” is now a Study Space`);
+          go(`/spaces/${space.id}`);
+        },
+        onError: () => toast.error("Couldn't create the space"),
+        onSettled: () => setConvertingId(null),
+      },
+    );
   };
 
   // `onNavigate` is provided only for the mobile drawer instance. On mobile,
@@ -184,6 +214,20 @@ export function AppSidebar({
             <PinOff className="h-3.5 w-3.5" />
           ) : (
             <Pin className="h-3.5 w-3.5" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => handleConvert(s)}
+          disabled={convertingId === s.id}
+          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-brand-1 group-hover:opacity-100 disabled:opacity-100"
+          aria-label="Turn into Study Space"
+          title="Turn into Study Space"
+        >
+          {convertingId === s.id ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <LibraryBig className="h-3.5 w-3.5" />
           )}
         </button>
         <button
@@ -312,6 +356,39 @@ export function AppSidebar({
           );
         })}
       </nav>
+
+      {/* Study Spaces mini-list — appears only once the user has created a
+         real space (opt-in: non-adopters see the sidebar exactly as before). */}
+      {!collapsed && spaces.length > 0 && (
+        <div className="px-3 pb-2">
+          <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Study Spaces
+          </p>
+          {spaces.map((space) => {
+            const color = spaceColor(space.color);
+            const Icon = spaceIcon(space.icon);
+            const active = location.pathname === `/spaces/${space.id}`;
+            return (
+              <button
+                key={space.id}
+                type="button"
+                onClick={() => go(`/spaces/${space.id}`)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors",
+                  active
+                    ? "bg-primary/10 text-primary"
+                    : "hover:bg-accent/50",
+                )}
+              >
+                <span className={cn("grid h-4 w-4 shrink-0 place-items-center", color.text)}>
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                <span className="truncate">{space.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Chat history (hidden when collapsed) */}
       {!collapsed && (
