@@ -146,6 +146,9 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["FLASHCARD_LLM_MODELS"] = os.environ.get(
         "FLASHCARD_LLM_MODELS", ""
     )
+    app.config["PRODUCT_INFO_LLM_MODELS"] = os.environ.get(
+        "PRODUCT_INFO_LLM_MODELS", ""
+    )
     # Dev/QA aid: append a "powered by: <model>" badge to each answer so the
     # model the planner picked is visible in the UI. Off in production.
     app.config["SHOW_MODEL_BADGE"] = os.environ.get(

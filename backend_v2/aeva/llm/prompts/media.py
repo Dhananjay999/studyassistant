@@ -12,12 +12,16 @@ metadata trailer. ``{DOCUMENT_CONTEXT}`` carries the numbered excerpt block
 as provider binary parts instead).
 """
 
-from aeva.llm.prompts.blocks import ANSWER_META_BLOCK, SYSTEM_PROMPT_BLOCK
+from aeva.llm.prompts.blocks import (
+    ANSWER_META_BLOCK,
+    SYSTEM_PROMPT_BLOCK,
+    TEACHING_BLOCK,
+)
 from aeva.llm.prompts.builder import PromptTemplate
 
 MEDIA_TEMPLATE = PromptTemplate(
     name="media_llm",
-    system="{SYSTEM_PROMPT}{USER_PROFILE}",
+    system="{SYSTEM_PROMPT}{TEACHING}{USER_PROFILE}",
     user="""{CONVERSATION_CONTEXT}
 Answer the student's question as Aeva using the retrieved excerpts.
 
@@ -41,6 +45,7 @@ Rules:
 {ANSWER_META}""",
     defaults={
         "SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK,
+        "TEACHING": TEACHING_BLOCK,
         "ANSWER_META": ANSWER_META_BLOCK,
     },
     optional=("USER_PROFILE",),

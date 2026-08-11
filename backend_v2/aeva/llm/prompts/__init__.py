@@ -38,8 +38,13 @@ from aeva.llm.prompts.orchestrator import (
     PLAN_TURN_TEMPLATE,
 )
 from aeva.llm.prompts.personalization import (
+    build_identity_block,
     build_personalization_block,
     build_space_block,
+)
+from aeva.llm.prompts.product_info import (
+    PRODUCT_INFO_PARAMS,
+    PRODUCT_INFO_TEMPLATE,
 )
 from aeva.llm.prompts.quiz_analysis import (
     QUIZ_ANALYSIS_SCHEMA,
@@ -81,6 +86,8 @@ __all__ = [
     "QUIZ_GENERATION_SCHEMA",
     "QUIZ_GENERATION_TEMPLATE",
     "QUIZ_GENERATOR_PARAMS",
+    "PRODUCT_INFO_PARAMS",
+    "PRODUCT_INFO_TEMPLATE",
     "SYSTEM_PROMPT",
     "WEB_SEARCH_PARAMS",
     "WEB_SEARCH_TEMPLATE",
@@ -88,6 +95,7 @@ __all__ = [
     "PromptError",
     "PromptTemplate",
     "RenderedPrompt",
+    "build_identity_block",
     "build_personalization_block",
     "build_space_block",
     "user_profile_segment",

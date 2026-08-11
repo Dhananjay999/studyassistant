@@ -5,12 +5,16 @@ channel, conversation marker, tool rules, user message, and the metadata
 trailer — with every ``{PLACEHOLDER}`` resolved by :class:`PromptBuilder`.
 """
 
-from aeva.llm.prompts.blocks import ANSWER_META_BLOCK, SYSTEM_PROMPT_BLOCK
+from aeva.llm.prompts.blocks import (
+    ANSWER_META_BLOCK,
+    SYSTEM_PROMPT_BLOCK,
+    TEACHING_BLOCK,
+)
 from aeva.llm.prompts.builder import PromptTemplate
 
 WEB_SEARCH_TEMPLATE = PromptTemplate(
     name="web_search",
-    system="{SYSTEM_PROMPT}{USER_PROFILE}",
+    system="{SYSTEM_PROMPT}{TEACHING}{USER_PROFILE}",
     user="""{CONVERSATION_CONTEXT}
 Answer the student's question as Aeva, grounded in web search.
 
@@ -25,6 +29,7 @@ Student question:
 {ANSWER_META}""",
     defaults={
         "SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK,
+        "TEACHING": TEACHING_BLOCK,
         "ANSWER_META": ANSWER_META_BLOCK,
     },
     optional=("USER_PROFILE",),

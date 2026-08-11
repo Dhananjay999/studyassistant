@@ -21,6 +21,7 @@ from flask import current_app
 # grounding call), so it falls back to the same single model.
 _TOOL_MODELS: dict[str, tuple[str, str]] = {
     "general": ("GENERAL_LLM_MODELS", "LLM_WEB_SEARCH_MODEL"),
+    "product_info": ("PRODUCT_INFO_LLM_MODELS", "LLM_FAST_MODEL"),
     "web_search": ("WEB_SEARCH_LLM_MODELS", "LLM_WEB_SEARCH_MODEL"),
     "media_llm": ("MEDIA_LLM_MODELS", "LLM_MEDIA_MODEL"),
     "quiz_generator": ("QUIZ_LLM_MODELS", "LLM_QUIZ_MODEL"),

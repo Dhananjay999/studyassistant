@@ -25,6 +25,7 @@ const TOOL_LABEL: Partial<Record<ToolUsed, string>> = {
   media_llm: "Notes",
   quiz_generator: "Quiz",
   image_generator: "Image",
+  product_info: "App Guide",
 };
 
 // The "⚡ powered by: <model>" trailer the backend appends for Developer Mode

@@ -85,6 +85,55 @@ def _needs_fresh_info(text: str) -> bool:
     return bool(_FRESH_INFO_RE.search(text))
 
 
+# Messages that are ONLY pleasantries — the one case cheap enough for the
+# dedicated fast model. The whole message must match: "hello, explain
+# photosynthesis" is a real question and must NOT ride the fast path.
+_SMALL_TALK_RE = re.compile(
+    r"^[\s!.,?\U0001F300-\U0001FAFF☀-➿]*(?:"
+    r"(?:hi+|hello+|hey+|yo|namaste|hola|"
+    r"good\s+(?:morning|afternoon|evening|night)|"
+    r"thanks?(?:\s+you)?(?:\s+(?:a\s+lot|so\s+much|very\s+much))?|thx|ty|"
+    r"shukriya|dhanyavaad?|"
+    r"bye+|goodbye|see\s+(?:ya|you)(?:\s+later)?|tata|gtg|"
+    r"ok(?:ay)?+|k+|cool|nice|great|awesome|perfect|got\s+it|"
+    r"hmm+|haan?|acc?hh?a|theek\s+hai|sahi\s+hai|"
+    r"no\s+problem|you'?re\s+welcome|welcome|please|pls)"
+    r"[\s!.,?\U0001F300-\U0001FAFF☀-➿]*)+$",
+    re.IGNORECASE,
+)
+
+
+def _is_small_talk(text: str) -> bool:
+    """True when the message contains nothing but greetings/thanks/acks."""
+    return len(text) <= 80 and bool(_SMALL_TALK_RE.match(text.strip()))
+
+
+# A standing language request ("from now onwards talk in Hinglish", "hamesha
+# hindi me baat karo") needs BOTH a durability cue and a language name — a
+# one-off "explain this in hindi" has no cue and stays per-message.
+_STANDING_CUE_RE = re.compile(
+    r"\b(?:from now on(?:wards)?|always|permanently|going forward|"
+    r"hamesha|ab se|aage se)\b",
+    re.IGNORECASE,
+)
+_LANGUAGE_WORD_RE = re.compile(
+    r"\b(hinglish|hindi|english)\b", re.IGNORECASE
+)
+
+
+def _standing_language_request(text: str) -> str | None:
+    """Language the user asked to switch to permanently, or ``None``.
+
+    Deterministic (no LLM call): requires a durability cue AND a language
+    name in the same message. Returns the canonical profile value
+    ("Hinglish" / "Hindi" / "English").
+    """
+    if not _STANDING_CUE_RE.search(text):
+        return None
+    match = _LANGUAGE_WORD_RE.search(text)
+    return match.group(1).capitalize() if match else None
+
+
 class AssistantOrchestrator:
     """Single coordinator: plan → clarify or run tool → respond."""
 
@@ -320,7 +369,30 @@ class AssistantOrchestrator:
         # Developer Mode rides the profile row that personalization already
         # needs — deciding it costs normal users nothing extra.
         self._debug_enabled = bool((profile or {}).get("is_debug_user"))
-        personalization = prompts.build_personalization_block(profile)
+        # A standing language request ("from now on talk in Hinglish") is
+        # persisted to the profile so it survives new sessions — and applied
+        # to THIS turn by patching the already-fetched profile row.
+        language = _standing_language_request(ctx.message)
+        if language and (
+            str((profile or {}).get("preferred_language") or "").lower()
+            != language.lower()
+        ):
+            try:
+                self.supabase.update_learning_profile(
+                    ctx.user_id, {"preferred_language": language}
+                )
+                profile = {**(profile or {}), "preferred_language": language}
+                logger.info(
+                    "Persisted standing language preference: %s", language
+                )
+            except Exception:
+                # Never fail the turn over a preference write; the in-chat
+                # request still applies via the conversation itself.
+                logger.exception("Failed to persist language preference")
+        # Identity first: the student's name applies even when onboarding was
+        # skipped, so Aeva never "forgets" who she is talking to.
+        personalization = prompts.build_identity_block(profile)
+        personalization += prompts.build_personalization_block(profile)
         # Study Space context rides the session fetch (embedded relation, no
         # extra query). General/legacy sessions contribute nothing, so
         # non-adopters get byte-identical prompts.
@@ -1050,20 +1122,19 @@ class AssistantOrchestrator:
     ) -> dict[str, Any] | None:
         """Deterministic plan that makes the planner LLM call unnecessary.
 
-        For a no-media turn that is not a quiz/flashcard request (which needs
-        parameter extraction), the tool is settled: ``general`` answers from
-        Aeva's own knowledge, and ``web_search`` only when the message carries a
-        clear freshness cue (``_needs_fresh_info``). When clarification is also
-        provably unnecessary and no unresolved reference forces one, that is
-        exactly what the planner would resolve to, so we skip a full LLM call
-        and return it directly. Anything ambiguous (media attached,
-        quiz/flashcard, a bare "explain this", a long open-ended message) falls
-        through to the planner.
+        Reserved for pure small talk ("hi", "thanks", "theek hai"): the tool is
+        settled (``general``) and the dedicated fast model is plenty. EVERY
+        real question — even a simple-looking definition — goes through the
+        planner instead, because the planner is what picks a strong enough
+        model from the tool's candidate list; a hardwired fast model here is
+        exactly how confused mini-model science answers reached students.
         """
         text = message.lower()
         needs_planner = (
+            # Anything beyond pleasantries needs a planner model choice.
+            not _is_small_talk(message)
             # A clarification reply may carry tool-specific params.
-            ctx.clarification is not None
+            or ctx.clarification is not None
             # Media: media_llm vs a quiz/flashcard fork or a which-file ask.
             or bool(ctx.media_ids)
             # Quiz/flashcard need natural-language parameter extraction.
@@ -1245,7 +1316,13 @@ class AssistantOrchestrator:
         ctx: AssistantContext,
         message: str,
     ) -> dict[str, Any]:
-        """Rule-based tool pick when skipping over-clarification."""
+        """Rule-based tool pick when skipping over-clarification.
+
+        No keyword route for ``product_info``: only the planner sends turns
+        there, so on this fallback path app questions land on ``general`` —
+        an acceptable degraded answer (identity survives in the system
+        prompt).
+        """
         text = message.lower()
 
         # Flashcards: a clear, self-contained intent.

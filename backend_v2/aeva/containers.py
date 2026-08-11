@@ -8,6 +8,7 @@ from aeva.mcp.tools.flashcard_generator import FlashcardGeneratorTool
 from aeva.mcp.tools.general import GeneralAnswerTool
 from aeva.mcp.tools.image_generator import ImageGeneratorTool
 from aeva.mcp.tools.media_llm import MediaLLMTool
+from aeva.mcp.tools.product_info import ProductInfoTool
 from aeva.mcp.tools.quiz_generator import QuizGeneratorTool
 from aeva.mcp.tools.web_search import WebSearchTool
 from aeva.media.llamaparse_service import LlamaParseService
@@ -22,12 +23,15 @@ def build_tool_registry(
     flashcard_llm: LLMClient,
     image_llm: LLMClient,
     embed_llm: LLMClient,
+    product_info_llm: LLMClient,
     supabase: SupabaseService,
 ) -> ToolRegistry:
     """Create registry with per-tool LLM clients."""
     registry = ToolRegistry()
     # Default text answerer (no web grounding); shares the web-search model.
     registry.register(GeneralAnswerTool(llm=web_search_llm))
+    # App/feature questions; prompt-grounded, so the fast model suffices.
+    registry.register(ProductInfoTool(llm=product_info_llm))
     registry.register(WebSearchTool(llm=web_search_llm))
     registry.register(
         MediaLLMTool(llm=media_llm, supabase=supabase, embed_llm=embed_llm)
@@ -76,6 +80,10 @@ class Container(containers.DeclarativeContainer):
         LLMClient,
         config_key="LLM_EMBEDDING_MODEL",
     )
+    llm_fast = providers.Singleton(
+        LLMClient,
+        config_key="LLM_FAST_MODEL",
+    )
 
     llamaparse_service = providers.Singleton(LlamaParseService)
     media_processor = providers.Singleton(
@@ -93,5 +101,6 @@ class Container(containers.DeclarativeContainer):
         flashcard_llm=llm_flashcard,
         image_llm=llm_image,
         embed_llm=llm_embedding,
+        product_info_llm=llm_fast,
         supabase=supabase_service,
     )

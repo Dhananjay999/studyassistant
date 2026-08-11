@@ -5,6 +5,7 @@ export type MessageRole = "user" | "assistant";
 export type ChatMode = "media" | "web_search";
 export type ToolUsed =
   | "general"
+  | "product_info"
   | "web_search"
   | "media_llm"
   | "quiz_generator"
@@ -44,6 +45,11 @@ export interface LearningProfile {
   ai_personality: string | null;
   communication_style: string | null;
   custom_instructions: string | null;
+  // Exam the student is preparing toward (JEE, NEET, Boards, …).
+  exam_target: string | null;
+  // Whitelisted learning-related preferences (booleans / short strings),
+  // e.g. likes_funny_examples, preferred_depth.
+  learning_traits: Record<string, boolean | string>;
   personalization_status: PersonalizationStatus;
   personalization_updated_at: string | null;
 }
@@ -58,6 +64,8 @@ export interface LearningProfileInput {
   ai_personality?: string | null;
   communication_style?: string | null;
   custom_instructions?: string | null;
+  exam_target?: string | null;
+  learning_traits?: Record<string, boolean | string>;
 }
 
 export interface Session {

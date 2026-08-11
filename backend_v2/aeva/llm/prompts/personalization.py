@@ -18,9 +18,24 @@ _FIELDS: list[tuple[str, str]] = [
     ("ai_personality", "Assistant Persona"),
     ("communication_style", "Communication Style"),
     ("education_level", "Education Level"),
+    ("exam_target", "Exam Target"),
     ("explanation_style", "Preferred Explanation Style"),
     ("learning_goal", "Learning Goal"),
 ]
+
+# learning_traits key -> short prompt line. Whitelist mirrors
+# ``LEARNING_TRAIT_KEYS`` (learning_profile schema); unknown keys are ignored.
+_TRAIT_LINES: dict[str, str] = {
+    "likes_funny_examples": "Enjoys funny examples and analogies",
+    "likes_visual_explanations": "Prefers visual explanations and diagrams",
+    "wants_concept_check_questions": (
+        "Wants a concept-check question after explanations"
+    ),
+}
+_TRAIT_VALUE_LINES: dict[str, str] = {
+    "preferred_depth": "Preferred Depth",
+    "curiosity_level": "Curiosity Level",
+}
 
 _INSTRUCTION = """
 Apply the learning profile only when answering.
@@ -63,6 +78,24 @@ them unless the current request explicitly overrides them.
 
 Never mention the profile to the student.
 """
+
+
+def build_identity_block(profile: dict[str, Any] | None) -> str:
+    """System-prompt fragment naming the student, or '' when unknown.
+
+    Built from the account's ``full_name`` (Google sign-in), so it works even
+    for users who skipped onboarding. Fixes the "what is my name?" failure in a
+    fresh session, where the introduction lives outside the history window.
+    """
+    name = str((profile or {}).get("full_name") or "").strip()
+    if not name:
+        return ""
+    return (
+        f"Student's name: {name}. Use it naturally and sparingly (greetings, "
+        "encouragement); if they ask their name, answer from this. If they "
+        "introduce themselves with a different name in the conversation, "
+        "prefer that one.\n\n"
+    )
 
 
 def build_space_block(space: dict[str, Any] | None) -> str:
@@ -113,10 +146,20 @@ def build_personalization_block(profile: dict[str, Any] | None) -> str:
     """Build a system-prompt fragment from a profile, or '' when not set.
 
     Returns an empty string unless onboarding is completed and at least one
-    field is filled, so unpersonalized turns behave exactly as before.
+    field is filled — EXCEPT ``preferred_language``, which applies as soon as
+    it is set (a saved "talk in Hinglish" must survive skipped onboarding and
+    new sessions; a Hinglish learner silently reset to English is a real bug).
     """
-    if not profile or profile.get("personalization_status") != "completed":
+    if not profile:
         return ""
+    if profile.get("personalization_status") != "completed":
+        language = str(profile.get("preferred_language") or "").strip()
+        if not language:
+            return ""
+        return (
+            f"User Learning Profile:\n- Preferred Language: {language}\n\n"
+            + _INSTRUCTION
+        )
 
     lines: list[str] = []
     for key, label in _FIELDS:
@@ -129,6 +172,16 @@ def build_personalization_block(profile: dict[str, Any] | None) -> str:
         joined = ", ".join(str(s) for s in subjects if str(s).strip())
         if joined:
             lines.append(f"- Favorite Subjects: {joined}")
+
+    traits = profile.get("learning_traits") or {}
+    if isinstance(traits, dict):
+        for key, line in _TRAIT_LINES.items():
+            if traits.get(key) is True:
+                lines.append(f"- {line}")
+        for key, label in _TRAIT_VALUE_LINES.items():
+            value = traits.get(key)
+            if isinstance(value, str) and value.strip():
+                lines.append(f"- {label}: {value.strip()}")
 
     # Free-form instructions are rendered verbatim on their own line so the
     # student's exact wording reaches the model.

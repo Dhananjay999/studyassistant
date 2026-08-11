@@ -87,11 +87,18 @@ Ask first: "Can Aeva answer this confidently from its own knowledge and the conv
 
 general  (DEFAULT — prefer this)
 - Greetings, thanks, goodbyes, and casual conversation.
-- Questions about Aeva itself or StudyAssistant ("who are you?", "introduce yourself", "what can you do?", "why should I use you?"). Aeva answers from its own identity.
+- Identity and persona questions only ("who are you?", "introduce yourself", "what's your name?"). App features and how-tos go to product_info.
 - Concept explanations, definitions, and general knowledge already within the model's training.
 - Personal tutoring, step-by-step help, worked examples, opinions, and brainstorming.
 - Follow-up questions answerable from the current conversation.
 - Off-topic or unsafe requests (the answering model handles the refusal).
+
+product_info
+- ONLY for questions about operating the StudyAssistant app itself — its buttons, screens, features, and where things are saved.
+- Capability questions: "what can you do?", "what features does this app have?", "why should I use you?".
+- App how-tos: "how do I upload a PDF?", "how do I start a quiz in exam mode?", "where are my flashcards/notes/saved chats?", "what does this label in analytics mean?".
+- Decision rule: if the honest answer is app instructions (where to click, how a feature works), use product_info. If the honest answer is study advice or subject content, use general. Example: "how do I make notes in this app?" → product_info; "how do I make good notes for history?" → general.
+- When genuinely unsure, prefer general — it can still answer app questions acceptably.
 
 web_search
 - ONLY when the answer genuinely requires external or up-to-date information the model cannot already know.
@@ -128,24 +135,22 @@ Always choose the lowest-cost model that can produce a high-quality response. Up
 Prefer a stronger model for:
 - Quiz generation
 - Flashcard generation
-- Complex educational explanations
-- Multi-step reasoning
+- Any conceptual or factual teaching: explanations, definitions the student will learn from, "why/how" questions, science, math, history, civics
+- Anything where a subtly wrong answer would mis-teach the student (facts, mechanisms, processes, current-affairs-adjacent claims)
+- Multi-step reasoning, worked solutions, and exam-style notes
 - Advanced coding or debugging
 - Large or multiple document analysis
-- Deep technical comparisons
-- Research-level synthesis
+- Deep technical comparisons and research-level synthesis
 - Personalized study plans
-- Complex logical reasoning
+- Checking or building on student-created content (their mnemonics, notes, answers)
 
-Prefer the cheaper model for:
-- Greetings and casual chat
-- Definitions
-- Simple explanations
-- Translation
-- Basic summaries
-- Straightforward educational questions
+Prefer the cheaper model ONLY for:
+- Greetings, thanks, goodbyes, and casual chat
+- Small talk about Aeva itself
+- Questions about the app or Aeva's features (product_info)
+- Pure formatting changes to an existing answer (shorten, bullet, translate verbatim)
 
-Never choose a stronger model unless it provides a meaningful improvement in the final user experience.
+When in doubt, choose the stronger model — a wrong or confusing explanation costs far more than the model does.
 
 ================ PARAMETER RULES =================
 
@@ -281,6 +286,7 @@ PLAN_TURN_SCHEMA: dict = {
                     "type": "string",
                     "enum": [
                         "general",
+                        "product_info",
                         "web_search",
                         "media_llm",
                         "quiz_generator",
@@ -291,10 +297,11 @@ PLAN_TURN_SCHEMA: dict = {
                 "model": {
                     "type": "string",
                     "description": (
-                        "The CHEAPEST model from the chosen tool's listed "
-                        "models that can still answer well. Must be one of "
-                        "that tool's listed models. Escalate to a stronger "
-                        "one only when the request needs deeper reasoning."
+                        "A model from the chosen tool's listed models, per "
+                        "the MODEL SELECTION rules: cheaper only for small "
+                        "talk and formatting; a stronger model for anything "
+                        "that teaches facts or concepts. Must be one of "
+                        "that tool's listed models."
                     ),
                 },
                 "params": {"type": "object"},

@@ -1,10 +1,10 @@
-"""General-answer tool: answer study questions from the model's own knowledge.
+"""Product-info tool: answer questions about the StudyAssistant app itself.
 
-The default text answerer. Unlike ``web_search`` it never grounds in a live
-web search — it replies straight from Aeva's knowledge and the conversation, so
-greetings, questions about Aeva/StudyAssistant, concept explanations, tutoring,
-and follow-ups don't trigger a needless search. The planner picks this tool
-whenever Aeva can answer confidently without external, up-to-date information.
+Intent-routed app knowledge: the planner sends "what can you do?" and app
+how-to questions here, so the product copy (``prompts/product_info.py``) is
+paid for only on these turns — never on academic answers or generators. Runs
+on the fast model family: app answers are short and fully grounded in the
+prompt's own knowledge block.
 """
 
 from collections.abc import Generator
@@ -20,30 +20,30 @@ from aeva.mcp.base import (
 )
 
 
-class GeneralAnswerTool(BaseTool):
-    """Answer study questions directly, without a web search."""
+class ProductInfoTool(BaseTool):
+    """Answer app/feature questions from the built-in product knowledge."""
 
     def __init__(self, llm: LLMClient | None = None) -> None:
         self._llm = llm
 
     @property
     def llm(self) -> LLMClient:
-        """Lazy LLM client (same model family as web search, minus grounding)."""
-        return self._llm or LLMClient(config_key="LLM_WEB_SEARCH_MODEL")
+        """Lazy LLM client (fast family — prompt-grounded, no reasoning)."""
+        return self._llm or LLMClient(config_key="LLM_FAST_MODEL")
 
     @property
     def definition(self) -> ToolDefinition:
         """Tool metadata."""
         return ToolDefinition(
-            name="general",
+            name="product_info",
             description=(
-                "Answer directly from your own knowledge and the conversation "
-                "— no web search. Use for greetings, casual chat, identity "
-                "questions about Aeva, concept explanations, tutoring, "
-                "brainstorming, and follow-ups. This is the default answerer. "
-                "App features and how-tos belong to product_info."
+                "Answer questions about the StudyAssistant app and Aeva's "
+                "features: what Aeva can do, how to upload material, "
+                "quizzes, flashcards, exam mode, Study Spaces, sessions, "
+                "notes, revision, and settings. Only for app/feature "
+                "questions — never for academic content."
             ),
-            parameters_schema=prompts.GENERAL_ANSWER_PARAMS,
+            parameters_schema=prompts.PRODUCT_INFO_PARAMS,
         )
 
     @property
@@ -52,14 +52,14 @@ class GeneralAnswerTool(BaseTool):
         return RESPONSE_NORMAL
 
     def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
-        """Answer without web grounding."""
+        """Answer from the product knowledge block."""
         query = params.get("query") or ctx.enriched_message
         rendered = prompts.PromptBuilder.build(
-            prompts.GENERAL_ANSWER_TEMPLATE,
+            prompts.PRODUCT_INFO_TEMPLATE,
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )
-        answer = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL").generate(
+        answer = self.resolve_llm(ctx, "LLM_FAST_MODEL").generate(
             rendered.user_message,
             system_prompt=rendered.system_prompt,
             history=ctx.history,
@@ -67,7 +67,7 @@ class GeneralAnswerTool(BaseTool):
         return {"answer": answer, "sources": []}
 
     def can_stream(self) -> bool:
-        """General answers stream token-by-token."""
+        """Product answers stream token-by-token."""
         return True
 
     def execute_stream(
@@ -76,10 +76,10 @@ class GeneralAnswerTool(BaseTool):
         params: dict[str, Any],
     ) -> Generator[str, None, dict[str, Any]]:
         """Stream the answer, returning answer + (empty) sources at the end."""
-        llm = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL")
+        llm = self.resolve_llm(ctx, "LLM_FAST_MODEL")
         query = params.get("query") or ctx.enriched_message
         rendered = prompts.PromptBuilder.build(
-            prompts.GENERAL_ANSWER_TEMPLATE,
+            prompts.PRODUCT_INFO_TEMPLATE,
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
         )

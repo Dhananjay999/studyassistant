@@ -4,6 +4,7 @@ These are the reusable pieces every capability template pulls in through a
 ``{PLACEHOLDER}`` so a common instruction is written once and stays consistent:
 
 * ``{SYSTEM_PROMPT}`` — Aeva's identity and behavioural contract.
+* ``{TEACHING}`` — the tutoring protocol (answer tools only, never generators).
 * ``{USER_PROFILE}`` — the personalization segment (empty unless onboarded).
 * ``{ANSWER_META}`` — the hidden follow-up metadata trailer.
 * ``{QUIZ_RESULTS}`` — the shared quiz-result context (see ``quiz_common``).
@@ -15,10 +16,12 @@ shared blocks so templates can compose them.
 
 from aeva.llm.prompts.response_meta import ANSWER_META_INSTRUCTION
 from aeva.llm.prompts.system import SYSTEM_PROMPT
+from aeva.llm.prompts.teaching import TEACHING_PROTOCOL
 
 # Named shared blocks (stable placeholder → text). Kept as module constants so
 # a capability template can list them in its ``defaults`` map.
 SYSTEM_PROMPT_BLOCK = SYSTEM_PROMPT
+TEACHING_BLOCK = TEACHING_PROTOCOL
 ANSWER_META_BLOCK = ANSWER_META_INSTRUCTION
 
 
