@@ -27,6 +27,8 @@ def _project(profile: dict[str, Any] | None) -> dict[str, Any]:
         "ai_personality": profile.get("ai_personality"),
         "communication_style": profile.get("communication_style"),
         "custom_instructions": profile.get("custom_instructions"),
+        "exam_target": profile.get("exam_target"),
+        "learning_traits": profile.get("learning_traits") or {},
         "personalization_status": (
             profile.get("personalization_status") or "pending"
         ),
@@ -63,6 +65,8 @@ class LearningProfileRepository:
             "ai_personality": data.ai_personality,
             "communication_style": data.communication_style,
             "custom_instructions": data.custom_instructions,
+            "exam_target": data.exam_target,
+            "learning_traits": data.learning_traits,
             "personalization_status": "completed",
             "personalization_updated_at": datetime.now(UTC).isoformat(),
         }

@@ -18,9 +18,12 @@ import {
   COMMUNICATION_STYLES,
   CUSTOM_INSTRUCTION_EXAMPLES,
   EDUCATION_LEVELS,
+  EXAM_TARGETS,
   EXPLANATION_STYLES,
   FAVORITE_SUBJECTS,
   LEARNING_GOALS,
+  LEARNING_TRAIT_OPTIONS,
+  PREFERRED_DEPTHS,
   PREFERRED_LANGUAGES,
 } from "@/lib/learningProfile";
 import type { LearningProfile, LearningProfileInput } from "@/types";
@@ -39,6 +42,9 @@ interface Draft {
   personality: string;
   commStyle: string;
   instructions: string;
+  examTarget: string;
+  traits: string[];
+  depth: string;
 }
 
 const EMPTY: Draft = {
@@ -51,6 +57,9 @@ const EMPTY: Draft = {
   personality: "",
   commStyle: "",
   instructions: "",
+  examTarget: "",
+  traits: [],
+  depth: "",
 };
 
 /** Seed editable draft state from a saved profile row. */
@@ -68,12 +77,25 @@ function toDraft(profile: LearningProfile | undefined): Draft {
     personality: profile.ai_personality ?? "",
     commStyle: profile.communication_style ?? "",
     instructions: profile.custom_instructions ?? "",
+    examTarget: profile.exam_target ?? "",
+    traits: LEARNING_TRAIT_OPTIONS.filter(
+      (t) => profile.learning_traits?.[t.key] === true,
+    ).map((t) => t.key),
+    depth:
+      typeof profile.learning_traits?.preferred_depth === "string"
+        ? profile.learning_traits.preferred_depth
+        : "",
   };
 }
 
 function toInput(draft: Draft): LearningProfileInput {
   const resolvedLevel =
     draft.level === OTHER ? draft.otherLevel.trim() : draft.level;
+  const traits: Record<string, boolean | string> = {};
+  for (const t of LEARNING_TRAIT_OPTIONS) {
+    if (draft.traits.includes(t.key)) traits[t.key] = true;
+  }
+  if (draft.depth) traits.preferred_depth = draft.depth;
   return {
     education_level: resolvedLevel || null,
     preferred_language: draft.language || null,
@@ -83,6 +105,8 @@ function toInput(draft: Draft): LearningProfileInput {
     ai_personality: draft.personality || null,
     communication_style: draft.commStyle || null,
     custom_instructions: draft.instructions.trim() || null,
+    exam_target: draft.examTarget || null,
+    learning_traits: traits,
   };
 }
 
@@ -96,6 +120,9 @@ function hasAnyValue(input: LearningProfileInput): boolean {
       input.ai_personality ||
       input.communication_style ||
       input.custom_instructions ||
+      input.exam_target ||
+      (input.learning_traits &&
+        Object.keys(input.learning_traits).length > 0) ||
       (input.favorite_subjects && input.favorite_subjects.length > 0),
   );
 }
@@ -146,6 +173,17 @@ export function LearningProfileSection() {
         ? d.subjects.filter((s) => s !== subject)
         : [...d.subjects, subject],
     }));
+
+  const toggleTrait = (label: string) => {
+    const key = LEARNING_TRAIT_OPTIONS.find((t) => t.label === label)?.key;
+    if (!key) return;
+    setDraft((d) => ({
+      ...d,
+      traits: d.traits.includes(key)
+        ? d.traits.filter((t) => t !== key)
+        : [...d.traits, key],
+    }));
+  };
 
   const startEdit = () => {
     setDraft(saved);
@@ -259,6 +297,17 @@ export function LearningProfileSection() {
             )}
           </SettingsField>
 
+          <SettingsField
+            title="Exam Target"
+            hint="Aeva adds exam-level insights, traps, and practice for this goal."
+          >
+            <ChipSelect
+              options={EXAM_TARGETS}
+              selected={[draft.examTarget]}
+              onToggle={(o) => single("examTarget", o)}
+            />
+          </SettingsField>
+
           <SettingsField title="Preferred Language">
             <ChipSelect
               options={PREFERRED_LANGUAGES}
@@ -341,6 +390,27 @@ export function LearningProfileSection() {
             </SettingsField>
 
             <SettingsField
+              title="Teaching Extras"
+              hint="Pick what makes explanations click for you."
+            >
+              <ChipSelect
+                options={LEARNING_TRAIT_OPTIONS.map((t) => t.label)}
+                selected={LEARNING_TRAIT_OPTIONS.filter((t) =>
+                  draft.traits.includes(t.key),
+                ).map((t) => t.label)}
+                onToggle={toggleTrait}
+              />
+            </SettingsField>
+
+            <SettingsField title="Preferred Depth">
+              <ChipSelect
+                options={PREFERRED_DEPTHS}
+                selected={[draft.depth]}
+                onToggle={(o) => single("depth", o)}
+              />
+            </SettingsField>
+
+            <SettingsField
               title="Custom AI Instructions"
               hint="Long-term preferences applied to future chats unless a request overrides them."
             >
@@ -414,7 +484,22 @@ const SUMMARY_FIELDS: ReadonlyArray<{
   get: (p: LearningProfile) => string;
 }> = [
   { label: "Education Level", get: (p) => p.education_level ?? "" },
+  { label: "Exam Target", get: (p) => p.exam_target ?? "" },
   { label: "Preferred Language", get: (p) => p.preferred_language ?? "" },
+  {
+    label: "Teaching Extras",
+    get: (p) =>
+      LEARNING_TRAIT_OPTIONS.filter((t) => p.learning_traits?.[t.key] === true)
+        .map((t) => t.label)
+        .join(", "),
+  },
+  {
+    label: "Preferred Depth",
+    get: (p) =>
+      typeof p.learning_traits?.preferred_depth === "string"
+        ? p.learning_traits.preferred_depth
+        : "",
+  },
   { label: "Explanation Style", get: (p) => p.explanation_style ?? "" },
   { label: "Favorite Subjects", get: (p) => p.favorite_subjects.join(", ") },
   { label: "Learning Goal", get: (p) => p.learning_goal ?? "" },

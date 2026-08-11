@@ -20,6 +20,7 @@ import { useSwipe } from "@/hooks/useSwipe";
 import { cn } from "@/lib/utils";
 import {
   EDUCATION_LEVELS,
+  EXAM_TARGETS,
   EXPLANATION_STYLES,
   FAVORITE_SUBJECTS,
   LEARNING_GOALS,
@@ -29,7 +30,7 @@ import type { LearningProfile } from "@/types";
 
 const OTHER = "Other";
 
-/** Editable answers for the guided flow (the 5 core profile questions). */
+/** Editable answers for the guided flow (the 6 core profile questions). */
 interface Draft {
   level: string;
   otherLevel: string;
@@ -37,6 +38,7 @@ interface Draft {
   style: string;
   subjects: string[];
   goal: string;
+  examTarget: string;
 }
 
 const EMPTY: Draft = {
@@ -46,6 +48,7 @@ const EMPTY: Draft = {
   style: "",
   subjects: [],
   goal: "",
+  examTarget: "",
 };
 
 /** Smart defaults: seed the draft from a saved profile when editing. */
@@ -60,11 +63,14 @@ function toDraft(profile: LearningProfile | undefined | null): Draft {
     style: profile.explanation_style ?? "",
     subjects: profile.favorite_subjects ?? [],
     goal: profile.learning_goal ?? "",
+    examTarget: profile.exam_target ?? "",
   };
 }
 
 interface StepDef {
-  key: keyof Pick<Draft, "level" | "language" | "style" | "goal"> | "subjects";
+  key:
+    | keyof Pick<Draft, "level" | "language" | "style" | "goal" | "examTarget">
+    | "subjects";
   emoji: string;
   title: string;
   hint?: string;
@@ -108,6 +114,13 @@ const STEPS: StepDef[] = [
     emoji: "🎯",
     title: "What are you preparing for?",
     options: LEARNING_GOALS,
+  },
+  {
+    key: "examTarget",
+    emoji: "🏁",
+    title: "Target exam?",
+    hint: "Aeva adds exam-level insights, traps, and practice for this goal.",
+    options: EXAM_TARGETS,
   },
 ];
 
@@ -180,12 +193,20 @@ export function OnboardingFlow({
   const save = async (): Promise<boolean> => {
     const level = draft.level === OTHER ? draft.otherLevel.trim() : draft.level;
     try {
+      // The update endpoint writes every field, so pass through the values
+      // this flow doesn't edit (persona, instructions, traits) unchanged —
+      // otherwise a wizard save would silently wipe them.
       await saveMutation.mutateAsync({
         education_level: level || null,
         preferred_language: draft.language || null,
         explanation_style: draft.style || null,
         favorite_subjects: draft.subjects,
         learning_goal: draft.goal || null,
+        exam_target: draft.examTarget || null,
+        ai_personality: profile?.ai_personality ?? null,
+        communication_style: profile?.communication_style ?? null,
+        custom_instructions: profile?.custom_instructions ?? null,
+        learning_traits: profile?.learning_traits ?? {},
       });
       return true;
     } catch {

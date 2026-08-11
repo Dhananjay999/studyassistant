@@ -7,14 +7,39 @@ guard.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
-from marshmallow import Schema, fields, post_load, validate
+from marshmallow import Schema, ValidationError, fields, post_load, validate
 
 # Generous caps: the UI offers curated choices but allows free-text "Other".
 _TEXT = validate.Length(max=120)
 _SUBJECTS = validate.Length(max=40)
 # Custom instructions are free-form and can be a short paragraph.
 _INSTRUCTIONS = validate.Length(max=1000)
+
+# Whitelisted learning traits (privacy rule: learning-related keys only —
+# never personal/sensitive inferences). Values are booleans or short strings.
+LEARNING_TRAIT_KEYS = frozenset({
+    "likes_funny_examples",
+    "likes_visual_explanations",
+    "preferred_depth",
+    "wants_concept_check_questions",
+    "curiosity_level",
+})
+
+
+_TRAIT_VALUE_MAX = 40
+
+
+def _validate_traits(traits: dict[str, Any]) -> None:
+    """Reject unknown trait keys and oversized values."""
+    for key, value in traits.items():
+        if key not in LEARNING_TRAIT_KEYS:
+            raise ValidationError(f"Unknown learning trait: {key}")
+        if not isinstance(value, bool | str) or (
+            isinstance(value, str) and len(value) > _TRAIT_VALUE_MAX
+        ):
+            raise ValidationError(f"Invalid value for trait: {key}")
 
 
 @dataclass(frozen=True)
@@ -29,6 +54,8 @@ class LearningProfileData:
     ai_personality: str | None = None
     communication_style: str | None = None
     custom_instructions: str | None = None
+    exam_target: str | None = None
+    learning_traits: dict[str, Any] = field(default_factory=dict)
 
 
 class UpdateLearningProfileSchema(Schema):
@@ -58,6 +85,14 @@ class UpdateLearningProfileSchema(Schema):
     custom_instructions = fields.Str(
         allow_none=True, load_default=None, validate=_INSTRUCTIONS
     )
+    exam_target = fields.Str(
+        allow_none=True, load_default=None, validate=_TEXT
+    )
+    learning_traits = fields.Dict(
+        keys=fields.Str(),
+        load_default=dict,
+        validate=_validate_traits,
+    )
 
     @post_load
     def make_data(
@@ -78,5 +113,7 @@ class LearningProfileSchema(Schema):
     ai_personality = fields.Str(allow_none=True)
     communication_style = fields.Str(allow_none=True)
     custom_instructions = fields.Str(allow_none=True)
+    exam_target = fields.Str(allow_none=True)
+    learning_traits = fields.Dict(keys=fields.Str(), dump_default=dict)
     personalization_status = fields.Str(required=True)
     personalization_updated_at = fields.Str(allow_none=True)

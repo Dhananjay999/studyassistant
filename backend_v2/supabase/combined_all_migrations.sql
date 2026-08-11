@@ -1611,3 +1611,12 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 -- RLS). Enabling RLS with no policies blocks anon/authenticated access
 -- entirely — defence in depth, same pattern as prior migrations.
 ALTER TABLE feature_flags ENABLE ROW LEVEL SECURITY;
+
+-- ----------------------------------------------------------------------------
+-- 021_learning_profile_tutor.sql
+-- ----------------------------------------------------------------------------
+
+-- Learning-profile tutor fields: exam target + learning traits (additive).
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS exam_target TEXT;
+ALTER TABLE profiles
+    ADD COLUMN IF NOT EXISTS learning_traits JSONB NOT NULL DEFAULT '{}'::jsonb;

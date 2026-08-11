@@ -43,6 +43,29 @@ export const FAVORITE_SUBJECTS = [
   "Economics",
 ] as const;
 
+export const EXAM_TARGETS = [
+  "JEE",
+  "NEET",
+  "Boards",
+  "Olympiad",
+  "UPSC",
+  "None",
+] as const;
+
+/** Boolean learning traits shown as toggle chips (key ↔ label). */
+export const LEARNING_TRAIT_OPTIONS = [
+  { key: "likes_funny_examples", label: "Funny examples" },
+  { key: "likes_visual_explanations", label: "Visual explanations" },
+  { key: "wants_concept_check_questions", label: "Concept-check questions" },
+] as const;
+
+export const PREFERRED_DEPTHS = [
+  "Simple",
+  "Conceptual",
+  "Exam-level",
+  "Deep",
+] as const;
+
 export const LEARNING_GOALS = [
   "School Exams",
   "College",
