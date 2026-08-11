@@ -48,22 +48,24 @@ interface NavItem {
   feature?: FeatureKey;
 }
 
-// Primary navigation — always visible: chat is the product.
-const NAV: NavItem[] = [
-  { label: "Chats", icon: MessageSquare, to: "/chat" },
-];
-
-// Library: secondary learning resources, grouped under one collapsible
-// section on the expanded desktop sidebar so chat history gets the vertical
-// space. Auto-collapses when the user scrolls down through history and
-// re-expands at the top; always manually toggleable.
+// Library: ALL navigation tabs, grouped under one collapsible dropdown on
+// the expanded desktop sidebar so chat history gets the vertical space.
+// Auto-collapses when the user scrolls down through history and re-expands
+// at the top; always manually toggleable. While collapsed, the two
+// most-used shortcuts (Quizzes, Flashcards) stay visible as a full-width
+// button pair.
 const LIBRARY_NAV: NavItem[] = [
+  { label: "Chats", icon: MessageSquare, to: "/chat" },
   { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
   { label: "Analytics", icon: BarChart3, to: "/analytics", feature: "analytics" },
   { label: "Study Material", icon: FolderOpen, to: "/files" },
 ];
+
+// Routes surfaced as the full-width shortcut pair while the dropdown is
+// closed.
+const QUICK_ROUTES = new Set(["/quizzes", "/flashcards"]);
 
 // Scroll hysteresis: expand only at the very top, collapse once clearly
 // scrolled, so small movements around the boundary never flicker the state.
@@ -73,10 +75,8 @@ const LIBRARY_COLLAPSE_AT = 24;
 // they toggled it.
 const MANUAL_SCROLL_TOLERANCE = 48;
 
-// Secondary tools: kept reachable but visually de-emphasized. On the
-// expanded desktop sidebar they render as one compact icon-only row (with
-// tooltips) instead of full nav rows; the mobile drawer and the collapsed
-// rail keep the regular vertical treatment.
+// Secondary tools: live at the end of the Library dropdown on desktop, and
+// in the flat list on the mobile drawer / collapsed rail.
 const SECONDARY_NAV: NavItem[] = [
   { label: "Revision", icon: BrainCircuit, to: "/revision", feature: "revision_mode" },
   { label: "Notes", icon: NotebookPen, to: "/notes", feature: "notes" },
@@ -148,15 +148,13 @@ export function AppSidebar({
   const features = useAppConfig().data?.features;
   const flagged = (item: NavItem) =>
     !item.feature || features?.[item.feature] !== false;
-  const secondary = SECONDARY_NAV.filter(flagged);
-  const library = LIBRARY_NAV.filter(flagged);
+  // Every tab lives in the Library dropdown on the expanded desktop sidebar.
   // The mobile drawer (identified by `onNavigate`) and the collapsed desktop
-  // rail keep the original flat vertical list — the Library accordion and the
-  // utility icon row are for the expanded desktop sidebar only.
+  // rail keep a flat vertical list of the same items instead.
+  const library = [...LIBRARY_NAV, ...SECONDARY_NAV].filter(flagged);
+  const quickShortcuts = library.filter((item) => QUICK_ROUTES.has(item.to));
   const desktopExpanded = !onNavigate && !collapsed;
-  const nav = (
-    desktopExpanded ? NAV : [...NAV, ...secondary, ...library]
-  ).filter(flagged);
+  const nav = desktopExpanded ? [] : library;
 
   // Library open/closed. Scroll drives it automatically (with hysteresis);
   // a manual toggle wins until the user meaningfully scrolls again.
@@ -474,7 +472,10 @@ export function AppSidebar({
                 <div className="flex flex-col gap-1 pl-4">
                   {library.map((item) => {
                     const Icon = item.icon;
-                    const active = location.pathname.startsWith(item.to);
+                    const active =
+                      item.to === "/chat"
+                        ? onChats
+                        : location.pathname.startsWith(item.to);
                     return (
                       <button
                         key={item.to}
@@ -499,6 +500,33 @@ export function AppSidebar({
                 </div>
               </div>
             </div>
+
+            {/* While the dropdown is closed, keep the two most-used
+               shortcuts one tap away as a full-width button pair. */}
+            {!libraryOpen && quickShortcuts.length > 0 && (
+              <div className="grid grid-cols-2 gap-1.5 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+                {quickShortcuts.map((item) => {
+                  const Icon = item.icon;
+                  const active = location.pathname.startsWith(item.to);
+                  return (
+                    <button
+                      key={item.to}
+                      type="button"
+                      onClick={() => go(item.to)}
+                      className={cn(
+                        "flex items-center justify-center gap-2 rounded-lg border px-2 py-2 text-sm transition-colors",
+                        active
+                          ? "border-brand-1/40 bg-accent font-medium text-accent-foreground"
+                          : "border-border/60 text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
       </nav>
@@ -578,48 +606,8 @@ export function AppSidebar({
         </div>
       )}
 
-      {/* Secondary tools — one compact icon row (desktop, expanded only).
-         Tooltips carry the names; the brand underline marks the active one. */}
-      {desktopExpanded && secondary.length > 0 && (
-        <div className="mt-auto flex items-center justify-center gap-1 px-3 pb-1.5 pt-1">
-          {secondary.map((item) => {
-            const Icon = item.icon;
-            const active = location.pathname.startsWith(item.to);
-            return (
-              <Tooltip key={item.to}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => go(item.to)}
-                    aria-label={item.label}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
-                      active
-                        ? "text-brand-1"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {active && (
-                      <span className="absolute inset-x-2.5 bottom-1 h-0.5 rounded-full bg-brand-1" />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">{item.label}</TooltipContent>
-              </Tooltip>
-            );
-          })}
-        </div>
-      )}
-
       {/* Account entry — always pinned to the bottom-left; opens Settings. */}
-      <div
-        className={cn(
-          "border-t border-border/50 p-2",
-          !desktopExpanded && "mt-auto",
-        )}
-      >
+      <div className="mt-auto border-t border-border/50 p-2">
         {collapsed ? (
           <Tooltip>
             <TooltipTrigger asChild>
