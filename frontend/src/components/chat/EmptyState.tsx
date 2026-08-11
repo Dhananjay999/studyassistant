@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { useLearningProfile } from "@/hooks/api";
+import { MemoryHint } from "@/components/chat/MemoryHint";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { buildSuggestedPrompts } from "@/lib/suggestedPrompts";
 
@@ -97,6 +98,8 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
               </motion.button>
             ))}
       </div>
+
+      <MemoryHint />
     </div>
   );
 }

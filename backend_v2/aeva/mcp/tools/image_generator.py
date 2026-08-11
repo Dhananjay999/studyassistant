@@ -120,7 +120,12 @@ class ImageGeneratorTool(BaseTool):
             ctx.session_id,
         )
 
-        answer = caption or f"Here's the image you asked for: {prompt}"
+        # Never echo the raw generation prompt back to the student — it reads
+        # as a wall of internal instructions in the chat.
+        answer = caption or (
+            "Here's the image you asked for! It's also saved in your media "
+            "library, so you can revisit it anytime."
+        )
         return {
             "answer": answer,
             "sources": [],

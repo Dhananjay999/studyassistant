@@ -674,9 +674,13 @@ export default function ChatPage() {
     setQuizSetupOpen(false);
     quizDraftRef.current = null;
     const resolved = { ...options, topic: options.topic || topic || undefined };
+    // Show a short action label instead of echoing a near-duplicate of the
+    // user's own request as a second bubble. The canonical text still goes to
+    // the backend so topic inference keeps working when no topic was set.
     send(`Generate a quiz${resolved.topic ? ` on ${resolved.topic}` : ""}`, {
       quizOptions: resolved,
       sourceContent,
+      displayText: `Start quiz${resolved.topic ? `: ${resolved.topic}` : ""}`,
     });
   };
 

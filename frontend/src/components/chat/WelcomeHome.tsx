@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Flame } from "lucide-react";
 import { EmptyState } from "@/components/chat/EmptyState";
+import { MemoryHint } from "@/components/chat/MemoryHint";
 import { RecommendationCard } from "@/components/revision/RecommendationCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLearningProfile, useRevisionHome } from "@/hooks/api";
@@ -177,6 +178,8 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
           </motion.button>
         ))}
       </div>
+
+      <MemoryHint />
     </div>
   );
 }

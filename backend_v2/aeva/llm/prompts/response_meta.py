@@ -30,5 +30,5 @@ Rules:
 - suggested_followups: provide 2–3 natural next questions based on your answer. Each item must contain:
   - title: short (max 6 words).
   - prompt: the complete message to send if selected.
-- Use [] for suggested_followups when no meaningful
+- Use [] for suggested_followups only when no meaningful next step exists (greetings, goodbyes, refusals). For any teaching answer, always suggest follow-ups.
 """
