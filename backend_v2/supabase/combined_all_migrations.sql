@@ -1620,3 +1620,14 @@ ALTER TABLE feature_flags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS exam_target TEXT;
 ALTER TABLE profiles
     ADD COLUMN IF NOT EXISTS learning_traits JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- ----------------------------------------------------------------------------
+-- 022_generated_media_ready.sql
+-- ----------------------------------------------------------------------------
+
+-- Repair Aeva-generated images stuck at 'pending' (they skip the parse
+-- pipeline; new rows are inserted as 'ready').
+UPDATE media
+SET processing_status = 'ready'
+WHERE storage_path LIKE '%/generated/%'
+  AND processing_status = 'pending';

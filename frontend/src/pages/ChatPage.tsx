@@ -188,7 +188,12 @@ export default function ChatPage() {
   useBackClose(toolsOpen, () => setToolsOpen(false));
 
   const mediaQuery = useMedia();
-  const media = mediaQuery.data ?? [];
+  // The chat sidebar lists only the user's own uploads. Aeva-generated
+  // images (stored under .../generated/) stay out of it — they already
+  // render inline in the chat and live on the Study Material page.
+  const media = (mediaQuery.data ?? []).filter(
+    (m) => !m.storage_path.includes("/generated/"),
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
   // While an upload batch is in flight the media panel is auto-opened to show

@@ -112,6 +112,9 @@ class ImageGeneratorTool(BaseTool):
             size_bytes=len(image),
             session_id=ctx.session_id,
             space_id=ctx.space_id,
+            # Generated images skip the parse pipeline — born ready, so they
+            # never sit on a "processing" icon.
+            processing_status="ready",
         )
         logger.info(
             "Generated image %s (%d bytes) for session %s",

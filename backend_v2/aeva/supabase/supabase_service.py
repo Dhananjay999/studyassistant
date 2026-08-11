@@ -452,8 +452,14 @@ class SupabaseService:
         size_bytes: int,
         session_id: str | None = None,
         space_id: str | None = None,
+        processing_status: str | None = None,
     ) -> dict[str, Any]:
-        """Insert media metadata row."""
+        """Insert media metadata row.
+
+        ``processing_status`` overrides the DB default ('pending') for rows
+        that never enter the parse pipeline — Aeva-generated images are born
+        'ready', otherwise they'd show a processing spinner forever.
+        """
         row: dict[str, Any] = {
             "user_id": user_id,
             "session_id": session_id,
@@ -464,6 +470,8 @@ class SupabaseService:
         }
         if space_id:
             row["space_id"] = space_id
+        if processing_status:
+            row["processing_status"] = processing_status
         result = self.client.table("media").insert(row).execute()
         return result.data[0]
 
