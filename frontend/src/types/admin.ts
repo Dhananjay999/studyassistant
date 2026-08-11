@@ -55,6 +55,9 @@ export interface AdminLearningProfile {
   explanation_style: string | null;
   favorite_subjects: string[];
   learning_goal: string | null;
+  ai_personality?: string | null;
+  communication_style?: string | null;
+  custom_instructions?: string | null;
 }
 
 export interface AdminUserProfile {
@@ -65,6 +68,7 @@ export interface AdminUserProfile {
   login_provider: string;
   joined_at: string | null;
   personalization_status: PersonalizationStatus;
+  is_debug_user?: boolean;
   learning_profile: AdminLearningProfile;
 }
 
@@ -138,6 +142,103 @@ export interface AdminMessage {
 export interface AdminSessionDetail {
   session: AdminSessionRow & Record<string, unknown>;
   messages: AdminMessage[];
+}
+
+/** One event in the per-user activity timeline. */
+export interface AdminTimelineEvent {
+  at: string;
+  type: string;
+  label: string;
+  ref: string;
+}
+
+/** One audited admin action. */
+export interface AdminAuditEntry {
+  id: string;
+  admin_username: string;
+  action: string;
+  user_id: string | null;
+  resource: string | null;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
+/** Editable (non-sensitive) profile fields — partial update. */
+export interface AdminEditProfileInput {
+  full_name?: string | null;
+  education_level?: string | null;
+  learning_goal?: string | null;
+  preferred_language?: string | null;
+  explanation_style?: string | null;
+  ai_personality?: string | null;
+  communication_style?: string | null;
+  custom_instructions?: string | null;
+  favorite_subjects?: string[];
+}
+
+export interface AdminQuizQuestion {
+  id: string;
+  type: string;
+  prompt: string;
+  options: string[];
+  correct_answers: string[];
+  explanation?: string | null;
+  sort_order: number;
+}
+
+export interface AdminQuizAttempt {
+  id: string;
+  score: number | null;
+  created_at: string;
+  answers?: Record<string, string[]>;
+  evaluation?: Record<string, unknown>;
+  feedback?: Record<string, unknown> | null;
+}
+
+export interface AdminQuizFullDetail {
+  quiz: {
+    id: string;
+    title: string;
+    topic: string;
+    difficulty?: string;
+    exam_config?: Record<string, unknown>;
+    created_at: string;
+  } & Record<string, unknown>;
+  questions: AdminQuizQuestion[];
+  attempts: AdminQuizAttempt[];
+}
+
+export interface AdminFlashcardSetDetail {
+  set: {
+    id: string;
+    title: string;
+    topic: string;
+    source_type?: string;
+    created_at: string;
+  } & Record<string, unknown>;
+  cards: Array<{
+    id: string;
+    front: string;
+    back: string;
+    example?: string | null;
+    study?: { rating: string; updated_at: string } | null;
+  }>;
+}
+
+/** Full media row + derived RAG state (parsed pages / embedded chunks). */
+export interface AdminMediaFullDetail extends Record<string, unknown> {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  processing_status?: string;
+  processing_error?: string | null;
+  page_count?: number | null;
+  chunk_count?: number;
+  parsed_pages: number;
+  embedded_chunks: number;
+  signed_url: string;
 }
 
 export type UserResource =

@@ -39,6 +39,56 @@ class AdminLoginSchema(Schema):
         return AdminLoginData(**data)
 
 
+class EditProfileSchema(Schema):
+    """Admin edit of non-sensitive profile/personalization fields.
+
+    Loads to a plain dict of ONLY the provided fields (partial update).
+    Email/id/auth data are deliberately not editable here.
+    """
+
+    full_name = fields.Str(validate=validate.Length(max=120), allow_none=True)
+    education_level = fields.Str(
+        validate=validate.Length(max=80), allow_none=True
+    )
+    learning_goal = fields.Str(
+        validate=validate.Length(max=200), allow_none=True
+    )
+    preferred_language = fields.Str(
+        validate=validate.Length(max=60), allow_none=True
+    )
+    explanation_style = fields.Str(
+        validate=validate.Length(max=80), allow_none=True
+    )
+    ai_personality = fields.Str(
+        validate=validate.Length(max=80), allow_none=True
+    )
+    communication_style = fields.Str(
+        validate=validate.Length(max=80), allow_none=True
+    )
+    custom_instructions = fields.Str(
+        validate=validate.Length(max=1000), allow_none=True
+    )
+    favorite_subjects = fields.List(
+        fields.Str(validate=validate.Length(max=60)),
+        validate=validate.Length(max=20),
+    )
+
+
+class AuditLogQuerySchema(Schema):
+    """Filters for the audit log listing."""
+
+    user_id = fields.Str(load_default=None, allow_none=True)
+    limit = fields.Int(
+        load_default=100, validate=validate.Range(min=1, max=200)
+    )
+
+
+class UserSearchQuerySchema(Schema):
+    """Per-user search query."""
+
+    q = fields.Str(required=True, validate=validate.Length(min=1, max=200))
+
+
 @dataclass(frozen=True)
 class DebugUserToggleData:
     """Validated body for enabling/disabling Developer Mode on a user."""

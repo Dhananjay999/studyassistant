@@ -14,6 +14,7 @@ import {
   ListChecks,
   Loader2,
   MessageSquare,
+  ScrollText,
   Search,
   ShieldAlert,
   Smartphone,
@@ -30,6 +31,7 @@ import { AdminUsers } from "@/pages/admin/AdminUsers";
 import { AdminUserDetail } from "@/pages/admin/AdminUserDetail";
 import { AdminResources } from "@/pages/admin/AdminResources";
 import { AdminSearch } from "@/pages/admin/AdminSearch";
+import { AdminAuditLog } from "@/pages/admin/AdminAuditLog";
 import { AdminDangerZone } from "@/pages/admin/AdminDangerZone";
 import { AdminDebugUsers } from "@/pages/admin/AdminDebugUsers";
 import { AdminDevTools } from "@/pages/admin/AdminDevTools";
@@ -44,6 +46,7 @@ type View =
   | { name: "search" }
   | { name: "debug" }
   | { name: "flags" }
+  | { name: "audit" }
   | { name: "devtools" }
   | { name: "danger" };
 
@@ -66,6 +69,7 @@ const NAV: AdminNavItem[] = [
   { key: "search", label: "Search", icon: Search },
   { key: "debug", label: "Debug Users", icon: Bug },
   { key: "flags", label: "Feature Flags", icon: Flag },
+  { key: "audit", label: "Audit Log", icon: ScrollText },
   { key: "devtools", label: "Dev Tools", icon: Smartphone },
   { key: "danger", label: "Danger Zone", icon: ShieldAlert },
 ];
@@ -92,6 +96,7 @@ function AdminInner() {
       key === "search" ||
       key === "debug" ||
       key === "flags" ||
+      key === "audit" ||
       key === "devtools" ||
       key === "danger"
     ) {
@@ -118,6 +123,7 @@ function AdminInner() {
     >
       {view.name === "overview" && <AdminOverview />}
       {view.name === "debug" && <AdminDebugUsers />}
+      {view.name === "audit" && <AdminAuditLog />}
       {view.name === "users" && (
         <AdminUsers onSelectUser={(id) => setView({ name: "user", id })} />
       )}

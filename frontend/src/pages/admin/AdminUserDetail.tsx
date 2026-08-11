@@ -4,13 +4,18 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import {
+  Activity,
   ArrowLeft,
   BookMarked,
+  Bug,
   FileText,
   Layers,
   ListChecks,
   MessageSquare,
+  NotebookPen,
+  Pencil,
   RotateCcw,
+  Search,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,11 +31,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
 import { SessionDialog } from "@/components/admin/SessionDialog";
 import {
+  FlashcardDetailDialog,
+  MediaDetailDialog,
+  ProfileEditDialog,
+  QuizDetailDialog,
+} from "@/components/admin/InspectDialogs";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import {
+  useAdminTimeline,
   useAdminUser,
+  useAdminUserSearch,
   useClearUserResource,
   useDeleteUser,
   useResetLearningProfile,
+  useSetDebugUser,
 } from "@/hooks/adminApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/adminFormat";
 import type { AdminUserDetail as Detail, UserResource } from "@/types/admin";
 
@@ -54,6 +71,16 @@ export function AdminUserDetail({
   const del = useDeleteUser();
   const [pending, setPending] = useState<Pending | null>(null);
   const [openSession, setOpenSession] = useState<string | null>(null);
+  const [openQuiz, setOpenQuiz] = useState<string | null>(null);
+  const [openSet, setOpenSet] = useState<string | null>(null);
+  const [openMedia, setOpenMedia] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 300);
+  const searching = debouncedQuery.trim().length >= 2;
+  const userSearch = useAdminUserSearch(userId, debouncedQuery);
+  const timeline = useAdminTimeline(userId);
+  const setDebug = useSetDebugUser();
 
   const busy = reset.isPending || clear.isPending || del.isPending;
 
@@ -153,16 +180,53 @@ export function AdminUserDetail({
               <span className="text-muted-foreground">
                 Joined {formatDate(profile.joined_at)}
               </span>
+              <span className="text-muted-foreground">
+                ID {profile.id.slice(0, 8)}…
+              </span>
             </div>
           </div>
-          <Button
-            variant="destructive"
-            className="gap-2"
-            onClick={() => setPending({ type: "deleteUser" })}
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete user
-          </Button>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit profile
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setPending({ type: "deleteUser" })}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete user
+              </Button>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <Bug className="h-3.5 w-3.5" />
+              Debug mode
+              <Switch
+                checked={!!profile.is_debug_user}
+                disabled={setDebug.isPending}
+                onCheckedChange={(on) =>
+                  setDebug.mutate(
+                    { id: userId, enabled: on },
+                    {
+                      onSuccess: () =>
+                        toast.success(
+                          `Debug mode ${on ? "enabled" : "disabled"}`,
+                        ),
+                      onError: () => toast.error("Couldn't update debug flag"),
+                    },
+                  )
+                }
+              />
+            </label>
+          </div>
         </CardContent>
       </Card>
 
@@ -203,6 +267,86 @@ export function AdminUserDetail({
         </CardContent>
       </Card>
 
+      {/* Search everything this user owns */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search this user's chats, messages, notes, quizzes, flashcards, files…"
+          className="pl-9"
+        />
+      </div>
+
+      {searching && (
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            {userSearch.isLoading ? (
+              <Skeleton className="h-20 w-full" />
+            ) : (
+              (
+                [
+                  ["Chats", userSearch.data?.sessions, MessageSquare,
+                    (r: { id: string }) => setOpenSession(r.id)],
+                  ["Messages", userSearch.data?.messages, MessageSquare,
+                    (r: { session_id?: string }) =>
+                      r.session_id && setOpenSession(r.session_id)],
+                  ["Notes", userSearch.data?.notes, NotebookPen, undefined],
+                  ["Quizzes", userSearch.data?.quizzes, ListChecks,
+                    (r: { id: string }) => setOpenQuiz(r.id)],
+                  ["Flashcards", userSearch.data?.flashcards, Layers,
+                    (r: { id: string }) => setOpenSet(r.id)],
+                  ["Files", userSearch.data?.media, FileText,
+                    (r: { id: string }) => setOpenMedia(r.id)],
+                ] as Array<
+                  [
+                    string,
+                    Array<Record<string, unknown>> | undefined,
+                    typeof MessageSquare,
+                    ((r: never) => void) | undefined,
+                  ]
+                >
+              ).map(([label, rows, Icon, onOpen]) =>
+                rows?.length ? (
+                  <div key={label}>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {label}
+                    </p>
+                    <div className="space-y-1">
+                      {rows.slice(0, 6).map((r, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={!onOpen}
+                          onClick={() => onOpen?.(r as never)}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent disabled:cursor-default"
+                        >
+                          <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate">
+                            {(r.title as string) ||
+                              (r.content as string)?.slice(0, 90) ||
+                              (r.file_name as string) ||
+                              "—"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null,
+              )
+            )}
+            {!userSearch.isLoading &&
+              !Object.values(userSearch.data ?? {}).some(
+                (v) => Array.isArray(v) && v.length > 0,
+              ) && (
+                <p className="text-sm text-muted-foreground">
+                  No matches for “{debouncedQuery.trim()}”.
+                </p>
+              )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Content tabs */}
       <Tabs defaultValue="sessions">
         <TabsList className="flex-wrap">
@@ -219,6 +363,10 @@ export function AdminUserDetail({
             Bookmarks ({data.bookmarks.length})
           </TabsTrigger>
           <TabsTrigger value="files">Files ({data.files.length})</TabsTrigger>
+          <TabsTrigger value="activity" className="gap-1">
+            <Activity className="h-3.5 w-3.5" />
+            Activity
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="sessions">
@@ -241,6 +389,7 @@ export function AdminUserDetail({
               icon: ListChecks,
               title: q.title || q.topic,
               meta: `${q.topic} · ${formatDate(q.created_at)}`,
+              onClick: () => setOpenQuiz(q.id),
             }))}
           />
         </TabsContent>
@@ -252,6 +401,7 @@ export function AdminUserDetail({
               icon: Layers,
               title: f.title || f.topic,
               meta: `${f.topic} · ${formatDate(f.created_at)}`,
+              onClick: () => setOpenSet(f.id),
             }))}
           />
         </TabsContent>
@@ -274,8 +424,45 @@ export function AdminUserDetail({
               icon: FileText,
               title: f.file_name,
               meta: `${formatBytes(f.size_bytes)} · ${formatDate(f.created_at)}`,
+              onClick: () => setOpenMedia(f.id),
             }))}
           />
+        </TabsContent>
+        <TabsContent value="activity">
+          {timeline.isLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : !timeline.data?.events.length ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No activity recorded.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {timeline.data.events.map((e, i) => (
+                <button
+                  key={`${e.type}-${e.ref}-${i}`}
+                  type="button"
+                  onClick={() => {
+                    if (e.type === "message") setOpenSession(e.ref);
+                    else if (
+                      e.type === "quiz_created" ||
+                      e.type === "quiz_attempt"
+                    )
+                      setOpenQuiz(e.ref);
+                    else if (e.type === "flashcards_created")
+                      setOpenSet(e.ref);
+                    else if (e.type === "media_uploaded")
+                      setOpenMedia(e.ref);
+                  }}
+                  className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+                >
+                  <span className="w-32 shrink-0 font-mono text-[11px] text-muted-foreground">
+                    {formatDateTime(e.at)}
+                  </span>
+                  <span className="min-w-0 truncate">{e.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -329,6 +516,21 @@ export function AdminUserDetail({
       <SessionDialog
         sessionId={openSession}
         onClose={() => setOpenSession(null)}
+      />
+      <QuizDetailDialog quizId={openQuiz} onClose={() => setOpenQuiz(null)} />
+      <FlashcardDetailDialog
+        setId={openSet}
+        onClose={() => setOpenSet(null)}
+      />
+      <MediaDetailDialog
+        mediaId={openMedia}
+        onClose={() => setOpenMedia(null)}
+      />
+      <ProfileEditDialog
+        userId={userId}
+        profile={profile}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
       />
     </div>
   );

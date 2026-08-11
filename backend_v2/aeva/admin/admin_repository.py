@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 # requirement that a DELETE carries a filter while still matching every row.
 _MATCH_ALL = "id.neq.00000000-0000-0000-0000-000000000000"
 
+
+def _chunks(items: list[str], size: int) -> list[list[str]]:
+    """Split ids into ``in_``-friendly batches (PostgREST URL length cap)."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
 # Learning-profile columns cleared by a profile reset.
 _LEARNING_FIELDS = (
     "education_level",
@@ -327,6 +332,49 @@ class AdminRepository:
         )
 
     # ------------------------------------------------------------------
+    # Audit log
+    # ------------------------------------------------------------------
+
+    def _audit(
+        self,
+        admin: str,
+        action: str,
+        user_id: str | None = None,
+        resource: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """Record a sensitive admin action. Best-effort: never blocks."""
+        try:
+            self.client.table("admin_audit_log").insert({
+                "admin_username": admin,
+                "action": action,
+                "user_id": user_id,
+                "resource": resource,
+                "detail": detail or {},
+            }).execute()
+        except Exception:  # noqa: BLE001 — audit is best-effort by design.
+            logger.warning("Audit write failed (%s)", action, exc_info=True)
+
+    def list_audit(
+        self, user_id: str | None = None, limit: int = 100
+    ) -> dict[str, Any]:
+        """Recent audit entries, optionally for one user."""
+        query = (
+            self.client.table("admin_audit_log")
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(min(limit, 200))
+        )
+        if user_id:
+            query = query.eq("user_id", user_id)
+        try:
+            rows = query.execute().data or []
+        except Exception:  # migration 019 not applied yet
+            logger.warning("Audit log unavailable", exc_info=True)
+            rows = []
+        return success_response("Audit log", {"entries": rows})
+
+    # ------------------------------------------------------------------
     # Developer Mode (debug users)
     # ------------------------------------------------------------------
 
@@ -343,7 +391,9 @@ class AdminRepository:
             "Debug users loaded", {"users": res.data or []}
         )
 
-    def set_debug_user(self, user_id: str, enabled: bool) -> dict[str, Any]:
+    def set_debug_user(
+        self, admin: str, user_id: str, enabled: bool
+    ) -> dict[str, Any]:
         """Enable/disable Developer Mode for one user (role-independent)."""
         res = (
             self.client.table("profiles")
@@ -357,6 +407,11 @@ class AdminRepository:
             "Admin %s Developer Mode for user %s",
             "enabled" if enabled else "disabled",
             user_id,
+        )
+        self._audit(
+            admin,
+            "debug_user.enable" if enabled else "debug_user.disable",
+            user_id=user_id,
         )
         return success_response(
             "Debug flag updated",
@@ -456,12 +511,16 @@ class AdminRepository:
             "joined_at": profile.get("created_at"),
             "personalization_status": profile.get("personalization_status")
             or "pending",
+            "is_debug_user": bool(profile.get("is_debug_user")),
             "learning_profile": {
                 "education_level": profile.get("education_level"),
                 "preferred_language": profile.get("preferred_language"),
                 "explanation_style": profile.get("explanation_style"),
                 "favorite_subjects": profile.get("favorite_subjects") or [],
                 "learning_goal": profile.get("learning_goal"),
+                "ai_personality": profile.get("ai_personality"),
+                "communication_style": profile.get("communication_style"),
+                "custom_instructions": profile.get("custom_instructions"),
             },
         }
 
@@ -501,7 +560,9 @@ class AdminRepository:
     # Destructive actions
     # ------------------------------------------------------------------
 
-    def reset_learning_profile(self, user_id: str) -> dict[str, Any]:
+    def reset_learning_profile(
+        self, admin: str, user_id: str
+    ) -> dict[str, Any]:
         """Clear a user's learning profile back to the pending state."""
         if not self.supabase.get_profile(user_id):
             raise CustomError(ERROR_CODES["NOT_FOUND"])
@@ -509,12 +570,38 @@ class AdminRepository:
         fields["favorite_subjects"] = []
         fields["personalization_status"] = "pending"
         self.supabase.update_learning_profile(user_id, fields)
+        self._audit(admin, "profile.reset", user_id=user_id)
         return success_response(
             "Learning profile reset", {"user_id": user_id}
         )
 
+    def edit_profile(
+        self, admin: str, user_id: str, patch: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Edit non-sensitive profile/personalization fields (audited)."""
+        if not self.supabase.get_profile(user_id):
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        if not patch:
+            raise CustomError(ERROR_CODES["VALIDATION_ERROR"])
+        res = (
+            self.client.table("profiles")
+            .update(patch)
+            .eq("id", user_id)
+            .execute()
+        )
+        if not res.data:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        self._audit(
+            admin,
+            "profile.edit",
+            user_id=user_id,
+            resource="profile",
+            detail={"fields": sorted(patch)},
+        )
+        return success_response("Profile updated", res.data[0])
+
     def clear_user_resource(
-        self, user_id: str, resource: str
+        self, admin: str, user_id: str, resource: str
     ) -> dict[str, Any]:
         """Delete all of one resource type for a single user."""
         if not self.supabase.get_profile(user_id):
@@ -528,15 +615,19 @@ class AdminRepository:
             ).execute()
         else:
             raise CustomError(ERROR_CODES["VALIDATION_ERROR"])
+        self._audit(
+            admin, "resource.clear", user_id=user_id, resource=resource
+        )
         return success_response(
             f"Cleared {resource}",
             {"user_id": user_id, "resource": resource},
         )
 
-    def delete_user(self, user_id: str) -> dict[str, Any]:
+    def delete_user(self, admin: str, user_id: str) -> dict[str, Any]:
         """Delete a user and everything they own (DB cascade + storage)."""
         if not self.supabase.get_profile(user_id):
             raise CustomError(ERROR_CODES["NOT_FOUND"])
+        self._audit(admin, "user.delete", user_id=user_id)
         # Storage objects are not FK-cascaded — remove them first.
         self._delete_files_where("user_id", user_id)
         try:
@@ -552,8 +643,9 @@ class AdminRepository:
             ).execute()
         return success_response("User deleted", {"user_id": user_id})
 
-    def delete_all(self, resource: str) -> dict[str, Any]:
+    def delete_all(self, admin: str, resource: str) -> dict[str, Any]:
         """Delete every row of a resource across all users (DANGER)."""
+        self._audit(admin, "resource.delete_all", resource=resource)
         if resource == "files":
             self._delete_files_where(None, None)
         elif resource == "users":
@@ -569,6 +661,253 @@ class AdminRepository:
         return success_response(
             f"Deleted all {resource}", {"resource": resource}
         )
+
+    # ------------------------------------------------------------------
+    # User inspection (quiz / flashcards / media / timeline / search)
+    # ------------------------------------------------------------------
+
+    def quiz_detail(self, quiz_id: str) -> dict[str, Any]:
+        """Full quiz: config, every question with answers, all attempts."""
+        quiz = (
+            self.client.table("quizzes")
+            .select("*")
+            .eq("id", quiz_id)
+            .maybe_single()
+            .execute()
+        )
+        if not quiz or not quiz.data:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        questions = (
+            self.client.table("quiz_questions")
+            .select("*")
+            .eq("quiz_id", quiz_id)
+            .order("sort_order")
+            .execute()
+        ).data or []
+        attempts = (
+            self.client.table("quiz_attempts")
+            .select("*")
+            .eq("quiz_id", quiz_id)
+            .order("created_at", desc=True)
+            .execute()
+        ).data or []
+        return success_response("Quiz detail", {
+            "quiz": quiz.data,
+            "questions": questions,
+            "attempts": attempts,
+        })
+
+    def flashcard_detail(self, set_id: str) -> dict[str, Any]:
+        """Full flashcard set: cards + the user's per-card study state."""
+        fset = (
+            self.client.table("flashcard_sets")
+            .select("*")
+            .eq("id", set_id)
+            .maybe_single()
+            .execute()
+        )
+        if not fset or not fset.data:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        cards = (
+            self.client.table("flashcards")
+            .select("*")
+            .eq("set_id", set_id)
+            .order("sort_order")
+            .execute()
+        ).data or []
+        study = (
+            self.client.table("flashcard_study")
+            .select("flashcard_id,rating,updated_at")
+            .eq("set_id", set_id)
+            .execute()
+        ).data or []
+        by_card = {s["flashcard_id"]: s for s in study}
+        for card in cards:
+            card["study"] = by_card.get(card["id"])
+        return success_response("Flashcard detail", {
+            "set": fset.data,
+            "cards": cards,
+        })
+
+    def media_detail(self, media_id: str) -> dict[str, Any]:
+        """One media row with processing/parsing/embedding state + URL."""
+        row = (
+            self.client.table("media")
+            .select("*")
+            .eq("id", media_id)
+            .maybe_single()
+            .execute()
+        )
+        if not row or not row.data:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        media = dict(row.data)
+        media["signed_url"] = self.supabase.get_signed_url(
+            media["storage_path"]
+        )
+        pages = (
+            self.client.table("media_pages")
+            .select("id", count="exact")
+            .eq("media_id", media_id)
+            .limit(1)
+            .execute()
+        )
+        chunks = (
+            self.client.table("media_chunks")
+            .select("id", count="exact")
+            .eq("media_id", media_id)
+            .limit(1)
+            .execute()
+        )
+        media["parsed_pages"] = pages.count or 0
+        media["embedded_chunks"] = chunks.count or 0
+        return success_response("Media detail", media)
+
+    def timeline(self, user_id: str, limit: int = 100) -> dict[str, Any]:
+        """Unified activity feed: questions, quizzes, attempts, cards, files.
+
+        Each event: ``{at, type, label, ref}`` — enough for a readable
+        timeline without exposing raw rows.
+        """
+        events: list[dict[str, Any]] = []
+
+        session_rows = (
+            self.client.table("sessions")
+            .select("id,title")
+            .eq("user_id", user_id)
+            .execute()
+        ).data or []
+        titles = {s["id"]: s["title"] for s in session_rows}
+        for chunk in _chunks(list(titles), 100):
+            msgs = (
+                self.client.table("messages")
+                .select("id,session_id,content,created_at")
+                .eq("role", "user")
+                .in_("session_id", chunk)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            ).data or []
+            events += [
+                {
+                    "at": m["created_at"],
+                    "type": "message",
+                    "label": f"Asked: {(m['content'] or '')[:120]}",
+                    "ref": m["session_id"],
+                }
+                for m in msgs
+            ]
+
+        quizzes = (
+            self.client.table("quizzes")
+            .select("id,title,created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        ).data or []
+        quiz_titles = {q["id"]: q["title"] for q in quizzes}
+        events += [
+            {
+                "at": q["created_at"],
+                "type": "quiz_created",
+                "label": f"Generated Quiz — {q['title']}",
+                "ref": q["id"],
+            }
+            for q in quizzes
+        ]
+
+        attempts = (
+            self.client.table("quiz_attempts")
+            .select("id,quiz_id,score,created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        ).data or []
+        events += [
+            {
+                "at": a["created_at"],
+                "type": "quiz_attempt",
+                "label": (
+                    f"Completed Quiz — "
+                    f"{quiz_titles.get(a['quiz_id'], 'Quiz')} "
+                    f"({round(float(a.get('score') or 0))}%)"
+                ),
+                "ref": a["quiz_id"],
+            }
+            for a in attempts
+        ]
+
+        for table, ev_type, label_fn in (
+            (
+                "flashcard_sets",
+                "flashcards_created",
+                lambda r: f"Generated Flashcards — {r['title']}",
+            ),
+            (
+                "media",
+                "media_uploaded",
+                lambda r: f"Uploaded {r['file_name']}",
+            ),
+            (
+                "notes",
+                "note_created",
+                lambda r: f"Saved Note — {r['title']}",
+            ),
+        ):
+            columns = (
+                "id,file_name,created_at"
+                if table == "media"
+                else "id,title,created_at"
+            )
+            try:
+                rows = (
+                    self.client.table(table)
+                    .select(columns)
+                    .eq("user_id", user_id)
+                    .order("created_at", desc=True)
+                    .limit(limit)
+                    .execute()
+                ).data or []
+            except Exception:  # table from a later migration may be absent
+                rows = []
+            events += [
+                {
+                    "at": r["created_at"],
+                    "type": ev_type,
+                    "label": label_fn(r),
+                    "ref": r["id"],
+                }
+                for r in rows
+            ]
+
+        events.sort(key=lambda e: str(e["at"]), reverse=True)
+        return success_response(
+            "Timeline", {"events": events[:limit]}
+        )
+
+    def user_search(self, user_id: str, q: str) -> dict[str, Any]:
+        """Everything matching ``q`` inside one user's content.
+
+        Reuses the app's ranked ``search_all`` RPC scoped to the target user
+        — the admin sees exactly what the student's own search would find.
+        """
+        term = (q or "").strip()
+        if not term:
+            return success_response("Search", {})
+        try:
+            result = self.client.rpc(
+                "search_all", {"p_user": user_id, "p_q": term}
+            ).execute()
+            data = result.data
+            if isinstance(data, list):
+                data = data[0] if data else {}
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:  # RPC missing (migration not applied)
+            logger.warning("search_all RPC unavailable", exc_info=True)
+            data = {}
+        return success_response("Search results", data)
 
     # ------------------------------------------------------------------
     # Global resource managers + search
@@ -613,7 +952,7 @@ class AdminRepository:
         return row
 
     def delete_resource_item(
-        self, resource: str, item_id: str
+        self, admin: str, resource: str, item_id: str
     ) -> dict[str, Any]:
         """Delete a single resource row (storage-aware for files)."""
         cfg = _RESOURCE_CONFIG.get(resource)
@@ -625,6 +964,9 @@ class AdminRepository:
             self.client.table(cfg["table"]).delete().eq(
                 "id", item_id
             ).execute()
+        self._audit(
+            admin, "resource.delete", resource=f"{resource}:{item_id}"
+        )
         return success_response(
             "Deleted", {"resource": resource, "id": item_id}
         )

@@ -16,7 +16,7 @@ from functools import wraps
 from typing import Any, TypeVar
 
 import jwt
-from flask import current_app, request
+from flask import current_app, g, request
 
 from aeva.common.errors import ERROR_CODES, CustomError
 
@@ -27,6 +27,22 @@ F = TypeVar("F", bound=Callable[..., Any])
 _ALG = "HS256"
 # Fallback TTL (days) when ADMIN_TOKEN_EXPIRE_DAYS is unset.
 _DEFAULT_TTL_DAYS = 480
+
+# Known permission keys. ``ADMIN_PERMISSIONS`` env holds a comma list (or
+# ``*`` for everything, the default) — room for per-role admins later without
+# changing any endpoint.
+KNOWN_PERMISSIONS = (
+    "VIEW_USERS",
+    "EDIT_PROFILE",
+    "VIEW_CHATS",
+    "VIEW_MEDIA",
+    "VIEW_QUIZZES",
+    "VIEW_FLASHCARDS",
+    "VIEW_DEBUG_DATA",
+    "DELETE_DATA",
+    "DELETE_USERS",
+    "MANAGE_DEBUG_USERS",
+)
 
 
 def _config(key: str) -> str:
@@ -62,18 +78,33 @@ def verify_credentials(username: str, password: str) -> bool:
     return user_ok and pass_ok
 
 
+def configured_permissions() -> list[str]:
+    """Permission grants from ``ADMIN_PERMISSIONS`` (``['*']`` = all)."""
+    raw = (_config("ADMIN_PERMISSIONS") or "*").strip()
+    if raw == "*":
+        return ["*"]
+    perms = [p.strip().upper() for p in raw.split(",") if p.strip()]
+    return [p for p in perms if p in KNOWN_PERMISSIONS] or ["*"]
+
+
 def issue_token(username: str) -> dict[str, Any]:
     """Issue a signed, expiring admin JWT for the given username."""
     now = datetime.now(tz=UTC)
     expires = now + _token_ttl()
+    perms = configured_permissions()
     payload = {
         "sub": username,
         "role": "admin",
+        "perms": perms,
         "iat": int(now.timestamp()),
         "exp": int(expires.timestamp()),
     }
     token = jwt.encode(payload, _config("ADMIN_JWT_SECRET"), algorithm=_ALG)
-    return {"token": token, "expires_at": expires.isoformat()}
+    return {
+        "token": token,
+        "expires_at": expires.isoformat(),
+        "permissions": perms,
+    }
 
 
 def _decode(token: str) -> dict[str, Any] | None:
@@ -103,6 +134,24 @@ def admin_required(func: F) -> F:
         payload = _decode(header.split(" ", 1)[1])
         if not payload:
             raise CustomError(ERROR_CODES["ADMIN_UNAUTHORIZED"])
+        # Stash grants for check_permission (tokens minted before the
+        # permission system carry none — treated as full access).
+        g.admin_permissions = payload.get("perms") or ["*"]
         return func(str(payload.get("sub", "admin")), *args, **kwargs)
 
     return wrapper  # type: ignore[return-value]
+
+
+def check_permission(permission: str) -> None:
+    """Raise unless the current admin token grants ``permission``.
+
+    Call inside an ``admin_required`` route before a sensitive operation.
+    ``*`` (the default configuration) grants everything.
+    """
+    perms: list[str] = list(getattr(g, "admin_permissions", ["*"]))
+    if "*" in perms or permission in perms:
+        return
+    raise CustomError(
+        ERROR_CODES["ADMIN_UNAUTHORIZED"],
+        details=f"Missing admin permission: {permission}",
+    )

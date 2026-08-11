@@ -306,6 +306,11 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["ADMIN_USERNAME"] = os.environ.get("ADMIN_USERNAME", "")
     app.config["ADMIN_PASSWORD"] = os.environ.get("ADMIN_PASSWORD", "")
     app.config["ADMIN_JWT_SECRET"] = os.environ.get("ADMIN_JWT_SECRET", "")
+    # Comma list of admin permission grants ("*" = everything). See
+    # aeva.admin.admin_auth.KNOWN_PERMISSIONS for the vocabulary.
+    app.config["ADMIN_PERMISSIONS"] = os.environ.get(
+        "ADMIN_PERMISSIONS", "*"
+    )
 
     required = [
         "SUPABASE_URL",

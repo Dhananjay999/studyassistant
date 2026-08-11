@@ -8,14 +8,20 @@
 
 import { API_BASE_URL } from "@/lib/api";
 import type {
+  AdminAuditEntry,
   AdminDebugUser,
+  AdminEditProfileInput,
   AdminFeatureFlag,
+  AdminFlashcardSetDetail,
   AdminLoginResult,
+  AdminMediaFullDetail,
   AdminOverview,
+  AdminQuizFullDetail,
   AdminResourceList,
   AdminResourcesParams,
   AdminSearchResults,
   AdminSessionDetail,
+  AdminTimelineEvent,
   AdminUserDetail,
   AdminUserList,
   AdminUsersParams,
@@ -23,6 +29,7 @@ import type {
   ResourceKey,
   UserResource,
 } from "@/types/admin";
+import type { SearchResults } from "@/types";
 
 const TOKEN_KEY = "aeva_admin_token";
 const TIMEOUT = 30000;
@@ -155,6 +162,28 @@ export const adminApi = {
     ),
   search: (q: string) =>
     unwrap<AdminSearchResults>(`/search?q=${encodeURIComponent(q)}`),
+  editProfile: (id: string, patch: AdminEditProfileInput) =>
+    unwrap<Record<string, unknown>>(`/users/${id}/profile`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  timeline: (id: string) =>
+    unwrap<{ events: AdminTimelineEvent[] }>(`/users/${id}/timeline`),
+  userSearch: (id: string, q: string) =>
+    unwrap<Partial<SearchResults>>(
+      `/users/${id}/search?q=${encodeURIComponent(q)}`,
+    ),
+  quizDetail: (id: string) =>
+    unwrap<AdminQuizFullDetail>(`/quizzes/${id}/detail`),
+  flashcardDetail: (id: string) =>
+    unwrap<AdminFlashcardSetDetail>(`/flashcard-sets/${id}/detail`),
+  mediaDetail: (id: string) =>
+    unwrap<AdminMediaFullDetail>(`/media/${id}/detail`),
+  auditLog: (userId?: string, limit = 100) =>
+    unwrap<{ entries: AdminAuditEntry[] }>(
+      `/audit-log?limit=${limit}` +
+        (userId ? `&user_id=${encodeURIComponent(userId)}` : ""),
+    ),
   listDebugUsers: () =>
     unwrap<{ users: AdminDebugUser[] }>("/debug-users"),
   setDebugUser: (id: string, enabled: boolean) =>

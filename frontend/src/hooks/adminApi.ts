@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-query";
 import { adminApi } from "@/lib/adminApi";
 import type {
+  AdminEditProfileInput,
   AdminResourcesParams,
   AdminUsersParams,
   GlobalResource,
@@ -26,6 +27,14 @@ export const adminQk = {
     ["admin", "resource", resource, params] as const,
   search: (q: string) => ["admin", "search", q] as const,
   debugUsers: ["admin", "debug-users"] as const,
+  timeline: (id: string) => ["admin", "timeline", id] as const,
+  userSearch: (id: string, q: string) =>
+    ["admin", "user-search", id, q] as const,
+  quizDetail: (id: string) => ["admin", "quiz-detail", id] as const,
+  flashcardDetail: (id: string) =>
+    ["admin", "flashcard-detail", id] as const,
+  mediaDetail: (id: string) => ["admin", "media-detail", id] as const,
+  auditLog: (userId?: string) => ["admin", "audit-log", userId ?? ""] as const,
   featureFlags: ["admin", "feature-flags"] as const,
 };
 
@@ -81,6 +90,64 @@ export function useAdminSearch(q: string) {
 function useInvalidateAdmin() {
   const qc = useQueryClient();
   return () => qc.invalidateQueries({ queryKey: ["admin"] });
+}
+
+export function useAdminTimeline(userId: string | null) {
+  return useQuery({
+    queryKey: adminQk.timeline(userId ?? ""),
+    queryFn: () => adminApi.timeline(userId!),
+    enabled: !!userId,
+  });
+}
+
+export function useAdminUserSearch(userId: string, query: string) {
+  const q = query.trim();
+  return useQuery({
+    queryKey: adminQk.userSearch(userId, q),
+    queryFn: () => adminApi.userSearch(userId, q),
+    enabled: q.length >= 2,
+    staleTime: 30_000,
+  });
+}
+
+export function useAdminQuizDetail(id: string | null) {
+  return useQuery({
+    queryKey: adminQk.quizDetail(id ?? ""),
+    queryFn: () => adminApi.quizDetail(id!),
+    enabled: !!id,
+  });
+}
+
+export function useAdminFlashcardDetail(id: string | null) {
+  return useQuery({
+    queryKey: adminQk.flashcardDetail(id ?? ""),
+    queryFn: () => adminApi.flashcardDetail(id!),
+    enabled: !!id,
+  });
+}
+
+export function useAdminMediaDetail(id: string | null) {
+  return useQuery({
+    queryKey: adminQk.mediaDetail(id ?? ""),
+    queryFn: () => adminApi.mediaDetail(id!),
+    enabled: !!id,
+  });
+}
+
+export function useAdminAuditLog(userId?: string) {
+  return useQuery({
+    queryKey: adminQk.auditLog(userId),
+    queryFn: () => adminApi.auditLog(userId),
+  });
+}
+
+export function useEditProfile() {
+  const invalidate = useInvalidateAdmin();
+  return useMutation({
+    mutationFn: (v: { id: string; patch: AdminEditProfileInput }) =>
+      adminApi.editProfile(v.id, v.patch),
+    onSuccess: invalidate,
+  });
 }
 
 export function useAdminDebugUsers() {

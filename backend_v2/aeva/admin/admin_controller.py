@@ -12,6 +12,8 @@ from flask_smorest import Blueprint
 
 from aeva.admin.admin_auth import (
     admin_required,
+    check_permission,
+    configured_permissions,
     issue_token,
     verify_credentials,
 )
@@ -19,8 +21,10 @@ from aeva.admin.admin_repository import AdminRepository
 from aeva.admin.schema.admin_schema import (
     AdminLoginData,
     AdminLoginSchema,
+    AuditLogQuerySchema,
     DebugUserToggleData,
     DebugUserToggleSchema,
+    EditProfileSchema,
     FeatureFlagToggleData,
     FeatureFlagToggleSchema,
     ResourceListQuery,
@@ -29,6 +33,7 @@ from aeva.admin.schema.admin_schema import (
     SearchQuerySchema,
     UserListQuery,
     UserListQuerySchema,
+    UserSearchQuerySchema,
 )
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import ResponseEnvelopeSchema, success_response
@@ -68,8 +73,11 @@ class AdminVerify(MethodView):
     @blueprint.response(200, ResponseEnvelopeSchema)
     @admin_required
     def get(admin: str) -> dict[str, Any]:
-        """Return the authenticated admin identity."""
-        return success_response("Authorized", {"username": admin})
+        """Return the authenticated admin identity and permission grants."""
+        return success_response(
+            "Authorized",
+            {"username": admin, "permissions": configured_permissions()},
+        )
 
 
 class AdminOverview(MethodView):
@@ -108,9 +116,10 @@ class AdminUserDetail(MethodView):
     @staticmethod
     @blueprint.response(200, ResponseEnvelopeSchema)
     @admin_required
-    def delete(_admin: str, user_id: str) -> dict[str, Any]:
+    def delete(admin: str, user_id: str) -> dict[str, Any]:
         """Delete the user and all of their data."""
-        return repo.delete_user(user_id)
+        check_permission("DELETE_USERS")
+        return repo.delete_user(admin, user_id)
 
 
 class AdminUserResetProfile(MethodView):
@@ -119,9 +128,10 @@ class AdminUserResetProfile(MethodView):
     @staticmethod
     @blueprint.response(200, ResponseEnvelopeSchema)
     @admin_required
-    def post(_admin: str, user_id: str) -> dict[str, Any]:
+    def post(admin: str, user_id: str) -> dict[str, Any]:
         """Clear personalization back to the pending state."""
-        return repo.reset_learning_profile(user_id)
+        check_permission("EDIT_PROFILE")
+        return repo.reset_learning_profile(admin, user_id)
 
 
 class AdminUserResource(MethodView):
@@ -131,10 +141,92 @@ class AdminUserResource(MethodView):
     @blueprint.response(200, ResponseEnvelopeSchema)
     @admin_required
     def delete(
-        _admin: str, user_id: str, resource: str
+        admin: str, user_id: str, resource: str
     ) -> dict[str, Any]:
         """Delete all chats/quizzes/flashcards/bookmarks/files for a user."""
-        return repo.clear_user_resource(user_id, resource)
+        check_permission("DELETE_DATA")
+        return repo.clear_user_resource(admin, user_id, resource)
+
+
+class AdminUserProfile(MethodView):
+    """Edit non-sensitive profile/personalization fields (audited)."""
+
+    @staticmethod
+    @blueprint.arguments(EditProfileSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def patch(admin: str, patch: dict, user_id: str) -> dict[str, Any]:
+        """Partial profile update; only provided fields change."""
+        check_permission("EDIT_PROFILE")
+        return repo.edit_profile(admin, user_id, patch)
+
+
+class AdminUserTimeline(MethodView):
+    """Unified activity feed for one user."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str, user_id: str) -> dict[str, Any]:
+        """Questions, quizzes, attempts, flashcards, uploads, notes."""
+        return repo.timeline(user_id)
+
+
+class AdminUserSearch(MethodView):
+    """Search everything inside one user's content."""
+
+    @staticmethod
+    @blueprint.arguments(UserSearchQuerySchema, location="query")
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str, query: dict, user_id: str) -> dict[str, Any]:
+        """Ranked matches across chats, notes, quizzes, cards, files."""
+        return repo.user_search(user_id, query["q"])
+
+
+class AdminQuizDetail(MethodView):
+    """Complete quiz inspection."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str, quiz_id: str) -> dict[str, Any]:
+        """Quiz config, questions with answers, and all attempts."""
+        return repo.quiz_detail(quiz_id)
+
+
+class AdminFlashcardDetail(MethodView):
+    """Complete flashcard set inspection."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str, set_id: str) -> dict[str, Any]:
+        """Cards plus per-card study state."""
+        return repo.flashcard_detail(set_id)
+
+
+class AdminMediaDetail(MethodView):
+    """Media processing/parsing/embedding inspection."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str, media_id: str) -> dict[str, Any]:
+        """Full media row + parsed pages / embedded chunk counts + URL."""
+        return repo.media_detail(media_id)
+
+
+class AdminAuditLog(MethodView):
+    """Sensitive-action audit trail."""
+
+    @staticmethod
+    @blueprint.arguments(AuditLogQuerySchema, location="query")
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str, query: dict) -> dict[str, Any]:
+        """Recent audit entries (optionally one user's)."""
+        return repo.list_audit(query.get("user_id"), query["limit"])
 
 
 class AdminDebugUsers(MethodView):
@@ -156,10 +248,11 @@ class AdminUserDebugFlag(MethodView):
     @blueprint.response(200, ResponseEnvelopeSchema)
     @admin_required
     def put(
-        _admin: str, body: DebugUserToggleData, user_id: str
+        admin: str, body: DebugUserToggleData, user_id: str
     ) -> dict[str, Any]:
         """Set the user's debug flag (independent of any role)."""
-        return repo.set_debug_user(user_id, body.enabled)
+        check_permission("MANAGE_DEBUG_USERS")
+        return repo.set_debug_user(admin, user_id, body.enabled)
 
 
 class AdminFeatureFlags(MethodView):
@@ -214,9 +307,10 @@ class AdminGlobalResource(MethodView):
     @staticmethod
     @blueprint.response(200, ResponseEnvelopeSchema)
     @admin_required
-    def delete(_admin: str, resource: str) -> dict[str, Any]:
+    def delete(admin: str, resource: str) -> dict[str, Any]:
         """Global wipe of users/sessions/quizzes/flashcards/bookmarks/files."""
-        return repo.delete_all(resource)
+        check_permission("DELETE_DATA")
+        return repo.delete_all(admin, resource)
 
 
 class AdminResourceItem(MethodView):
@@ -226,10 +320,11 @@ class AdminResourceItem(MethodView):
     @blueprint.response(200, ResponseEnvelopeSchema)
     @admin_required
     def delete(
-        _admin: str, resource: str, item_id: str
+        admin: str, resource: str, item_id: str
     ) -> dict[str, Any]:
         """Delete a single quiz/flashcard set/bookmark/file/session."""
-        return repo.delete_resource_item(resource, item_id)
+        check_permission("DELETE_DATA")
+        return repo.delete_resource_item(admin, resource, item_id)
 
 
 class AdminSearch(MethodView):
@@ -265,6 +360,41 @@ blueprint.add_url_rule(
     "/users/<user_id>/reset-learning-profile",
     view_func=AdminUserResetProfile,
     endpoint="admin_user_reset_profile",
+)
+blueprint.add_url_rule(
+    "/users/<user_id>/profile",
+    view_func=AdminUserProfile,
+    endpoint="admin_user_profile",
+)
+blueprint.add_url_rule(
+    "/users/<user_id>/timeline",
+    view_func=AdminUserTimeline,
+    endpoint="admin_user_timeline",
+)
+blueprint.add_url_rule(
+    "/users/<user_id>/search",
+    view_func=AdminUserSearch,
+    endpoint="admin_user_search",
+)
+blueprint.add_url_rule(
+    "/quizzes/<quiz_id>/detail",
+    view_func=AdminQuizDetail,
+    endpoint="admin_quiz_detail",
+)
+blueprint.add_url_rule(
+    "/flashcard-sets/<set_id>/detail",
+    view_func=AdminFlashcardDetail,
+    endpoint="admin_flashcard_detail",
+)
+blueprint.add_url_rule(
+    "/media/<media_id>/detail",
+    view_func=AdminMediaDetail,
+    endpoint="admin_media_detail",
+)
+blueprint.add_url_rule(
+    "/audit-log",
+    view_func=AdminAuditLog,
+    endpoint="admin_audit_log",
 )
 blueprint.add_url_rule(
     "/debug-users",
