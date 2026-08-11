@@ -8,7 +8,7 @@ import { Info } from "lucide-react";
  */
 export function MemoryHint() {
   return (
-    <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/80">
+    <p className="flex justify-center gap-1.5 text-xs text-muted-foreground/80">
       <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
       <span>
         Aeva remembers only this chat — new chats start fresh. Your language
