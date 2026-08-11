@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   Bookmark,
   BrainCircuit,
+  ChevronDown,
   FolderOpen,
   Layers,
   LibraryBig,
@@ -47,14 +48,30 @@ interface NavItem {
   feature?: FeatureKey;
 }
 
+// Primary navigation — always visible: chat is the product.
 const NAV: NavItem[] = [
   { label: "Chats", icon: MessageSquare, to: "/chat" },
+];
+
+// Library: secondary learning resources, grouped under one collapsible
+// section on the expanded desktop sidebar so chat history gets the vertical
+// space. Auto-collapses when the user scrolls down through history and
+// re-expands at the top; always manually toggleable.
+const LIBRARY_NAV: NavItem[] = [
   { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
   { label: "Analytics", icon: BarChart3, to: "/analytics", feature: "analytics" },
   { label: "Study Material", icon: FolderOpen, to: "/files" },
 ];
+
+// Scroll hysteresis: expand only at the very top, collapse once clearly
+// scrolled, so small movements around the boundary never flicker the state.
+const LIBRARY_EXPAND_AT = 8;
+const LIBRARY_COLLAPSE_AT = 24;
+// A manual toggle sticks until the user meaningfully scrolls away from where
+// they toggled it.
+const MANUAL_SCROLL_TOLERANCE = 48;
 
 // Secondary tools: kept reachable but visually de-emphasized. On the
 // expanded desktop sidebar they render as one compact icon-only row (with
@@ -132,13 +149,48 @@ export function AppSidebar({
   const flagged = (item: NavItem) =>
     !item.feature || features?.[item.feature] !== false;
   const secondary = SECONDARY_NAV.filter(flagged);
+  const library = LIBRARY_NAV.filter(flagged);
   // The mobile drawer (identified by `onNavigate`) and the collapsed desktop
-  // rail keep the original vertical list — the icon-row treatment is for the
-  // expanded desktop sidebar only.
-  const showSecondaryRow = !onNavigate && !collapsed;
+  // rail keep the original flat vertical list — the Library accordion and the
+  // utility icon row are for the expanded desktop sidebar only.
+  const desktopExpanded = !onNavigate && !collapsed;
   const nav = (
-    showSecondaryRow ? NAV : [...NAV.slice(0, 1), ...secondary, ...NAV.slice(1)]
+    desktopExpanded ? NAV : [...NAV, ...secondary, ...library]
   ).filter(flagged);
+
+  // Library open/closed. Scroll drives it automatically (with hysteresis);
+  // a manual toggle wins until the user meaningfully scrolls again.
+  const [libraryOpen, setLibraryOpen] = useState(true);
+  const manualAnchorRef = useRef<number | null>(null);
+  const historyRef = useRef<HTMLDivElement | null>(null);
+  const scrollTickRef = useRef(false);
+
+  const handleHistoryScroll = () => {
+    // The accordion only exists on the expanded desktop sidebar.
+    if (!desktopExpanded || scrollTickRef.current) return;
+    scrollTickRef.current = true;
+    requestAnimationFrame(() => {
+      scrollTickRef.current = false;
+      const el = historyRef.current;
+      if (!el) return;
+      const top = el.scrollTop;
+      const anchor = manualAnchorRef.current;
+      if (anchor !== null) {
+        // Respect an explicit toggle until the user scrolls well away from it.
+        if (Math.abs(top - anchor) <= MANUAL_SCROLL_TOLERANCE) return;
+        manualAnchorRef.current = null;
+      }
+      // Hysteresis: only flip state once clearly past a boundary.
+      setLibraryOpen((open) =>
+        open ? top <= LIBRARY_COLLAPSE_AT : top <= LIBRARY_EXPAND_AT,
+      );
+    });
+  };
+
+  const toggleLibrary = () => {
+    setLibraryOpen((open) => !open);
+    manualAnchorRef.current = historyRef.current?.scrollTop ?? 0;
+  };
   const spacesEnabled = features?.study_spaces !== false;
   // Study Spaces are opt-in: the mini-list below renders only when the user
   // has created at least one real space, so non-adopters see no change.
@@ -386,44 +438,110 @@ export function AppSidebar({
             btn
           );
         })}
+
+        {/* Library — collapsible secondary resources (expanded desktop only).
+           Collapses automatically while the user scrolls history; the header
+           always toggles it back. Height animates via grid-rows so the list
+           below gains the space smoothly (no display:none jump). */}
+        {desktopExpanded && library.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={toggleLibrary}
+              aria-expanded={libraryOpen}
+              aria-controls="library-nav"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+            >
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none",
+                  libraryOpen && "rotate-180",
+                )}
+              />
+              Library
+            </button>
+            <div
+              id="library-nav"
+              className={cn(
+                "grid transition-[grid-template-rows,opacity,visibility] duration-200 ease-out motion-reduce:transition-none",
+                libraryOpen
+                  ? "visible grid-rows-[1fr] opacity-100"
+                  : "invisible grid-rows-[0fr] opacity-0",
+              )}
+              aria-hidden={!libraryOpen}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div className="flex flex-col gap-1 pl-4">
+                  {library.map((item) => {
+                    const Icon = item.icon;
+                    const active = location.pathname.startsWith(item.to);
+                    return (
+                      <button
+                        key={item.to}
+                        type="button"
+                        onClick={() => go(item.to)}
+                        tabIndex={libraryOpen ? undefined : -1}
+                        className={cn(
+                          "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
+                          active
+                            ? "bg-accent font-medium text-accent-foreground"
+                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                        )}
+                      >
+                        {active && (
+                          <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-brand-1" />
+                        )}
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </nav>
 
-      {/* Study Spaces mini-list — appears only once the user has created a
-         real space (opt-in: non-adopters see the sidebar exactly as before). */}
-      {!collapsed && spaces.length > 0 && (
-        <div className="px-3 pb-2">
-          <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Study Spaces
-          </p>
-          {spaces.map((space) => {
-            const color = spaceColor(space.color);
-            const Icon = spaceIcon(space.icon);
-            const active = location.pathname === `/spaces/${space.id}`;
-            return (
-              <button
-                key={space.id}
-                type="button"
-                onClick={() => go(`/spaces/${space.id}`)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "hover:bg-accent/50",
-                )}
-              >
-                <span className={cn("grid h-4 w-4 shrink-0 place-items-center", color.text)}>
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-                <span className="truncate">{space.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Chat history (hidden when collapsed) */}
+      {/* Study Spaces + chat history — the flexible, scrolling part of the
+         sidebar. Scrolling here drives the Library auto-collapse, so history
+         gains vertical space exactly when the user is browsing it. */}
       {!collapsed && (
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          ref={historyRef}
+          onScroll={handleHistoryScroll}
+          className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {spaces.length > 0 && (
+            <div className="mb-2">
+              <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Study Spaces
+              </p>
+              {spaces.map((space) => {
+                const color = spaceColor(space.color);
+                const Icon = spaceIcon(space.icon);
+                const active = location.pathname === `/spaces/${space.id}`;
+                return (
+                  <button
+                    key={space.id}
+                    type="button"
+                    onClick={() => go(`/spaces/${space.id}`)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors",
+                      active
+                        ? "bg-primary/10 text-primary"
+                        : "hover:bg-accent/50",
+                    )}
+                  >
+                    <span className={cn("grid h-4 w-4 shrink-0 place-items-center", color.text)}>
+                      <Icon className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="truncate">{space.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {loading && sessions.length === 0 && (
             <div className="space-y-1.5 px-1 pt-1">
               {[92, 76, 84, 68, 88].map((w, i) => (
@@ -462,7 +580,7 @@ export function AppSidebar({
 
       {/* Secondary tools — one compact icon row (desktop, expanded only).
          Tooltips carry the names; the brand underline marks the active one. */}
-      {showSecondaryRow && secondary.length > 0 && (
+      {desktopExpanded && secondary.length > 0 && (
         <div className="mt-auto flex items-center justify-center gap-1 px-3 pb-1.5 pt-1">
           {secondary.map((item) => {
             const Icon = item.icon;
@@ -499,7 +617,7 @@ export function AppSidebar({
       <div
         className={cn(
           "border-t border-border/50 p-2",
-          !showSecondaryRow && "mt-auto",
+          !desktopExpanded && "mt-auto",
         )}
       >
         {collapsed ? (
