@@ -54,7 +54,7 @@ const NAV: Array<{
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
   { label: "Analytics", icon: BarChart3, to: "/analytics", feature: "analytics" },
-  { label: "Files", icon: FolderOpen, to: "/files" },
+  { label: "Study Material", icon: FolderOpen, to: "/files" },
 ];
 
 const DAY = 86_400_000;

@@ -78,7 +78,7 @@ function Dashboard({ data }: { data: AnalyticsOverview }) {
     { label: "Study Time", value: formatMinutes(overview.total_study_minutes), icon: Clock },
     { label: "Questions Asked", value: overview.total_questions_asked, icon: MessageSquare },
     { label: "AI Responses", value: overview.total_ai_responses, icon: Sparkles },
-    { label: "Documents", value: overview.uploaded_documents, icon: FileText },
+    { label: "Study Material", value: overview.uploaded_documents, icon: FileText },
     { label: "Quizzes Created", value: overview.quizzes_created, icon: ListChecks },
     { label: "Flashcard Sets", value: overview.flashcards_created, icon: Layers },
   ];

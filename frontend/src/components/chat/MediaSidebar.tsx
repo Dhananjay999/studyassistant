@@ -93,7 +93,7 @@ export function MediaSidebar({
       <div className="flex min-h-0 flex-1 basis-0 flex-col">
       <div className="flex items-center justify-between gap-2 px-1 pb-3">
         <div>
-          <h3 className="font-display text-sm font-semibold">Uploaded media</h3>
+          <h3 className="font-display text-sm font-semibold">Study material</h3>
           {items.length > 0 && (
             <p className="text-[11px] text-muted-foreground">
               {selected.size > 0

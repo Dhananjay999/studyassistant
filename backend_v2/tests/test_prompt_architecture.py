@@ -56,6 +56,7 @@ def _render_quiz() -> prompts.RenderedPrompt:
 class TestLeanSystemPrompt:
     def test_app_copy_removed(self):
         assert "Media Library" not in prompts.SYSTEM_PROMPT
+        assert "Study Material" not in prompts.SYSTEM_PROMPT
         assert "Study Spaces" not in prompts.SYSTEM_PROMPT
 
     def test_identity_and_voice_survive(self):
@@ -96,7 +97,7 @@ class TestProductInfoWiring:
             USER_MESSAGE="how do I upload a pdf?",
             USER_PROFILE="",
         )
-        assert "Media Library" in rendered.user_message
+        assert "Study Material" in rendered.user_message
         assert META_SENTINEL in rendered.user_message
         assert TEACHING_MARK not in rendered.system_prompt
 

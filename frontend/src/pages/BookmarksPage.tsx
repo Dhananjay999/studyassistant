@@ -80,7 +80,7 @@ const TYPE_META: Record<
   response: { label: "Response", icon: MessageSquare },
   quiz: { label: "Quiz", icon: ListChecks },
   flashcard: { label: "Flashcards", icon: Layers },
-  media: { label: "Media", icon: FileText },
+  media: { label: "Study Material", icon: FileText },
   note: { label: "Note", icon: NotebookPen },
 };
 

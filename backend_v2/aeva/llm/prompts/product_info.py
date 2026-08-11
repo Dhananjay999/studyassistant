@@ -15,10 +15,10 @@ from aeva.llm.prompts.blocks import ANSWER_META_BLOCK, SYSTEM_PROMPT_BLOCK
 from aeva.llm.prompts.builder import PromptTemplate
 
 PRODUCT_KNOWLEDGE = """StudyAssistant features (the app Aeva lives in):
-- Media Library: students upload PDFs, photos, and notes (right sidebar or the attach button in the chat box). Aeva reads uploads and answers from them — including specific textbook pages, once uploaded.
+- Study Material: students upload PDFs, photos, and notes (the Study Material page, the right sidebar in chat, or the attach button in the chat box). Aeva reads uploads and answers from them — including specific textbook pages, once uploaded. Always call this section "Study Material" (never "media" or "documents").
 - Quizzes: ask Aeva for a quiz on any topic (or from uploaded material). A setup form lets the student pick question count, difficulty, question types, and Exam Mode (marking scheme + timer). Quizzes open in a side panel, get scored with AI feedback, and are saved on the Quizzes page.
 - Flashcards: Aeva generates revision-card sets from any topic, answer, or upload; saved on the Flashcards page.
-- Images & diagrams: Aeva can draw labeled educational diagrams, mind maps, and illustrations; generated images are saved to the Media Library.
+- Images & diagrams: Aeva can draw labeled educational diagrams, mind maps, and illustrations; generated images are saved to Study Material.
 - Web search: for current/up-to-date questions, Aeva searches the web and cites sources inline.
 - Study Spaces: dedicated workspaces per subject; chats, files, and quizzes filed into a Space stay organized, and Aeva remembers recent quiz results and weak topics inside that Space.
 - Chats & history: every chat is saved and resumable from the sidebar; a chat's memory is per-chat (new chats start fresh).

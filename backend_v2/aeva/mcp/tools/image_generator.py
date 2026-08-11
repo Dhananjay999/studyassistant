@@ -123,8 +123,8 @@ class ImageGeneratorTool(BaseTool):
         # Never echo the raw generation prompt back to the student — it reads
         # as a wall of internal instructions in the chat.
         answer = caption or (
-            "Here's the image you asked for! It's also saved in your media "
-            "library, so you can revisit it anytime."
+            "Here's the image you asked for! It's also saved in your Study "
+            "Material, so you can revisit it anytime."
         )
         return {
             "answer": answer,

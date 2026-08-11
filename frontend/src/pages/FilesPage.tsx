@@ -126,15 +126,15 @@ export default function FilesPage() {
   const hasFiles = media.length > 0;
 
   return (
-    <PageContainer title="Files">
-      <Seo title="Files — Aeva" noindex path="/files" />
+    <PageContainer title="Study Material">
+      <Seo title="Study Material — Aeva" noindex path="/files" />
       <div className="p-4">
         {hasFiles && (
           <ListToolbar
             className="mb-4"
             config={FILES_CONFIG}
             query={listQuery}
-            placeholder="Search files…"
+            placeholder="Search study material…"
           />
         )}
 
@@ -143,15 +143,15 @@ export default function FilesPage() {
         ) : !hasFiles ? (
           <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-20 text-center">
             <FolderOpen className="mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="font-medium">No files yet</p>
+            <p className="font-medium">No study material yet</p>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Upload PDFs or images from a chat to build your library.
+              Upload PDFs or images from a chat to build your study material.
             </p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-16 text-center">
             <FolderOpen className="mb-3 h-7 w-7 text-muted-foreground" />
-            <p className="font-medium">No matching files</p>
+            <p className="font-medium">No matching study material</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Try a different search or filter.
             </p>
