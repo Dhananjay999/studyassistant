@@ -40,21 +40,30 @@ import { formatShortcut } from "@/lib/platform";
 import type { FeatureKey, Session } from "@/types";
 
 // `feature` marks entries hidden when the admin disables that flag.
-const NAV: Array<{
+interface NavItem {
   label: string;
   icon: LucideIcon;
   to: string;
   feature?: FeatureKey;
-}> = [
+}
+
+const NAV: NavItem[] = [
   { label: "Chats", icon: MessageSquare, to: "/chat" },
-  { label: "Revision", icon: BrainCircuit, to: "/revision", feature: "revision_mode" },
-  { label: "Study Spaces", icon: LibraryBig, to: "/spaces", feature: "study_spaces" },
-  { label: "Notes", icon: NotebookPen, to: "/notes", feature: "notes" },
   { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
   { label: "Analytics", icon: BarChart3, to: "/analytics", feature: "analytics" },
   { label: "Study Material", icon: FolderOpen, to: "/files" },
+];
+
+// Secondary tools: kept reachable but visually de-emphasized. On the
+// expanded desktop sidebar they render as one compact icon-only row (with
+// tooltips) instead of full nav rows; the mobile drawer and the collapsed
+// rail keep the regular vertical treatment.
+const SECONDARY_NAV: NavItem[] = [
+  { label: "Revision", icon: BrainCircuit, to: "/revision", feature: "revision_mode" },
+  { label: "Notes", icon: NotebookPen, to: "/notes", feature: "notes" },
+  { label: "Study Spaces", icon: LibraryBig, to: "/spaces", feature: "study_spaces" },
 ];
 
 const DAY = 86_400_000;
@@ -120,9 +129,16 @@ export function AppSidebar({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   // Admin-managed feature flags hide their nav entries entirely.
   const features = useAppConfig().data?.features;
-  const nav = NAV.filter(
-    (item) => !item.feature || features?.[item.feature] !== false,
-  );
+  const flagged = (item: NavItem) =>
+    !item.feature || features?.[item.feature] !== false;
+  const secondary = SECONDARY_NAV.filter(flagged);
+  // The mobile drawer (identified by `onNavigate`) and the collapsed desktop
+  // rail keep the original vertical list — the icon-row treatment is for the
+  // expanded desktop sidebar only.
+  const showSecondaryRow = !onNavigate && !collapsed;
+  const nav = (
+    showSecondaryRow ? NAV : [...NAV.slice(0, 1), ...secondary, ...NAV.slice(1)]
+  ).filter(flagged);
   const spacesEnabled = features?.study_spaces !== false;
   // Study Spaces are opt-in: the mini-list below renders only when the user
   // has created at least one real space, so non-adopters see no change.
@@ -444,8 +460,48 @@ export function AppSidebar({
         </div>
       )}
 
+      {/* Secondary tools — one compact icon row (desktop, expanded only).
+         Tooltips carry the names; the brand underline marks the active one. */}
+      {showSecondaryRow && secondary.length > 0 && (
+        <div className="mt-auto flex items-center justify-center gap-1 px-3 pb-1.5 pt-1">
+          {secondary.map((item) => {
+            const Icon = item.icon;
+            const active = location.pathname.startsWith(item.to);
+            return (
+              <Tooltip key={item.to}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => go(item.to)}
+                    aria-label={item.label}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
+                      active
+                        ? "text-brand-1"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {active && (
+                      <span className="absolute inset-x-2.5 bottom-1 h-0.5 rounded-full bg-brand-1" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">{item.label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
+      )}
+
       {/* Account entry — always pinned to the bottom-left; opens Settings. */}
-      <div className="mt-auto border-t border-border/50 p-2">
+      <div
+        className={cn(
+          "border-t border-border/50 p-2",
+          !showSecondaryRow && "mt-auto",
+        )}
+      >
         {collapsed ? (
           <Tooltip>
             <TooltipTrigger asChild>
