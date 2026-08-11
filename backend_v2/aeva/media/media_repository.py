@@ -96,13 +96,23 @@ class MediaRepository:
         session_id: str | None = None,
         space_id: str | None = None,
     ) -> dict[str, Any]:
-        """List media for user."""
+        """List media for user (newest first, capped).
+
+        The cap (``MEDIA_LIST_LIMIT``) keeps the response bounded — an
+        uncapped list of every upload + generated image once exceeded the
+        serverless 4.5MB response limit (413). Signed URLs are minted in one
+        batched storage call instead of one round-trip per file.
+        """
+        from flask import current_app
+
         supabase = SupabaseService()
-        items = supabase.list_media(current_user.id, session_id, space_id)
+        limit = int(current_app.config.get("MEDIA_LIST_LIMIT", 300))
+        items = supabase.list_media(
+            current_user.id, session_id, space_id, limit=limit
+        )
+        urls = supabase.get_signed_urls([i["storage_path"] for i in items])
         for item in items:
-            item["signed_url"] = supabase.get_signed_url(
-                item["storage_path"]
-            )
+            item["signed_url"] = urls.get(item["storage_path"], "")
         return success_response("Media retrieved", items)
 
     @staticmethod

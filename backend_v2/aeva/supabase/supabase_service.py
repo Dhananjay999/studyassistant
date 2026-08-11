@@ -467,16 +467,26 @@ class SupabaseService:
         result = self.client.table("media").insert(row).execute()
         return result.data[0]
 
+    # Columns the media list actually ships to the client. Never "*": the row
+    # also carries search_vector, parser artifact paths, and job ids that
+    # inflate the JSON — an unbounded list once blew past the serverless
+    # response limit (413 FUNCTION_PAYLOAD_TOO_LARGE) in production.
+    _MEDIA_LIST_COLUMNS = (
+        "id,user_id,session_id,space_id,file_name,mime_type,storage_path,"
+        "size_bytes,created_at,processing_status,processing_error,page_count"
+    )
+
     def list_media(
         self,
         user_id: str,
         session_id: str | None = None,
         space_id: str | None = None,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """List media for user, optionally filtered by session or space."""
+        """List media for user (newest first), optionally filtered/capped."""
         query = (
             self.client.table("media")
-            .select("*")
+            .select(self._MEDIA_LIST_COLUMNS)
             .eq("user_id", user_id)
             .order("created_at", desc=True)
         )
@@ -484,6 +494,8 @@ class SupabaseService:
             query = query.eq("session_id", session_id)
         if space_id:
             query = query.eq("space_id", space_id)
+        if limit and limit > 0:
+            query = query.limit(limit)
         result = query.execute()
         return result.data or []
 
@@ -641,3 +653,29 @@ class SupabaseService:
             storage_path, ttl
         )
         return result.get("signedURL", result.get("signedUrl", ""))
+
+    def get_signed_urls(
+        self, storage_paths: list[str], expires_in: int | None = None
+    ) -> dict[str, str]:
+        """Signed URLs for many storage files in ONE storage API call.
+
+        The per-item ``get_signed_url`` costs one HTTP round-trip each — for a
+        media list of hundreds of rows that dominates the request time. Maps
+        path -> url; paths the API omits simply have no entry.
+        """
+        if not storage_paths:
+            return {}
+        bucket = current_app.config["SUPABASE_STORAGE_BUCKET"]
+        ttl = expires_in or current_app.config.get(
+            "MEDIA_SIGNED_URL_TTL_SECONDS", 3600
+        )
+        results = self.client.storage.from_(bucket).create_signed_urls(
+            storage_paths, ttl
+        )
+        urls: dict[str, str] = {}
+        for item in results or []:
+            url = item.get("signedURL") or item.get("signedUrl") or ""
+            path = item.get("path") or ""
+            if path and url:
+                urls[path] = url
+        return urls

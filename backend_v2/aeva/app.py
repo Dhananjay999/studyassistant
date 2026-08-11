@@ -149,6 +149,11 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["PRODUCT_INFO_LLM_MODELS"] = os.environ.get(
         "PRODUCT_INFO_LLM_MODELS", ""
     )
+    # Cap on GET /media/ rows (newest first). Bounds the serverless response
+    # size — see media_repository.list_media.
+    app.config["MEDIA_LIST_LIMIT"] = int(
+        os.environ.get("MEDIA_LIST_LIMIT", "300")
+    )
     # Dev/QA aid: append a "powered by: <model>" badge to each answer so the
     # model the planner picked is visible in the UI. Off in production.
     app.config["SHOW_MODEL_BADGE"] = os.environ.get(
