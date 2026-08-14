@@ -35,7 +35,24 @@ export type ThinkingHint =
   | "web"
   | "media"
   | "quiz"
-  | "flashcard";
+  | "flashcard"
+  | "image";
+
+/**
+ * Backend tool name → loader hint. The orchestrator only reports WHICH tool
+ * will answer (a `tool_selected` SSE frame); the visual loader is entirely a
+ * frontend decision, so adding a loader for a future tool is one line here
+ * plus its progression below — no backend/prompt changes.
+ */
+export const TOOL_TO_HINT: Record<string, ThinkingHint> = {
+  general: "thinking",
+  product_info: "thinking",
+  web_search: "web",
+  media_llm: "media",
+  quiz_generator: "quiz",
+  flashcard_generator: "flashcard",
+  image_generator: "image",
+};
 
 export interface ProgressiveStep {
   /** Milliseconds after start at which this message appears. */
@@ -86,5 +103,13 @@ export const THINKING_PROGRESSIONS: Record<ThinkingHint, ProgressiveStep[]> = {
     { at: 7000, text: "✨ Adding helpful examples…" },
     { at: 10000, text: "🎯 Finishing your deck…" },
     { at: 14000, text: "🚀 Almost there…" },
+  ],
+  // Image generation returns in one piece (no token streaming), so the
+  // cadence stretches further to cover the full render time.
+  image: [
+    { at: 0, text: "✨ Understanding your request…" },
+    { at: 2500, text: "🎨 Creating your image…" },
+    { at: 9000, text: "🖌️ Adding the final details…" },
+    { at: 18000, text: "✨ Almost ready…" },
   ],
 };

@@ -60,7 +60,7 @@ import { useBackClose } from "@/hooks/useBackClose";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
 import { useMediaProcessing } from "@/hooks/useMediaProcessing";
 import { useSwipe } from "@/hooks/useSwipe";
-import type { ThinkingHint } from "@/lib/loadingMessages";
+import { TOOL_TO_HINT, type ThinkingHint } from "@/lib/loadingMessages";
 import {
   qk,
   useCreateNote,
@@ -404,6 +404,10 @@ export default function ChatPage() {
       const streamId = `stream-${uid()}`;
       const userMsgId = uid();
       streamIdRef.current = streamId;
+      // Immediate loader: a confident hint for deterministic turns (quiz/
+      // flashcard forms, selected media), otherwise generic "thinking". The
+      // backend's tool_selected frame corrects it the moment the orchestrator
+      // actually picks a tool.
       setThinkingHint(
         opts?.flashcardOptions
           ? "flashcard"
@@ -411,9 +415,7 @@ export default function ChatPage() {
             ? "quiz"
             : selected.size
               ? "media"
-              : opts?.sourceContent
-                ? "thinking"
-                : "web",
+              : "thinking",
       );
 
       // Fold saved-content context into a plain message (resume-from-bookmark).
@@ -501,6 +503,8 @@ export default function ChatPage() {
         },
         {
           onChunk: upsertStreaming,
+          onToolSelected: (tool) =>
+            setThinkingHint(TOOL_TO_HINT[tool] ?? "thinking"),
           onComplete: (full, meta) => {
             const content = (meta.content ?? {}) as Record<string, unknown>;
             const toolUsed = meta.tool_used as Message["meta"]["tool_used"];

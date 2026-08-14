@@ -11,6 +11,9 @@ export interface StreamCallbacks {
   onClarification: (data: Record<string, unknown>) => void;
   onQuizSetup: (data: Record<string, unknown>) => void;
   onError: (message: string) => void;
+  /** The orchestrator picked a tool — lets the UI switch to a
+   *  context-specific loader before any answer tokens arrive. */
+  onToolSelected?: (tool: string) => void;
 }
 
 /**
@@ -99,6 +102,12 @@ export function useAssistantStream() {
               );
               setStreaming(false);
               return;
+            }
+            if (parsed.type === "tool_selected") {
+              if (typeof parsed.tool === "string" && parsed.tool) {
+                cb.onToolSelected?.(parsed.tool);
+              }
+              continue;
             }
             if (parsed.type === "clarification") {
               cb.onClarification(parsed.data as Record<string, unknown>);

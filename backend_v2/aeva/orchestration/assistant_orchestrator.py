@@ -285,6 +285,12 @@ class AssistantOrchestrator:
             tool_model,
             f" | via {tool_config_key}" if tool_config_key else "",
         )
+        # Tell the client which tool will answer so it can switch from the
+        # generic loader to a context-specific one. Structured metadata only —
+        # never planner reasoning. The frame carries no content text.
+        yield LLMClient.format_sse_chunk(
+            "", extra={"type": "tool_selected", "tool": tool_name}
+        )
         tool_ctx = self._build_tool_ctx(
             ctx, enriched_message, history, personalization,
             tool_model, tool_config_key, session.get("space_id"),

@@ -1,10 +1,30 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import {
+  FileText,
+  Globe,
+  Layers,
+  ListChecks,
+  Palette,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import {
   THINKING_PROGRESSIONS,
   type ThinkingHint,
 } from "@/lib/loadingMessages";
+
+// Context-specific badge icon per loader; the animation stays subtle (pulse,
+// or the app's gentle float for image generation) so it cues the task without
+// demanding attention.
+const HINT_ICON: Record<ThinkingHint, { icon: LucideIcon; anim: string }> = {
+  thinking: { icon: Sparkles, anim: "animate-pulse" },
+  web: { icon: Globe, anim: "animate-pulse" },
+  media: { icon: FileText, anim: "animate-pulse" },
+  quiz: { icon: ListChecks, anim: "animate-pulse" },
+  flashcard: { icon: Layers, anim: "animate-pulse" },
+  image: { icon: Palette, anim: "animate-float" },
+};
 
 const shimmerBar =
   "motion-loop animate-shimmer rounded-full bg-gradient-to-r " +
@@ -65,9 +85,21 @@ function FlashcardSkeleton() {
   );
 }
 
+/** Image skeleton: a single shimmering canvas placeholder. */
+function ImageSkeleton() {
+  return (
+    <div
+      className={`grid h-40 w-full max-w-sm place-items-center rounded-xl border border-border/50 ${shimmerBar}`}
+    >
+      <Palette className="h-6 w-6 text-muted-foreground/50" />
+    </div>
+  );
+}
+
 function LoadingSkeleton({ hint }: { hint?: ThinkingHint }) {
   if (hint === "quiz") return <QuizSkeleton />;
   if (hint === "flashcard") return <FlashcardSkeleton />;
+  if (hint === "image") return <ImageSkeleton />;
   return <TextSkeleton />;
 }
 
@@ -79,6 +111,7 @@ function LoadingSkeleton({ hint }: { hint?: ThinkingHint }) {
  */
 export function ThinkingIndicator({ hint }: { hint?: ThinkingHint }) {
   const steps = THINKING_PROGRESSIONS[hint ?? "thinking"];
+  const { icon: Icon, anim } = HINT_ICON[hint ?? "thinking"];
   const reduce = useReducedMotion();
   const [step, setStep] = useState(0);
 
@@ -96,7 +129,7 @@ export function ThinkingIndicator({ hint }: { hint?: ThinkingHint }) {
   return (
     <div className="space-y-3">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-1/10 px-2.5 py-1 text-xs font-medium text-brand-1">
-        <Sparkles className="h-3 w-3 animate-pulse" />
+        <Icon className={`h-3 w-3 ${reduce ? "" : anim}`} />
         <span className="relative inline-block">
           <AnimatePresence mode="wait">
             <motion.span
