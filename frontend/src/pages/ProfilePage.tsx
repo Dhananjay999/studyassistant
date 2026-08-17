@@ -17,7 +17,7 @@ const MENU_GROUPS: ReadonlyArray<{
   ids: SettingsSectionId[];
 }> = [
   { title: "Account", ids: ["account", "learning"] },
-  { title: "Preferences", ids: ["appearance", "shortcuts"] },
+  { title: "Preferences", ids: ["appearance", "voice", "shortcuts"] },
   { title: "Support", ids: ["about"] },
 ];
 

@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -10,13 +11,28 @@ import {
   ArrowUp,
   FolderOpen,
   Loader2,
+  Mic,
   Paperclip,
+  Square,
   Upload,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { SlashCommandMenu } from "@/components/chat/SlashCommandMenu";
+import { usePreferences } from "@/contexts/PreferencesContext";
+import { useFeature } from "@/hooks/useFeature";
 import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  useSpeechRecognition,
+  type SpeechErrorCode,
+} from "@/hooks/useSpeechRecognition";
 import { filterSlashCommands, type SlashCommand } from "@/lib/slashCommands";
 import { isModifier } from "@/lib/platform";
 import { cn } from "@/lib/utils";
@@ -25,6 +41,42 @@ export interface ChatComposerHandle {
   focus: () => void;
   /** Focus the composer and open the slash-command menu. */
   openCommands: () => void;
+}
+
+/** Append dictated text to what was already typed, with a single space. */
+function joinDictation(base: string, text: string): string {
+  if (!text) return base;
+  if (!base) return text;
+  return /\s$/.test(base) ? base + text : `${base} ${text}`;
+}
+
+const VOICE_ERROR_MESSAGES: Record<
+  SpeechErrorCode,
+  { title: string; description?: string }
+> = {
+  permission: {
+    title: "Microphone access is required for voice input.",
+    description:
+      "Allow microphone access in your browser settings, then tap the mic again.",
+  },
+  "no-mic": {
+    title: "No microphone found.",
+    description: "Connect a microphone and try again.",
+  },
+  network: {
+    title: "Voice input needs an internet connection.",
+    description: "Check your connection and try again.",
+  },
+  unknown: { title: "Voice input didn't work. Please try again." },
+};
+
+/** Five-bar waveform; animates while speech is active, settles when quiet. */
+function VoiceBars({ active }: { active: boolean }) {
+  return (
+    <span className="voice-bars" data-active={active} aria-hidden="true">
+      <span /><span /><span /><span /><span />
+    </span>
+  );
 }
 
 export const ChatComposer = forwardRef<
@@ -68,7 +120,11 @@ export const ChatComposer = forwardRef<
   const [attachOpen, setAttachOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // Composer text at the moment dictation started; the session transcript
+  // is appended to this, so typed text is never overwritten.
+  const dictationBaseRef = useRef("");
   const isMobile = useIsMobile();
+  const voiceEnabled = useFeature("voice_input");
   // Full prompt wraps to two lines on a narrow phone (and the second line gets
   // clipped by the single-row height), so use a short one-line hint on mobile.
   const placeholder = locked
@@ -104,6 +160,86 @@ export const ChatComposer = forwardRef<
       grow();
     });
 
+  // Voice input. Finalized speech is committed into `value` (editable like
+  // typed text); the in-flight interim segment is shown separately, styled
+  // as provisional, and never enters the textarea until it finalizes.
+  const { voiceLang } = usePreferences();
+  const [interim, setInterim] = useState("");
+  // Fresh speech was heard recently → "Listening…" + animated bars;
+  // quiet for a few seconds → "Still listening…" + settled bars.
+  const [speechFresh, setSpeechFresh] = useState(true);
+  const freshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceScrollRef = useRef<HTMLDivElement>(null);
+
+  const bumpActivity = () => {
+    setSpeechFresh(true);
+    if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
+    freshTimerRef.current = setTimeout(() => setSpeechFresh(false), 3000);
+  };
+
+  const {
+    supported: micSupported,
+    listening,
+    start: startDictation,
+    stop: stopDictation,
+    cancel: cancelDictation,
+  } = useSpeechRecognition({
+    lang: voiceLang === "auto" ? undefined : voiceLang,
+    onTranscript: (finalText, interimText) => {
+      setValue(joinDictation(dictationBaseRef.current, finalText));
+      setInterim(interimText);
+      if (finalText || interimText) bumpActivity();
+      requestAnimationFrame(() => {
+        grow();
+        // Keep long dictation scrolled to the newest words.
+        const el = taRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
+    onError: (code) => {
+      const { title, description } = VOICE_ERROR_MESSAGES[code];
+      toast.error(title, description ? { description } : undefined);
+    },
+    onEnd: ({ transcript, canceled }) => {
+      setInterim("");
+      if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
+      if (canceled) {
+        setValue(dictationBaseRef.current);
+      } else if (!transcript.trim() && !dictationBaseRef.current.trim()) {
+        toast.info("I couldn't hear anything. Try again.");
+      }
+      focusEnd();
+    },
+  });
+
+  const startVoice = () => {
+    if (locked || listening) return;
+    dictationBaseRef.current = value;
+    setInterim("");
+    bumpActivity();
+    startDictation();
+  };
+  const handleMic = () => (listening ? stopDictation() : startVoice());
+
+  // If an admin turns the flag off mid-dictation the button unmounts, so
+  // stop the session too rather than leaving the mic hot.
+  useEffect(() => {
+    if (!voiceEnabled && listening) stopDictation();
+  }, [voiceEnabled, listening, stopDictation]);
+
+  // Keep the mobile transcript panel scrolled to the newest words.
+  useEffect(() => {
+    const el = voiceScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [value, interim]);
+
+  useEffect(
+    () => () => {
+      if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
+    },
+    [],
+  );
+
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
     openCommands: () => {
@@ -126,6 +262,7 @@ export const ChatComposer = forwardRef<
   const send = () => {
     const text = value.trim();
     if (!text || disabled || locked) return;
+    if (listening) stopDictation();
     onSend(text);
     setValue("");
     setShowMenu(false);
@@ -144,6 +281,11 @@ export const ChatComposer = forwardRef<
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape" && listening) {
+      e.preventDefault();
+      cancelDictation();
+      return;
+    }
     if (menuOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -210,24 +352,140 @@ export const ChatComposer = forwardRef<
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Desktop listening indicator: the textarea stays visible/editable
+            with finalized text; the interim (still-changing) segment previews
+            here in muted italics until it firms up. */}
+        <AnimatePresence initial={false}>
+          {listening && !isMobile && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.18 }}
+              className="mb-2 flex"
+            >
+              <div
+                role="status"
+                className={cn(
+                  "flex min-w-0 items-center gap-2.5 rounded-full border px-3 py-1.5",
+                  "border-brand-1/30 bg-brand-1/10 text-xs",
+                )}
+              >
+                <span
+                  className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-brand-1"
+                  aria-hidden="true"
+                />
+                <span className="shrink-0 font-medium text-brand-1">
+                  {speechFresh ? "Listening…" : "Still listening…"}
+                </span>
+                <VoiceBars active={speechFresh} />
+                {interim && (
+                  <span className="max-w-[16rem] truncate italic text-muted-foreground">
+                    {interim}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={stopDictation}
+                  aria-label="Stop recording"
+                  className="shrink-0 rounded-full bg-primary px-3 py-0.5 font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.98]"
+                >
+                  Stop
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelDictation}
+                  aria-label="Cancel voice input"
+                  className="shrink-0 rounded-full px-1.5 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files?.length) onUpload(e.target.files);
+            e.target.value = "";
+          }}
+        />
         <div className="composer-shell">
+          {listening && isMobile ? (
+            /* Mobile recording state: the composer itself expands — the
+               conversation stays visible above, no separate screen. */
+            <motion.div
+              key="voice-panel"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18 }}
+              className={cn(
+                "flex flex-col items-center gap-3 bg-card/90 p-4 backdrop-blur-xl",
+                "supports-[backdrop-filter]:bg-card/80",
+              )}
+            >
+              <span className="mic-pulse relative grid h-14 w-14 place-items-center rounded-full bg-brand-1/10 text-brand-1">
+                <Mic className="h-6 w-6" />
+              </span>
+              <div
+                role="status"
+                className="flex items-center gap-2 text-sm font-medium text-brand-1"
+              >
+                {speechFresh ? "Listening…" : "Still listening…"}
+                <VoiceBars active={speechFresh} />
+              </div>
+              <div
+                ref={voiceScrollRef}
+                className="max-h-28 w-full overflow-y-auto rounded-xl bg-muted/40 px-3 py-2 text-sm leading-6"
+              >
+                {value || interim ? (
+                  <>
+                    {value}
+                    {interim && (
+                      <span className="italic text-muted-foreground">
+                        {value ? " " : ""}
+                        {interim}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Speak now…</span>
+                )}
+              </div>
+              <div className="flex w-full gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-11 flex-1 rounded-xl"
+                  onClick={cancelDictation}
+                  aria-label="Cancel voice input"
+                >
+                  <X className="h-4 w-4" />
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="h-11 flex-1 rounded-xl"
+                  onClick={stopDictation}
+                  aria-label="Stop recording"
+                >
+                  <Square className="h-4 w-4" />
+                  Stop
+                </Button>
+              </div>
+            </motion.div>
+          ) : (
           <div
             className={cn(
               "flex items-end gap-2 bg-card/90 p-2 backdrop-blur-xl",
               "supports-[backdrop-filter]:bg-card/80",
             )}
           >
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*,application/pdf"
-            multiple
-            hidden
-            onChange={(e) => {
-              if (e.target.files?.length) onUpload(e.target.files);
-              e.target.value = "";
-            }}
-          />
           <Button
             type="button"
             variant="ghost"
@@ -260,6 +518,32 @@ export const ChatComposer = forwardRef<
             className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
           />
 
+          {voiceEnabled && micSupported && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-9 w-9 shrink-0 rounded-xl",
+                    listening &&
+                      "bg-brand-1/15 text-brand-1 hover:bg-brand-1/20 hover:text-brand-1",
+                  )}
+                  disabled={locked}
+                  onClick={handleMic}
+                  aria-label={listening ? "Stop recording" : "Voice input"}
+                  aria-pressed={listening}
+                >
+                  <Mic className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {listening ? "Stop recording" : "Voice input"}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           <Button
             type="button"
             size="icon"
@@ -271,6 +555,7 @@ export const ChatComposer = forwardRef<
             <ArrowUp className="h-4 w-4" />
           </Button>
           </div>
+          )}
         </div>
       </div>
 

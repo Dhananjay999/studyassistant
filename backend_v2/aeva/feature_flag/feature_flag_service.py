@@ -71,6 +71,11 @@ FEATURE_FLAGS: tuple[FeatureFlagDef, ...] = (
         "Share buttons for quizzes, results and notes. Existing share "
         "links keep working when disabled.",
     ),
+    FeatureFlagDef(
+        "voice_input",
+        "Voice input",
+        "Microphone dictation button in the chat composer.",
+    ),
 )
 
 DEFAULTS: dict[str, bool] = {f.key: f.default_enabled for f in FEATURE_FLAGS}

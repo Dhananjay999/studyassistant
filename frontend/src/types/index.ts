@@ -679,7 +679,8 @@ export type FeatureKey =
   | "study_spaces"
   | "notes"
   | "analytics"
-  | "sharing";
+  | "sharing"
+  | "voice_input";
 
 // Public, non-secret runtime config from GET /config.
 export interface AppConfig {

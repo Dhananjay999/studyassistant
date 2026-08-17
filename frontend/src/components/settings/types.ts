@@ -6,6 +6,7 @@ export type SettingsSectionId =
   | "account"
   | "learning"
   | "appearance"
+  | "voice"
   | "shortcuts"
   | "about";
 

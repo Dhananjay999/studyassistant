@@ -411,6 +411,77 @@
     animation: none;
   }
 
+  /* Voice input: waveform + mic pulse. Deliberately calm (brand tones, slow
+     timing) — recording state should read as "listening", not "alarm". The
+     bars stay visible but static when idle or when motion is reduced, so the
+     state never depends on animation alone. */
+  .voice-bars {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 0.75rem;
+  }
+  .voice-bars > span {
+    width: 3px;
+    height: 35%;
+    border-radius: 9999px;
+    background: hsl(var(--brand-1) / 0.85);
+    animation: voice-bar 1.2s ease-in-out infinite;
+  }
+  .voice-bars > span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .voice-bars > span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+  .voice-bars > span:nth-child(4) {
+    animation-delay: 0.45s;
+  }
+  .voice-bars > span:nth-child(5) {
+    animation-delay: 0.6s;
+  }
+  /* No speech detected recently: settle the bars instead of pretending. */
+  .voice-bars[data-active="false"] > span {
+    animation-play-state: paused;
+    height: 35%;
+    opacity: 0.5;
+  }
+  @keyframes voice-bar {
+    0%,
+    100% {
+      height: 30%;
+    }
+    50% {
+      height: 100%;
+    }
+  }
+  .mic-pulse::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 2px solid hsl(var(--brand-1) / 0.45);
+    animation: mic-ping 1.8s ease-out infinite;
+  }
+  @keyframes mic-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.8;
+    }
+    100% {
+      transform: scale(1.5);
+      opacity: 0;
+    }
+  }
+  html.reduce-motion .voice-bars > span {
+    animation: none;
+    height: 60%;
+  }
+  html.reduce-motion .mic-pulse::after {
+    animation: none;
+    opacity: 0.4;
+  }
+
   /* react-colorful sizing/rounding inside the accent popover. */
   .accent-picker .react-colorful {
     width: 216px;

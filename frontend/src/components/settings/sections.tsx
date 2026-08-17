@@ -1,8 +1,9 @@
-import { Info, Keyboard, Palette, GraduationCap, User } from "lucide-react";
+import { Info, Keyboard, Mic, Palette, GraduationCap, User } from "lucide-react";
 import type { SettingsSection, SettingsSectionId } from "./types";
 import { AccountSection } from "./sections/AccountSection";
 import { LearningProfileSection } from "./sections/LearningProfileSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
+import { VoiceSection } from "./sections/VoiceSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { AboutSection } from "./sections/AboutSection";
 
@@ -26,6 +27,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSection> = [
     icon: Palette,
     Component: AppearanceSection,
   },
+  { id: "voice", label: "Voice Input", icon: Mic, Component: VoiceSection },
   {
     id: "shortcuts",
     label: "Keyboard Shortcuts",

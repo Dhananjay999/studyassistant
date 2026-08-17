@@ -38,6 +38,9 @@ export type ContentFont =
   | "source-sans"
   | "roboto";
 
+/** Speech-recognition language for voice input; "auto" follows the device. */
+export type VoiceLang = "auto" | "en-IN" | "hi-IN";
+
 interface Preferences {
   colorTheme: ColorTheme;
   /** Hex color used when `colorTheme === "custom"`. */
@@ -46,6 +49,7 @@ interface Preferences {
   contentFont: ContentFont;
   reduceMotion: boolean;
   compact: boolean;
+  voiceLang: VoiceLang;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -55,6 +59,7 @@ interface PreferencesContextValue extends Preferences {
   setContentFont: (font: ContentFont) => void;
   setReduceMotion: (on: boolean) => void;
   setCompact: (on: boolean) => void;
+  setVoiceLang: (lang: VoiceLang) => void;
   reset: () => void;
 }
 
@@ -65,6 +70,7 @@ const DEFAULTS: Preferences = {
   contentFont: "inter",
   reduceMotion: false,
   compact: false,
+  voiceLang: "auto",
 };
 
 const STORAGE_KEY = "aeva_preferences";
@@ -142,6 +148,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     (compact: boolean) => setPrefs((p) => ({ ...p, compact })),
     [],
   );
+  const setVoiceLang = useCallback(
+    (voiceLang: VoiceLang) => setPrefs((p) => ({ ...p, voiceLang })),
+    [],
+  );
   const reset = useCallback(() => setPrefs(DEFAULTS), []);
 
   const value = useMemo<PreferencesContextValue>(
@@ -153,6 +163,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setContentFont,
       setReduceMotion,
       setCompact,
+      setVoiceLang,
       reset,
     }),
     [
@@ -163,6 +174,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setContentFont,
       setReduceMotion,
       setCompact,
+      setVoiceLang,
       reset,
     ],
   );
