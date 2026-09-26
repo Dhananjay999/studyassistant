@@ -99,7 +99,12 @@ const ResponsiveModalClose = (
   return <Close {...props} />;
 };
 
-interface ResponsiveModalContentProps extends React.HTMLAttributes<HTMLDivElement> {
+interface ResponsiveModalContentProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    Pick<
+      React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>,
+      "onEscapeKeyDown" | "onPointerDownOutside"
+    > {
   /** Show the desktop close (X) button. Ignored on mobile (drag to dismiss). */
   showClose?: boolean;
 }

@@ -9,6 +9,8 @@
 // components knowing about the hook. Every helper is a no-op when no visit
 // is active (e.g. the signed-in app).
 
+import type { LandingAuthPromptOutcome } from "./events";
+
 export type LandingLoginOutcome =
   | "none"
   | "started"
@@ -28,6 +30,8 @@ export interface LandingVisit {
   demoInteractions: number;
   exitIntent: boolean;
   loginOutcome: LandingLoginOutcome;
+  /** Furthest the sign-in encouragement prompt got (see lib/authPrompt.ts). */
+  authPrompt: LandingAuthPromptOutcome;
   /** Milliseconds the tab was visible with recent input. */
   activeMs: number;
   /** Number of LANDING_EXIT events already sent for this visit. */
@@ -48,6 +52,7 @@ export function beginLandingVisit(page: string): LandingVisit {
     demoInteractions: 0,
     exitIntent: false,
     loginOutcome: "none",
+    authPrompt: "none",
     activeMs: 0,
     exits: 0,
   };
@@ -82,6 +87,13 @@ export function noteLandingFaqOpen(): void {
 
 export function noteLandingDemo(): void {
   if (current) current.demoInteractions += 1;
+}
+
+export function noteLandingAuthPrompt(outcome: LandingAuthPromptOutcome): void {
+  if (!current) return;
+  // A CTA click is the best outcome; a later dismissal can't undo it.
+  if (current.authPrompt === "cta") return;
+  current.authPrompt = outcome;
 }
 
 export function noteLandingLogin(outcome: LandingLoginOutcome): void {

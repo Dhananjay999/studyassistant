@@ -49,6 +49,7 @@ import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/common/GlassCard";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
+import { requestAuthPrompt } from "@/lib/authPrompt";
 import { cn } from "@/lib/utils";
 import {
   DEMO_CONVERSATIONS,
@@ -302,7 +303,14 @@ function DemoSources({
 /* Quiz card (replica of QuizCard) + interactive sample question             */
 /* ------------------------------------------------------------------------ */
 
-function DemoQuizCard({ quiz }: { quiz: DemoQuiz }) {
+function DemoQuizCard({
+  quiz,
+  onSignIn,
+}: {
+  quiz: DemoQuiz;
+  /** Returns true when the sign-in prompt opened (link then stays put). */
+  onSignIn: () => boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [qIdx, setQIdx] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
@@ -443,6 +451,9 @@ function DemoQuizCard({ quiz }: { quiz: DemoQuiz }) {
                   ) : (
                     <a
                       href="#top"
+                      onClick={(e) => {
+                        if (onSignIn()) e.preventDefault();
+                      }}
                       className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-1 hover:underline"
                     >
                       Sign in free for all {quiz.count} questions
@@ -862,13 +873,31 @@ export function HeroDemo() {
     });
     switchTo(i);
   };
-  const nudge = () => {
+  // A demo action that needs an account (chips, sources, bookmark, copy,
+  // follow-ups, the quiz sign-in link): ask for the sign-in prompt and say
+  // whether it opened. The central gate suppresses it once dismissed or
+  // already shown this session, so callers keep their own gentle fallback.
+  const signInIntent = (): boolean => {
     noteLandingDemo();
     analytics.track(AnalyticsEvent.LANDING_DEMO_INTERACTED, {
       action: "nudge",
       demo_index: demoIdx,
     });
-    setNudged(true);
+    return requestAuthPrompt("demo_action");
+  };
+  const nudge = () => {
+    if (!signInIntent()) setNudged(true);
+  };
+
+  // Tapping the mock composer is the clearest "I want to chat" signal —
+  // contextual prompt first; otherwise keep showing more examples.
+  const composerTap = () => {
+    noteLandingDemo();
+    analytics.track(AnalyticsEvent.LANDING_DEMO_INTERACTED, {
+      action: "composer",
+      demo_index: demoIdx,
+    });
+    if (!requestAuthPrompt("demo_composer")) nextDemo();
   };
 
   const revealFromChip = (id: "quiz" | "flashcards") => {
@@ -1018,7 +1047,7 @@ export function HeroDemo() {
                       )}
 
                       {showQuizCard && demo.quiz && (
-                        <DemoQuizCard quiz={demo.quiz} />
+                        <DemoQuizCard quiz={demo.quiz} onSignIn={signInIntent} />
                       )}
                       {showFlashcards && demo.flashcards && (
                         <DemoFlashcardCard flashcards={demo.flashcards} />
@@ -1080,12 +1109,12 @@ export function HeroDemo() {
         ))}
       </div>
 
-      {/* Mock composer — tapping it shows the next example */}
+      {/* Mock composer — tapping it invites the visitor to sign in and chat
+          for real (or, once they've declined, shows the next example). */}
       <div className="border-t border-border/40 px-3 pb-3 pt-2 sm:px-4">
         <button
           type="button"
-          onClick={nextDemo}
-          aria-label="Show another example"
+          onClick={composerTap}
           className="flex w-full items-center gap-2.5 rounded-full border border-border/60 bg-background/60 py-2 pl-4 pr-1.5 text-left transition-colors hover:border-brand-1/40"
         >
           <span className="flex-1 truncate text-sm text-muted-foreground">

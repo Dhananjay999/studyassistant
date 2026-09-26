@@ -34,6 +34,9 @@ export enum AnalyticsEvent {
   LOGIN_SUCCEEDED = "LOGIN_SUCCEEDED",
   LOGOUT_COMPLETED = "LOGOUT_COMPLETED",
   SESSION_INVALIDATED = "SESSION_INVALIDATED",
+  AUTH_PROMPT_SHOWN = "AUTH_PROMPT_SHOWN",
+  AUTH_PROMPT_DISMISSED = "AUTH_PROMPT_DISMISSED",
+  AUTH_PROMPT_CTA_CLICKED = "AUTH_PROMPT_CTA_CLICKED",
 
   // ---- Onboarding --------------------------------------------------------
   ONBOARDING_STARTED = "ONBOARDING_STARTED",
@@ -167,7 +170,25 @@ export type CtaLocation =
   | "features"
   | "about"
   | "app_welcome"
-  | "share";
+  | "share"
+  | "auth_prompt";
+
+/**
+ * Why the sign-in encouragement prompt opened (see `lib/authPrompt.ts`):
+ * the visitor tapped the demo composer, used a members-only demo action
+ * (chips, sources, bookmark, copy, follow-ups), or simply stayed engaged on
+ * a public page for a while.
+ */
+export type AuthPromptTrigger = "demo_composer" | "demo_action" | "delayed";
+/** How the prompt was dismissed (never fired for CTA clicks). */
+export type AuthPromptDismissVia =
+  | "close"
+  | "not_now"
+  | "escape"
+  | "outside"
+  | "drag";
+export type AuthPromptCta = "google" | "login";
+export type LandingAuthPromptOutcome = "none" | "shown" | "dismissed" | "cta";
 
 export type LoginMethod = "popup" | "redirect";
 export type ChatSource =
@@ -329,6 +350,8 @@ export interface LandingExitProps {
   exit_intent: boolean;
   login_outcome: "none" | "started" | "abandoned" | "failed" | "succeeded";
   converted: boolean;
+  /** Furthest the sign-in prompt got during this visit. */
+  auth_prompt: LandingAuthPromptOutcome;
 }
 
 export interface ChatMessageSentProps {
@@ -453,7 +476,7 @@ export interface EventPropsMap {
   };
   [AnalyticsEvent.LANDING_EXIT]: LandingExitProps;
   [AnalyticsEvent.LANDING_DEMO_INTERACTED]: {
-    action: "switch" | "reveal_quiz" | "reveal_flashcards" | "nudge";
+    action: "switch" | "reveal_quiz" | "reveal_flashcards" | "nudge" | "composer";
     demo_index?: number;
   };
   [AnalyticsEvent.LANDING_FAQ_OPENED]: { faq_index: number };
@@ -466,6 +489,24 @@ export interface EventPropsMap {
   [AnalyticsEvent.LOGIN_SUCCEEDED]: { method?: LoginMethod; is_new_user: boolean };
   [AnalyticsEvent.LOGOUT_COMPLETED]: { source: string };
   [AnalyticsEvent.SESSION_INVALIDATED]: Empty;
+  [AnalyticsEvent.AUTH_PROMPT_SHOWN]: {
+    trigger: AuthPromptTrigger;
+    page: string;
+    /** Centered dialog (desktop) or bottom sheet (mobile). */
+    layout: "modal" | "sheet";
+    time_since_entry_s: number;
+    scroll_pct: number;
+  };
+  [AnalyticsEvent.AUTH_PROMPT_DISMISSED]: {
+    trigger: AuthPromptTrigger;
+    via: AuthPromptDismissVia;
+    duration_ms: number;
+  };
+  [AnalyticsEvent.AUTH_PROMPT_CTA_CLICKED]: {
+    trigger: AuthPromptTrigger;
+    cta: AuthPromptCta;
+    duration_ms: number;
+  };
 
   [AnalyticsEvent.ONBOARDING_STARTED]: { mode: "first_run" | "edit" };
   [AnalyticsEvent.ONBOARDING_STEP_COMPLETED]: {

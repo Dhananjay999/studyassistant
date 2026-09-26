@@ -12,7 +12,8 @@
 //   LANDING_EXIT            summary when the page is left (route change) or
 //                           hidden (tab switch / close): scroll reach,
 //                           sections + CTAs seen, clicks, FAQ / demo use,
-//                           active vs total time, login outcome, converted.
+//                           active vs total time, login outcome, converted,
+//                           how far the sign-in prompt got.
 //                           A visitor who comes back after a hidden exit gets
 //                           a second summary with `exit_index: 2`; the last
 //                           one per visit is the complete picture.
@@ -207,6 +208,7 @@ export function useLandingAnalytics(page: string): void {
         exit_intent: visit.exitIntent,
         login_outcome: visit.loginOutcome,
         converted: visit.loginOutcome === "succeeded",
+        auth_prompt: visit.authPrompt,
       });
       if (exit_type === "hidden") analytics.flush();
     };

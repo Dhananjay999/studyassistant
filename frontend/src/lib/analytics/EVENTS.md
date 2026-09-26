@@ -44,13 +44,23 @@ label it explicitly. `data-analytics-ignore` skips an element entirely.
 | `LANDING_SECTION_VIEWED` | A `[data-landing-section]` (hero, features, revision, how_it_works, what_is, faq, cta_band, footer, page_body) scrolls ≥ 35 % into view, once each | `page`, `section`, `order`, `time_since_entry_s` |
 | `LANDING_CTA_VIEWED` | A Google sign-in button (`[data-cta-location]`) becomes ≥ 60 % visible, once per location (impression, for CTR) | `page`, `location`, `time_since_entry_s` |
 | `LANDING_EXIT_INTENT` | Mouse leaves through the top edge (desktop), once | `page`, `time_since_entry_s`, `scroll_pct` |
-| `LANDING_EXIT` | Page left (route change) or hidden (tab switch / close). The "why didn't they sign in" summary | `page`, `exit_type`, `exit_index`, `time_on_page_s`, `active_time_s`, `max_scroll_pct`, `scroll_bucket`, `sections_viewed`, `sections_viewed_count`, `deepest_section`, `cta_viewed_count`, `cta_clicked_count`, `faq_opened_count`, `demo_interactions`, `exit_intent`, `login_outcome: none\|started\|abandoned\|failed\|succeeded`, `converted` |
+| `LANDING_EXIT` | Page left (route change) or hidden (tab switch / close). The "why didn't they sign in" summary | `page`, `exit_type`, `exit_index`, `time_on_page_s`, `active_time_s`, `max_scroll_pct`, `scroll_bucket`, `sections_viewed`, `sections_viewed_count`, `deepest_section`, `cta_viewed_count`, `cta_clicked_count`, `faq_opened_count`, `demo_interactions`, `exit_intent`, `login_outcome: none\|started\|abandoned\|failed\|succeeded`, `converted`, `auth_prompt: none\|shown\|dismissed\|cta` |
 
-`LANDING_CTA_CLICKED` now also carries `time_since_entry_s` and `scroll_pct`; `LOGIN_ABANDONED` carries `elapsed_ms` (how long the popup was open); `LANDING_DEMO_INTERACTED` fires for chip reveals, replay / dot switches and nudges. PostHog dead-click and rage-click autocapture are on, so frustrated taps on the landing page show up as `$dead_click` / `$rageclick`.
+`LANDING_CTA_CLICKED` now also carries `time_since_entry_s` and `scroll_pct`; `LOGIN_ABANDONED` carries `elapsed_ms` (how long the popup was open); `LANDING_DEMO_INTERACTED` fires for chip reveals, replay / dot switches, nudges and composer taps. PostHog dead-click and rage-click autocapture are on, so frustrated taps on the landing page show up as `$dead_click` / `$rageclick`.
+
+**Sign-in prompt** — `src/components/auth/AuthPrompt.tsx`, gated by `src/lib/authPrompt.ts` (shows at most once per tab session, never again after a dismissal or a login on the device, never to signed-in users, only on `/`, `/features`, `/about`)
+
+| Event | When | Properties |
+|---|---|---|
+| `AUTH_PROMPT_SHOWN` | The prompt opened (impression) | `trigger: demo_composer\|demo_action\|delayed`, `page`, `layout: modal\|sheet`, `time_since_entry_s`, `scroll_pct` |
+| `AUTH_PROMPT_DISMISSED` | Closed without signing in — from now on it never shows on this device | `trigger`, `via: close\|not_now\|escape\|outside\|drag`, `duration_ms` |
+| ★ `AUTH_PROMPT_CTA_CLICKED` | "Continue with Google" or "Log in" pressed inside the prompt (the Google button also emits `LANDING_CTA_CLICKED` with `location: auth_prompt`) | `trigger`, `cta: google\|login`, `duration_ms` |
+
+The prompt is a `ResponsiveModal`, so it also emits the generic `AUTH_PROMPT_MODAL_OPENED` / `AUTH_PROMPT_MODAL_CLOSED` pair. Funnel: `AUTH_PROMPT_SHOWN` → `AUTH_PROMPT_CTA_CLICKED` → `LOGIN_STARTED` → `LOGIN_SUCCEEDED`, broken down by `trigger`.
 
 | Event | When | Properties | Hook |
 |---|---|---|---|
-| ★ `LANDING_CTA_CLICKED` | Google CTA pressed | `location: hero\|navbar\|navbar_mobile\|cta_band\|features\|about\|app_welcome\|share` | `landing/GoogleButton.tsx`, `pages/AppWelcomePage.tsx` |
+| ★ `LANDING_CTA_CLICKED` | Google CTA pressed | `location: hero\|navbar\|navbar_mobile\|cta_band\|features\|about\|app_welcome\|share\|auth_prompt` | `landing/GoogleButton.tsx`, `pages/AppWelcomePage.tsx`, `auth/AuthPrompt.tsx` |
 | `LANDING_FAQ_OPENED` | FAQ accordion item opened | `faq_index` | `landing/Faq.tsx` |
 | ★ `LOGIN_STARTED` | Popup opened or redirect started | `method: popup\|redirect` | `contexts/AuthContext.tsx signInWithGoogle` |
 | `LOGIN_ABANDONED` | Popup closed without tokens | — | same (popup poll) |

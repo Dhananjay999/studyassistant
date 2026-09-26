@@ -27,6 +27,7 @@ import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { SigningInModal } from "@/components/auth/SigningInModal";
+import { AuthPrompt } from "@/components/auth/AuthPrompt";
 import { SettingsExperience } from "@/components/settings/SettingsExperience";
 import { queryClient } from "@/lib/queryClient";
 import { useAnalyticsRouteTracker } from "@/hooks/useAnalyticsRouteTracker";
@@ -134,6 +135,9 @@ export default function App() {
                   <SettingsExperience />
                   <BrowserRouter>
                     <AnalyticsRouteTracker />
+                    {/* Sign-in encouragement for anonymous visitors on the
+                       public pages (needs the router for page eligibility). */}
+                    <AuthPrompt />
                     <Suspense fallback={<RouteFallback />}>
                       <Routes>
                     <Route path="/" element={<HomeRoute />} />
