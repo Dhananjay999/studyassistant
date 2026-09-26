@@ -5,6 +5,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Reveal } from "@/components/common/Reveal";
+import { noteLandingFaqOpen } from "@/lib/analytics/landing";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
 /**
@@ -76,7 +77,12 @@ export const FAQS = [
 
 export function Faq() {
   return (
-    <section id="faq" aria-labelledby="faq-heading" className="relative py-24">
+    <section
+      id="faq"
+      data-landing-section="faq"
+      aria-labelledby="faq-heading"
+      className="relative py-24"
+    >
       <div className="container max-w-3xl">
         <Reveal className="text-center">
           <h2
@@ -97,6 +103,7 @@ export function Faq() {
             onValueChange={(v) => {
               const faq_index = FAQS.findIndex((f) => f.q === v);
               if (faq_index >= 0) {
+                noteLandingFaqOpen();
                 analytics.track(AnalyticsEvent.LANDING_FAQ_OPENED, { faq_index });
               }
             }}

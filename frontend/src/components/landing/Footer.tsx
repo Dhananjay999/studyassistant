@@ -12,7 +12,10 @@ const LINKS = [
 export function Footer() {
   const year = new Date().getFullYear();
   return (
-    <footer className="border-t border-border/60 py-10">
+    <footer
+      data-landing-section="footer"
+      className="border-t border-border/60 py-10"
+    >
       <div className="container flex flex-col items-center justify-between gap-4 sm:flex-row">
         <div className="flex flex-col items-center gap-1 sm:items-start">
           <BrandLogo />

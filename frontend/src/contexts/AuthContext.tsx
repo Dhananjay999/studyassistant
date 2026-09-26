@@ -17,6 +17,7 @@ import {
   setUnauthorizedHandler,
 } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
+import { noteLandingLogin } from "@/lib/analytics/landing";
 import { qk } from "@/hooks/api";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import type { User } from "@/types";
@@ -105,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // How the in-flight login was started; null after a full-page redirect
   // (the callback page is a fresh load), which is itself the answer.
   const loginMethodRef = useRef<LoginMethod | null>(null);
+  const loginStartedAtRef = useRef(0);
 
   // True once the initial token restore has settled. Session teardowns that
   // happen *during* boot (dead token found at startup) must clear quietly —
@@ -204,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // login and boot restore. The anonymous trail merges into this person.
     analytics.identify(me);
     if (reason === "login") {
+      noteLandingLogin("succeeded");
       analytics.track(AnalyticsEvent.LOGIN_SUCCEEDED, {
         method: loginMethodRef.current ?? "redirect",
         is_new_user: (me.personalization_status ?? "pending") === "pending",
@@ -300,6 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Popup blocked (or mobile) — fall back to a full-page redirect.
     if (!popup) {
+      noteLandingLogin("started");
       analytics.track(AnalyticsEvent.LOGIN_STARTED, { method: "redirect" });
       analytics.flush();
       window.location.href = url;
@@ -307,6 +311,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     loginMethodRef.current = "popup";
+    loginStartedAtRef.current = performance.now();
+    noteLandingLogin("started");
     analytics.track(AnalyticsEvent.LOGIN_STARTED, { method: "popup" });
     setSigningIn(true);
 
@@ -331,7 +337,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSigningIn(false);
         // Closed without posting tokens back: the user gave up (or the
         // callback failed inside the popup, which tracks its own failure).
-        analytics.track(AnalyticsEvent.LOGIN_ABANDONED);
+        noteLandingLogin("abandoned");
+        analytics.track(AnalyticsEvent.LOGIN_ABANDONED, {
+          elapsed_ms: Math.round(performance.now() - loginStartedAtRef.current),
+        });
         loginMethodRef.current = null;
       }
     }, 600);

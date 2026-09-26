@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import { useLocation } from "react-router-dom";
+import { useLandingAnalytics } from "@/hooks/useLandingAnalytics";
+import { routeName } from "@/lib/analytics";
 import { SkipToContent } from "@/components/common/SkipToContent";
 import { Navbar } from "@/components/landing/Navbar";
 import { Footer } from "@/components/landing/Footer";
@@ -17,11 +20,17 @@ export function PublicPage({
   intro?: string;
   children: ReactNode;
 }) {
+  const { pathname } = useLocation();
+  useLandingAnalytics(routeName(pathname));
   return (
     <div className="relative min-h-dvh bg-background">
       <SkipToContent />
       <Navbar />
-      <main id="main" className="container max-w-3xl pb-24 pt-32 md:pt-40">
+      <main
+        id="main"
+        data-landing-section="page_body"
+        className="container max-w-3xl pb-24 pt-32 md:pt-40"
+      >
         <header className="mb-10">
           <h1 className="font-display text-4xl font-extrabold tracking-tight sm:text-5xl">
             {title}

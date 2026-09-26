@@ -182,6 +182,7 @@ export function RevisionShowcase() {
   return (
     <section
       id="revision"
+      data-landing-section="revision"
       aria-labelledby="revision-heading"
       className="relative overflow-hidden py-24"
     >

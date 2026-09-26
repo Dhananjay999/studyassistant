@@ -26,8 +26,14 @@ track(event, props)
   → session ensured (session.ts) — may emit session_ended / session_started first
   → enriched: identity, session, page, device, campaign, app context
   → debug log (debug mode only)
-  → per provider: delivered, or queued (≤ 100) until that provider is ready
+  → outbox (outbox.ts): buffered + mirrored to localStorage; drained later
+  → per provider: delivered, or queued until that provider is ready
 ```
+
+`track()` returns after the enrich step — a few property reads and one
+coalesced localStorage write. Nothing provider-side (PostHog property
+calculation, persistence, network) runs inside the user's interaction; see
+[Delivery and reliability](#delivery-and-reliability).
 
 Providers implement `providers/provider.ts` and are registered in
 `providers/index.ts`. Today: PostHog. Adding GA4 or a custom store means one
@@ -90,6 +96,21 @@ Dynamic names go through `clickEventName()` / `popupEventName()` in
 `events.ts` (UPPER_SNAKE, ≤ 40 chars) and the same sanitize/enrich pipeline
 as typed events via `analytics.trackNamed()`.
 
+## Landing page engagement
+
+`useLandingAnalytics(page)` (mounted on the landing page and every public
+page) answers "what did visitors do before signing in, and where did the
+ones who didn't get stuck?". It emits `LANDING_VIEWED`, scroll-depth
+milestones, one `LANDING_SECTION_VIEWED` per section that scrolls into view
+(mark sections with `data-landing-section="<name>"`), one
+`LANDING_CTA_VIEWED` per sign-in button that becomes visible (impression;
+the Google button carries `data-cta-location`), `LANDING_EXIT_INTENT`, and a
+single `LANDING_EXIT` summary on leave with scroll reach, sections and CTAs
+seen, clicks, FAQ/demo use, active vs total time and the login outcome.
+Components report into the visit through `lib/analytics/landing.ts`
+(`noteLandingCtaClick`, `noteLandingFaqOpen`, `noteLandingDemo`,
+`noteLandingLogin`), which are no-ops outside public pages.
+
 ## Page lifecycle
 
 `useAnalyticsRouteTracker` (mounted in `App.tsx`) emits `PAGE_EXIT` for the
@@ -135,15 +156,53 @@ Every event carries `app_env` (`production` / `preview` / `development`),
 
 Runtime debug switches: `localStorage.aeva_analytics_debug = "1"` or
 `window.__aeva_analytics.debug = true`. `window.__aeva_analytics` also exposes
-`session`, `anonymousId` and `ready`.
+`session`, `anonymousId`, `deviceId`, `ready`, `pending` (events waiting in
+the outbox) and `flush()`.
 
-## Reliability
+## Delivery and reliability
+
+Two guarantees, in this order: the user never waits on analytics, and no
+event is lost.
+
+**Batched, off the interaction.** `track()` only enriches the event and
+appends it to the outbox (`outbox.ts`). The outbox hands batches to the
+providers in a browser idle slot (`requestIdleCallback`, bounded), never
+inside a click / keypress / scroll handler:
+
+| Trigger | When the batch goes out |
+|---|---|
+| 20 events pending | next idle slot, at most 250 ms later |
+| 5 s since the first pending event | next idle slot, at most 1 s later |
+| tab hidden, `pagehide`, `freeze`, `analytics.flush()`, `identify`, logout | immediately, **urgent** |
+| an event tracked while the tab is already hidden | immediately, urgent |
+
+PostHog receives a normal batch through posthog-js's own request queue
+(fetch keepalive, retried on failure). An **urgent** batch bypasses that
+queue: each event is sent at once with `sendBeacon`, which the browser
+completes even after the page is gone. `identify` and `reset` drain the
+outbox first so provider-side ordering matches ours (pre-login events stay
+on the anonymous trail; the last events before logout stay on the user).
+
+**Nothing lost.** Pending events are mirrored to localStorage as they
+arrive (one write per task, under a per-page-load key
+`aeva_analytics_outbox:<id>`), and cleared only once a provider has taken
+them. While every provider is still loading, batches are held there rather
+than in memory. A tab that dies before draining (crash, OS kill) leaves its
+key behind; the next page load replays any key older than 60 s with the
+original timestamps. Every payload carries a uuid (`TrackPayload.id`,
+PostHog's event `uuid`), so a rare double delivery can be de-duplicated
+rather than a loss accepted. Bounds: 200 pending per tab (oldest dropped,
+counted in `__aeva_analytics`), 500 ops in the per-provider pre-init queue.
 
 Every public method is wrapped: analytics never throws into the app, never
 blocks rendering (PostHog is a dynamic import), and is a no-op during SSR /
 prerender. A provider that throws in `init` is disabled; per-call throws are
-swallowed (and logged in debug). posthog-js flushes its batch with
-`sendBeacon` on `pagehide`.
+swallowed (and logged in debug). If every provider is disabled (e.g. an ad
+blocker), the outbox drops its events instead of growing.
+
+Rules for contributors: never call a provider or do network work from
+`track()`'s path; never bypass the outbox; call `analytics.flush()` before a
+deliberate navigation away (redirect login, `window.location` changes).
 
 ## Adding an event
 

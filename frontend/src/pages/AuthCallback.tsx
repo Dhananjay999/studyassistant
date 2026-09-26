@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { noteLandingLogin } from "@/lib/analytics/landing";
 import { AppLoader } from "@/components/common/AppLoader";
 import { Seo } from "@/components/common/Seo";
 import { AUTH_MESSAGES } from "@/lib/loadingMessages";
@@ -34,6 +35,7 @@ export default function AuthCallback() {
           window.location.origin,
         );
       } else {
+        noteLandingLogin("failed");
         analytics.track(AnalyticsEvent.LOGIN_FAILED, { reason: "missing_token" });
         analytics.flush();
       }

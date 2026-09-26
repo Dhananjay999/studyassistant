@@ -9,6 +9,9 @@ export const STORAGE_KEYS = {
   debug: "aeva_analytics_debug",
 } as const;
 
+/** One key per page load: `aeva_analytics_outbox:<id>` (see outbox.ts). */
+export const OUTBOX_PREFIX = "aeva_analytics_outbox:";
+
 export function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof document !== "undefined";
 }
@@ -56,6 +59,21 @@ export function writeCookie(name: string, value: string, days: number): void {
       `; Path=/; SameSite=Lax${secure}`;
   } catch {
     /* cookies blocked — localStorage still holds the value */
+  }
+}
+
+/** All localStorage keys starting with `prefix` (empty when unavailable). */
+export function readKeys(prefix: string): string[] {
+  if (!isBrowser()) return [];
+  try {
+    const out: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith(prefix)) out.push(k);
+    }
+    return out;
+  } catch {
+    return [];
   }
 }
 

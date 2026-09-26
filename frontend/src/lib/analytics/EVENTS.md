@@ -35,6 +35,19 @@ label it explicitly. `data-analytics-ignore` skips an element entirely.
 
 ## Auth / landing
 
+**Landing engagement** — `src/hooks/useLandingAnalytics.ts` (mounted on `LandingPage` and every `PublicPage`), fed by `src/lib/analytics/landing.ts`
+
+| Event | When | Properties |
+|---|---|---|
+| `LANDING_VIEWED` | Public page entered | `page` (landing / features / about / privacy / terms), `auth_error?`, `visit_number` (1 = first ever visit on this browser) |
+| `LANDING_SCROLL_DEPTH` | Once each at 25 / 50 / 75 / 100 % of the page seen | `page`, `depth_pct`, `time_since_entry_s` |
+| `LANDING_SECTION_VIEWED` | A `[data-landing-section]` (hero, features, revision, how_it_works, what_is, faq, cta_band, footer, page_body) scrolls ≥ 35 % into view, once each | `page`, `section`, `order`, `time_since_entry_s` |
+| `LANDING_CTA_VIEWED` | A Google sign-in button (`[data-cta-location]`) becomes ≥ 60 % visible, once per location (impression, for CTR) | `page`, `location`, `time_since_entry_s` |
+| `LANDING_EXIT_INTENT` | Mouse leaves through the top edge (desktop), once | `page`, `time_since_entry_s`, `scroll_pct` |
+| `LANDING_EXIT` | Page left (route change) or hidden (tab switch / close). The "why didn't they sign in" summary | `page`, `exit_type`, `exit_index`, `time_on_page_s`, `active_time_s`, `max_scroll_pct`, `scroll_bucket`, `sections_viewed`, `sections_viewed_count`, `deepest_section`, `cta_viewed_count`, `cta_clicked_count`, `faq_opened_count`, `demo_interactions`, `exit_intent`, `login_outcome: none\|started\|abandoned\|failed\|succeeded`, `converted` |
+
+`LANDING_CTA_CLICKED` now also carries `time_since_entry_s` and `scroll_pct`; `LOGIN_ABANDONED` carries `elapsed_ms` (how long the popup was open); `LANDING_DEMO_INTERACTED` fires for chip reveals, replay / dot switches and nudges. PostHog dead-click and rage-click autocapture are on, so frustrated taps on the landing page show up as `$dead_click` / `$rageclick`.
+
 | Event | When | Properties | Hook |
 |---|---|---|---|
 | ★ `LANDING_CTA_CLICKED` | Google CTA pressed | `location: hero\|navbar\|navbar_mobile\|cta_band\|features\|about\|app_welcome\|share` | `landing/GoogleButton.tsx`, `pages/AppWelcomePage.tsx` |

@@ -4,7 +4,11 @@ import { GoogleButton } from "@/components/landing/GoogleButton";
 
 export function CtaBand() {
   return (
-    <section aria-labelledby="cta-heading" className="relative py-20">
+    <section
+      data-landing-section="cta_band"
+      aria-labelledby="cta-heading"
+      className="relative py-20"
+    >
       <div className="container">
         <Reveal>
           <div className="glass-strong relative overflow-hidden rounded-3xl px-6 py-16 text-center shadow-glow-lg">

@@ -14,5 +14,9 @@ interface Window {
     readonly anonymousId: string | null;
     readonly deviceId: string | null;
     readonly ready: boolean;
+    /** Events waiting in the outbox for the next idle drain. */
+    readonly pending: number;
+    /** Send everything pending now (sendBeacon). */
+    flush: () => void;
   };
 }

@@ -88,6 +88,7 @@ export function Features() {
   return (
     <section
       id="features"
+      data-landing-section="features"
       aria-labelledby="features-heading"
       className="relative py-24"
     >

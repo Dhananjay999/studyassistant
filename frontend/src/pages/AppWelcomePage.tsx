@@ -2,6 +2,11 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight, Loader2, Sparkles } from "lucide-react";
 import { GoogleIcon } from "@/components/icons/BrandIcons";
+import {
+  landingElapsedS,
+  landingScrollPct,
+  noteLandingCtaClick,
+} from "@/lib/analytics/landing";
 import { Button } from "@/components/ui/button";
 import { Seo } from "@/components/common/Seo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -152,8 +157,11 @@ function Onboarding({ onDone }: { onDone: () => void }) {
 function Welcome() {
   const { signInWithGoogle, signingIn } = useAuth();
   const startLogin = () => {
+    noteLandingCtaClick();
     analytics.track(AnalyticsEvent.LANDING_CTA_CLICKED, {
       location: "app_welcome",
+      time_since_entry_s: landingElapsedS(),
+      scroll_pct: landingScrollPct(),
     });
     signInWithGoogle();
   };

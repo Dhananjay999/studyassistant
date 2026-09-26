@@ -32,7 +32,12 @@ function entrance(delay: number) {
 
 export function Hero() {
   return (
-    <section id="top" aria-labelledby="hero-heading" className="relative overflow-hidden pt-32 md:pt-40">
+    <section
+      id="top"
+      data-landing-section="hero"
+      aria-labelledby="hero-heading"
+      className="relative overflow-hidden pt-32 md:pt-40"
+    >
       <AuroraBackground />
       <div className="container">
         <div className="mx-auto max-w-3xl text-center">

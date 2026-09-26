@@ -44,6 +44,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { noteLandingDemo } from "@/lib/analytics/landing";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/common/GlassCard";
@@ -851,7 +852,27 @@ export function HeroDemo() {
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
   };
 
+  // User-driven demo switches (replay button, dots); auto-rotation is not
+  // an interaction and stays untracked.
+  const userSwitch = (i: number) => {
+    noteLandingDemo();
+    analytics.track(AnalyticsEvent.LANDING_DEMO_INTERACTED, {
+      action: "switch",
+      demo_index: i,
+    });
+    switchTo(i);
+  };
+  const nudge = () => {
+    noteLandingDemo();
+    analytics.track(AnalyticsEvent.LANDING_DEMO_INTERACTED, {
+      action: "nudge",
+      demo_index: demoIdx,
+    });
+    setNudged(true);
+  };
+
   const revealFromChip = (id: "quiz" | "flashcards") => {
+    noteLandingDemo();
     analytics.track(AnalyticsEvent.LANDING_DEMO_INTERACTED, {
       action: id === "quiz" ? "reveal_quiz" : "reveal_flashcards",
       demo_index: demoIdx,
@@ -905,7 +926,7 @@ export function HeroDemo() {
           </AnimatePresence>
           <button
             type="button"
-            onClick={() => switchTo(demoIdx)}
+            onClick={() => userSwitch(demoIdx)}
             aria-label="Replay this demo"
             title="Replay"
             className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -991,7 +1012,7 @@ export function HeroDemo() {
                         >
                           <DemoSources
                             sources={demo.sources}
-                            onNudge={() => setNudged(true)}
+                            onNudge={nudge}
                           />
                         </motion.div>
                       )}
@@ -1008,7 +1029,7 @@ export function HeroDemo() {
                           demo={demo}
                           loadingAction={loadingAction}
                           onHighlightAction={revealFromChip}
-                          onNudge={() => setNudged(true)}
+                          onNudge={nudge}
                         />
                       )}
 
@@ -1048,7 +1069,7 @@ export function HeroDemo() {
             type="button"
             aria-label={`Show demo: ${d.category}`}
             title={d.category}
-            onClick={() => i !== demoIdx && switchTo(i)}
+            onClick={() => i !== demoIdx && userSwitch(i)}
             className={cn(
               "h-1.5 rounded-full transition-all",
               i === demoIdx

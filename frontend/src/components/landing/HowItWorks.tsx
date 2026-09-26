@@ -43,7 +43,12 @@ const STEPS = [
 
 export function HowItWorks() {
   return (
-    <section id="how" aria-labelledby="how-heading" className="relative py-24">
+    <section
+      id="how"
+      data-landing-section="how_it_works"
+      aria-labelledby="how-heading"
+      className="relative py-24"
+    >
       <div className="container">
         <Reveal className="mx-auto max-w-2xl text-center">
           <h2

@@ -1,6 +1,8 @@
-// Pre-init buffer. Events tracked before a provider is ready are held here
-// (enriched, with their original timestamp) and replayed in order once the
-// provider loads. Bounded so a provider that never loads can't grow memory.
+// Pre-init buffer. Ops that reach a provider before it is ready (identify /
+// reset, or track batches released by the outbox) are held here in order and
+// replayed once the provider loads. Bounded so a provider that never loads
+// can't grow memory. Track events are normally held back in the persistent
+// outbox until a provider is ready, so this mostly carries identify/reset.
 
 import type { TrackPayload, UserTraits } from "./types";
 
@@ -9,7 +11,7 @@ export type QueuedOp =
   | { kind: "identify"; userId: string; traits: UserTraits }
   | { kind: "reset"; newAnonymousId: string };
 
-const MAX_QUEUE = 100;
+const MAX_QUEUE = 500;
 
 export class OpQueue {
   private items: QueuedOp[] = [];

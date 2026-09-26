@@ -8,7 +8,12 @@
 // everything else is captured under its own UPPER_SNAKE_CASE name.
 
 import type { PostHog } from "posthog-js";
-import type { AnalyticsConfig, TrackPayload, UserTraits } from "../types";
+import type {
+  AnalyticsConfig,
+  DeliveryHint,
+  TrackPayload,
+  UserTraits,
+} from "../types";
 import type { AnalyticsProvider, ProviderInitContext } from "./provider";
 import { flatten } from "../flatten";
 import { AnalyticsEvent } from "../events";
@@ -32,6 +37,9 @@ export class PostHogProvider implements AnalyticsProvider {
       // Explicit `data-analytics-id` clicks only; rage clicks stay useful.
       autocapture: false,
       rageclick: true,
+      // Clicks that did nothing — a strong "why isn't this working?" signal
+      // on the landing page.
+      capture_dead_clicks: true,
       capture_exceptions: true,
       persistence: "localStorage+cookie",
       // Anonymous visitors get person profiles so pre-login journeys can be
@@ -77,7 +85,7 @@ export class PostHogProvider implements AnalyticsProvider {
     });
   }
 
-  track(payload: TrackPayload): void {
+  track(payload: TrackPayload, hint?: DeliveryHint): void {
     if (!this.ph) return;
     const flat = flatten(payload);
     const sessionId = this.ph.get_session_id?.();
@@ -89,7 +97,18 @@ export class PostHogProvider implements AnalyticsProvider {
       $current_url: payload.page.url,
       $pathname: payload.page.path,
     };
-    const options = { timestamp: new Date(payload.timestamp) };
+    // Batches normally ride posthog-js's own request queue (flushed every few
+    // seconds with fetch keepalive). An urgent batch — tab hidden, unloading,
+    // logout — bypasses it and goes out immediately over sendBeacon, which
+    // the browser completes even after the page is gone. The uuid lets
+    // PostHog de-duplicate the rare event replayed from a dead tab's outbox.
+    const options = {
+      timestamp: new Date(payload.timestamp),
+      uuid: payload.id,
+      ...(hint?.urgent
+        ? { send_instantly: true, transport: "sendBeacon" as const }
+        : {}),
+    };
 
     switch (payload.event) {
       case AnalyticsEvent.PAGE_ENTRY:
@@ -107,6 +126,7 @@ export class PostHogProvider implements AnalyticsProvider {
     }
   }
 
-  // posthog-js already flushes its batch via sendBeacon on pagehide.
+  // Nothing to do: urgent batches are already sent per event over sendBeacon
+  // (see track), and posthog-js drains its own queue on pagehide.
   flush(): void {}
 }

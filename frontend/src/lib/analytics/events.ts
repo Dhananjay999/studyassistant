@@ -22,6 +22,12 @@ export enum AnalyticsEvent {
   LANDING_CTA_CLICKED = "LANDING_CTA_CLICKED",
   LANDING_DEMO_INTERACTED = "LANDING_DEMO_INTERACTED",
   LANDING_FAQ_OPENED = "LANDING_FAQ_OPENED",
+  LANDING_VIEWED = "LANDING_VIEWED",
+  LANDING_SCROLL_DEPTH = "LANDING_SCROLL_DEPTH",
+  LANDING_SECTION_VIEWED = "LANDING_SECTION_VIEWED",
+  LANDING_CTA_VIEWED = "LANDING_CTA_VIEWED",
+  LANDING_EXIT_INTENT = "LANDING_EXIT_INTENT",
+  LANDING_EXIT = "LANDING_EXIT",
   LOGIN_STARTED = "LOGIN_STARTED",
   LOGIN_ABANDONED = "LOGIN_ABANDONED",
   LOGIN_FAILED = "LOGIN_FAILED",
@@ -299,6 +305,32 @@ export interface PopupClosedProps {
 
 /* --------------------------- feature event props -------------------------- */
 
+/**
+ * One summary per public-page visit (sent when the page is left or hidden).
+ * Answers "how far did the visitor get and did they try to sign in?".
+ */
+export interface LandingExitProps {
+  page: string;
+  exit_type: "navigation" | "hidden";
+  /** 1 for the first summary; 2+ if the visitor came back after a hidden exit. */
+  exit_index: number;
+  time_on_page_s: number;
+  /** Seconds the tab was visible with input in the last 10 s. */
+  active_time_s: number;
+  max_scroll_pct: number;
+  scroll_bucket: 0 | 25 | 50 | 75 | 100;
+  sections_viewed: string[];
+  sections_viewed_count: number;
+  deepest_section: string;
+  cta_viewed_count: number;
+  cta_clicked_count: number;
+  faq_opened_count: number;
+  demo_interactions: number;
+  exit_intent: boolean;
+  login_outcome: "none" | "started" | "abandoned" | "failed" | "succeeded";
+  converted: boolean;
+}
+
 export interface ChatMessageSentProps {
   chat_session_id: string | null;
   is_new_session: boolean;
@@ -384,14 +416,52 @@ export interface EventPropsMap {
   [AnalyticsEvent.PAGE_ENTRY]: PageEntryProps;
   [AnalyticsEvent.PAGE_EXIT]: PageExitProps;
 
-  [AnalyticsEvent.LANDING_CTA_CLICKED]: { location: CtaLocation };
+  [AnalyticsEvent.LANDING_CTA_CLICKED]: {
+    location: CtaLocation;
+    /** Seconds since the public page was entered (0 outside public pages). */
+    time_since_entry_s: number;
+    /** Deepest scroll reach at the moment of the click. */
+    scroll_pct: number;
+  };
+  [AnalyticsEvent.LANDING_VIEWED]: {
+    page: string;
+    auth_error?: string;
+    /** Analytics session number on this browser (1 = first ever visit). */
+    visit_number: number;
+  };
+  [AnalyticsEvent.LANDING_SCROLL_DEPTH]: {
+    page: string;
+    depth_pct: 25 | 50 | 75 | 100;
+    time_since_entry_s: number;
+  };
+  [AnalyticsEvent.LANDING_SECTION_VIEWED]: {
+    page: string;
+    section: string;
+    /** 1 = first section reached in this visit. */
+    order: number;
+    time_since_entry_s: number;
+  };
+  [AnalyticsEvent.LANDING_CTA_VIEWED]: {
+    page: string;
+    location: string;
+    time_since_entry_s: number;
+  };
+  [AnalyticsEvent.LANDING_EXIT_INTENT]: {
+    page: string;
+    time_since_entry_s: number;
+    scroll_pct: number;
+  };
+  [AnalyticsEvent.LANDING_EXIT]: LandingExitProps;
   [AnalyticsEvent.LANDING_DEMO_INTERACTED]: {
     action: "switch" | "reveal_quiz" | "reveal_flashcards" | "nudge";
     demo_index?: number;
   };
   [AnalyticsEvent.LANDING_FAQ_OPENED]: { faq_index: number };
   [AnalyticsEvent.LOGIN_STARTED]: { method: LoginMethod };
-  [AnalyticsEvent.LOGIN_ABANDONED]: Empty;
+  [AnalyticsEvent.LOGIN_ABANDONED]: {
+    /** How long the sign-in popup stayed open before being closed. */
+    elapsed_ms: number;
+  };
   [AnalyticsEvent.LOGIN_FAILED]: { reason: string };
   [AnalyticsEvent.LOGIN_SUCCEEDED]: { method?: LoginMethod; is_new_user: boolean };
   [AnalyticsEvent.LOGOUT_COMPLETED]: { source: string };

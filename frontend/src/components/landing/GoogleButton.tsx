@@ -1,5 +1,10 @@
 import { Loader2 } from "lucide-react";
 import { GoogleIcon } from "@/components/icons/BrandIcons";
+import {
+  landingElapsedS,
+  landingScrollPct,
+  noteLandingCtaClick,
+} from "@/lib/analytics/landing";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { analytics, AnalyticsEvent, type CtaLocation } from "@/lib/analytics";
@@ -17,12 +22,18 @@ export function GoogleButton({
 }) {
   const { signInWithGoogle, signingIn } = useAuth();
   const onClick = () => {
-    analytics.track(AnalyticsEvent.LANDING_CTA_CLICKED, { location });
+    noteLandingCtaClick();
+    analytics.track(AnalyticsEvent.LANDING_CTA_CLICKED, {
+      location,
+      time_since_entry_s: landingElapsedS(),
+      scroll_pct: landingScrollPct(),
+    });
     signInWithGoogle();
   };
   return (
     <button
       type="button"
+      data-cta-location={location}
       onClick={onClick}
       disabled={signingIn}
       className={cn(

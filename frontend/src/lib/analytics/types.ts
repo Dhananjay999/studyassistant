@@ -104,8 +104,18 @@ export interface AppContext {
   is_app_mode: boolean;
 }
 
+/**
+ * How a batch should be delivered. `urgent` means the page may be going away
+ * (hidden, unloading, logging out): send now, with sendBeacon, no batching.
+ */
+export interface DeliveryHint {
+  urgent: boolean;
+}
+
 /** The fully enriched event handed to every provider. */
 export interface TrackPayload {
+  /** UUID minted at track time; survives replay so providers can de-duplicate. */
+  id: string;
   event: string;
   timestamp: string;
   props: Props;

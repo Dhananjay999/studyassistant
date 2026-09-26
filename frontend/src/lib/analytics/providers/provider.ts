@@ -2,7 +2,12 @@
 // implementing this and registering it in providers/index.ts — application
 // code never changes.
 
-import type { AnalyticsConfig, TrackPayload, UserTraits } from "../types";
+import type {
+  AnalyticsConfig,
+  DeliveryHint,
+  TrackPayload,
+  UserTraits,
+} from "../types";
 
 export type ProviderName = "posthog" | "ga" | "custom";
 
@@ -20,7 +25,8 @@ export interface AnalyticsProvider {
   init(config: AnalyticsConfig, ctx: ProviderInitContext): void | Promise<void>;
   identify(userId: string, traits: UserTraits): void;
   reset(newAnonymousId: string): void;
-  track(payload: TrackPayload): void;
+  /** `hint.urgent`: the page may be going away — send now via sendBeacon. */
+  track(payload: TrackPayload, hint?: DeliveryHint): void;
   flush?(): void;
   isReady(): boolean;
 }

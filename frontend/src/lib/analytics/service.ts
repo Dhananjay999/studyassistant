@@ -3,16 +3,21 @@
 //   track(event, props)
 //     → validate name → sanitize props → ensure session (emits lifecycle)
 //     → enrich (identity, session, page, device, campaign, app) → debug log
+//     → outbox (outbox.ts): persisted, batched, drained in an idle slot —
+//       or immediately over sendBeacon when the page is hidden / unloading
 //     → per-provider: deliver, or queue until that provider is ready.
 //
 // Every public method is wrapped so analytics can never throw into the app,
 // and every provider call is isolated so one failing SDK can't affect others.
+// The user never waits on analytics: track() only enriches and buffers; the
+// provider work happens later, off the interaction.
 
 import type {
   AnalyticsConfig,
   AnalyticsUser,
   AppContext,
   CampaignContext,
+  DeliveryHint,
   Props,
   TrackPayload,
   UserTraits,
@@ -22,6 +27,7 @@ import type { AnalyticsProvider } from "./providers/provider";
 import { buildProviders } from "./providers";
 import { resolveConfig } from "./config";
 import { OpQueue, type QueuedOp } from "./queue";
+import { DEAD_TAB_AFTER_MS, Outbox } from "./outbox";
 import { IdentityManager } from "./identity";
 import { SessionManager, type SessionEvent, type StoredSession } from "./session";
 import { captureAttribution } from "./campaign";
@@ -33,7 +39,7 @@ import {
 } from "./context";
 import { EVENT_NAME_PATTERN, sanitizeProps } from "./sanitize";
 import { installClickTracking } from "./clicks";
-import { STORAGE_KEYS, isBrowser, write } from "./storage";
+import { STORAGE_KEYS, isBrowser, randomId, write } from "./storage";
 import { logIdentify, logInfo, logTrack, logWarn } from "./debug";
 import { isAppMode } from "@/lib/appMode";
 
@@ -50,6 +56,7 @@ export class AnalyticsService {
   private slots: ProviderSlot[] = [];
   private readonly identity = new IdentityManager();
   private session: SessionManager | null = null;
+  private outbox: Outbox | null = null;
   private initialized = false;
   private debugOn = false;
 
@@ -89,12 +96,23 @@ export class AnalyticsService {
     this.safe("reset", () => this.doReset());
   }
 
+  /**
+   * Send everything pending right now, over sendBeacon. Call it before the
+   * page goes away on purpose (redirect login, logout, closing a popup);
+   * hidden / pagehide are handled automatically.
+   */
   flush(): void {
     this.safe("flush", () => {
+      this.outbox?.drain(true);
       for (const s of this.slots) {
         if (!s.disabled && s.provider.isReady()) this.call(s, () => s.provider.flush?.());
       }
     });
+  }
+
+  /** Events buffered for the next idle drain. */
+  get pending(): number {
+    return this.outbox?.size ?? 0;
   }
 
   get debug(): boolean {
@@ -164,6 +182,9 @@ export class AnalyticsService {
       return;
     }
 
+    this.outbox = new Outbox((batch, hint) => this.deliverBatch(batch, hint));
+    this.outbox.install();
+
     for (const provider of buildProviders(config)) {
       const slot: ProviderSlot = { provider, pending: new OpQueue(), disabled: false };
       this.slots.push(slot);
@@ -179,12 +200,36 @@ export class AnalyticsService {
         result.catch((err) => this.disable(slot, err));
       }
     }
+
+    // Replay what a previous tab left undelivered — now, and once more after
+    // the dead-tab grace period for a tab that died just before this load.
+    this.recoverOutbox();
+    window.setTimeout(() => this.safe("recover", () => this.recoverOutbox()), DEAD_TAB_AFTER_MS + 5_000);
+  }
+
+  private recoverOutbox(): void {
+    const n = this.outbox?.recover() ?? 0;
+    if (n && this.debugOn) logInfo(`recovered ${n} undelivered event(s) from a previous tab`);
+  }
+
+  /**
+   * Outbox drain target. Refuses (returns false) while every live provider is
+   * still loading so the batch stays persisted instead of sitting in memory;
+   * once a provider is ready, `drain(slot)` releases it.
+   */
+  private deliverBatch(batch: TrackPayload[], hint: DeliveryHint): boolean {
+    const live = this.slots.filter((s) => !s.disabled);
+    if (live.length && !live.some((s) => s.provider.isReady())) return false;
+    for (const payload of batch) this.dispatch({ kind: "track", payload }, hint);
+    return true;
   }
 
   private disable(slot: ProviderSlot, err: unknown): void {
     slot.disabled = true;
     slot.pending.drain();
     if (this.debugOn) logWarn(`provider ${slot.provider.name} disabled`, err);
+    // Nothing left to wait for: let the outbox drop what it was holding.
+    if (this.slots.every((s) => s.disabled)) this.outbox?.drain(false);
   }
 
   private call(slot: ProviderSlot, fn: () => void): void {
@@ -196,20 +241,20 @@ export class AnalyticsService {
   }
 
   /** Deliver an op to every provider, queueing for those not ready yet. */
-  private dispatch(op: QueuedOp): void {
+  private dispatch(op: QueuedOp, hint?: DeliveryHint): void {
     for (const slot of this.slots) {
       if (slot.disabled) continue;
       if (!slot.provider.isReady()) {
         slot.pending.push(op);
         continue;
       }
-      this.apply(slot, op);
+      this.apply(slot, op, hint);
     }
   }
 
-  private apply(slot: ProviderSlot, op: QueuedOp): void {
+  private apply(slot: ProviderSlot, op: QueuedOp, hint?: DeliveryHint): void {
     this.call(slot, () => {
-      if (op.kind === "track") slot.provider.track(op.payload);
+      if (op.kind === "track") slot.provider.track(op.payload, hint);
       else if (op.kind === "identify") slot.provider.identify(op.userId, op.traits);
       else slot.provider.reset(op.newAnonymousId);
     });
@@ -225,6 +270,8 @@ export class AnalyticsService {
       );
     }
     for (const op of ops) this.apply(slot, op);
+    // A provider can take events now: release anything the outbox held back.
+    this.outbox?.drain(false);
   }
 
   private doTrack(event: string, rawProps: Props): void {
@@ -287,6 +334,7 @@ export class AnalyticsService {
     const s = sessionOverride ?? this.session!.get();
     const userId = this.identity.getUserId();
     return {
+      id: randomId(),
       event,
       timestamp: timestamp ?? new Date().toISOString(),
       props,
@@ -307,8 +355,9 @@ export class AnalyticsService {
 
   private emit(payload: TrackPayload): void {
     if (this.debugOn) logTrack(payload);
-    if (!this.config?.enabled) return;
-    this.dispatch({ kind: "track", payload });
+    if (!this.config?.enabled || !this.outbox) return;
+    // Buffer only — delivery happens in an idle slot (or at once when hidden).
+    this.outbox.push(payload);
   }
 
   private doIdentify(user: AnalyticsUser): void {
@@ -323,6 +372,9 @@ export class AnalyticsService {
     if (!userChanged && !traitsChanged) return;
     if (this.debugOn) logIdentify(user.id, traits);
     if (!this.config?.enabled) return;
+    // Everything tracked so far belongs to the anonymous trail: release it
+    // ahead of the identify so provider-side ordering matches ours.
+    this.outbox?.drain(false);
     this.dispatch({ kind: "identify", userId: user.id, traits });
   }
 
@@ -332,6 +384,9 @@ export class AnalyticsService {
     const events = this.session!.rotate("logout");
     const ended = events.find((e) => e.kind === "ended");
     if (ended) this.emitSessionEvent(ended);
+    // Send the user's last events (incl. SESSION_ENDED) now, before the
+    // identity rotates — logout is followed by a full page reload.
+    this.outbox?.drain(true);
     // …then forget the user and start the new anonymous session.
     const newAnonymousId = this.identity.reset();
     if (this.debugOn) logInfo("reset → new anonymous id", newAnonymousId);
@@ -353,6 +408,8 @@ export class AnalyticsService {
         anonymousId: { get: () => this.getAnonymousId(), enumerable: true },
         deviceId: { get: () => this.getDeviceId(), enumerable: true },
         ready: { get: () => this.isReady(), enumerable: true },
+        pending: { get: () => this.pending, enumerable: true },
+        flush: { value: () => this.flush(), enumerable: true },
       });
       (window as Window & { __aeva_analytics?: unknown }).__aeva_analytics =
         handle;

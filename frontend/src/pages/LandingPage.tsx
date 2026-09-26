@@ -1,4 +1,5 @@
 import { Seo } from "@/components/common/Seo";
+import { useLandingAnalytics } from "@/hooks/useLandingAnalytics";
 import { SkipToContent } from "@/components/common/SkipToContent";
 import { Navbar } from "@/components/landing/Navbar";
 import { Hero } from "@/components/landing/Hero";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/seo";
 
 export default function LandingPage() {
+  useLandingAnalytics("landing");
   return (
     <>
       <Seo

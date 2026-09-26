@@ -54,6 +54,7 @@ export function WhatIs() {
   return (
     <section
       id="what-is"
+      data-landing-section="what_is"
       aria-labelledby="what-is-heading"
       className="relative py-24"
     >
