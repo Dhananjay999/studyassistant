@@ -14,6 +14,12 @@ import { Drawer as DrawerPrimitive } from "vaul";
 import { X } from "lucide-react";
 
 import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  PopupAnalyticsContext,
+  usePopupAnalytics,
+  usePopupContentProps,
+  usePopupTitle,
+} from "@/hooks/usePopupAnalytics";
 import { cn } from "@/lib/utils";
 
 const ResponsiveModalContext = React.createContext<{ isMobile: boolean }>({
@@ -31,6 +37,8 @@ interface ResponsiveModalProps {
   snapPoints?: (number | string)[];
   /** When false, the sheet can't be dragged/clicked away (use while busy). */
   dismissible?: boolean;
+  /** Analytics name for POPUP_OPENED / POPUP_CLOSED (defaults to the title). */
+  analyticsName?: string;
 }
 
 function ResponsiveModal({
@@ -39,27 +47,38 @@ function ResponsiveModal({
   children,
   snapPoints,
   dismissible = true,
+  analyticsName,
 }: ResponsiveModalProps) {
   const isMobile = useIsMobile();
+  const { rootProps, handle } = usePopupAnalytics("modal", {
+    open,
+    onOpenChange,
+    analyticsName,
+  });
 
   return (
-    <ResponsiveModalContext.Provider value={{ isMobile }}>
-      {isMobile ? (
-        <DrawerPrimitive.Root
-          open={open}
-          onOpenChange={onOpenChange}
-          dismissible={dismissible}
-          shouldScaleBackground
-          snapPoints={snapPoints}
-        >
-          {children}
-        </DrawerPrimitive.Root>
-      ) : (
-        <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-          {children}
-        </DialogPrimitive.Root>
-      )}
-    </ResponsiveModalContext.Provider>
+    <PopupAnalyticsContext.Provider value={handle}>
+      <ResponsiveModalContext.Provider value={{ isMobile }}>
+        {isMobile ? (
+          <DrawerPrimitive.Root
+            open={rootProps.open}
+            onOpenChange={rootProps.onOpenChange}
+            dismissible={dismissible}
+            shouldScaleBackground
+            snapPoints={snapPoints}
+          >
+            {children}
+          </DrawerPrimitive.Root>
+        ) : (
+          <DialogPrimitive.Root
+            open={rootProps.open}
+            onOpenChange={rootProps.onOpenChange}
+          >
+            {children}
+          </DialogPrimitive.Root>
+        )}
+      </ResponsiveModalContext.Provider>
+    </PopupAnalyticsContext.Provider>
   );
 }
 ResponsiveModal.displayName = "ResponsiveModal";
@@ -90,6 +109,7 @@ const ResponsiveModalContent = React.forwardRef<
   ResponsiveModalContentProps
 >(({ className, children, showClose = true, ...props }, ref) => {
   const { isMobile } = useResponsiveModalContext();
+  const popupProps = usePopupContentProps(props);
 
   if (isMobile) {
     return (
@@ -101,7 +121,7 @@ const ResponsiveModalContent = React.forwardRef<
             "fixed inset-x-0 bottom-0 z-50 mt-24 flex max-h-[94dvh] flex-col gap-3 rounded-t-2xl border border-border/50 bg-background px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] outline-none",
             className,
           )}
-          {...props}
+          {...popupProps}
         >
           <div
             aria-hidden
@@ -122,7 +142,7 @@ const ResponsiveModalContent = React.forwardRef<
           "fixed left-[50%] top-[50%] z-50 flex max-h-[90vh] w-full max-w-lg translate-x-[-50%] translate-y-[-50%] flex-col gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
           className,
         )}
-        {...props}
+        {...popupProps}
       >
         {children}
         {showClose && (
@@ -179,10 +199,11 @@ const ResponsiveModalTitle = React.forwardRef<
   React.HTMLAttributes<HTMLHeadingElement> & { asChild?: boolean }
 >(({ className, ...props }, ref) => {
   const { isMobile } = useResponsiveModalContext();
+  const setRef = usePopupTitle(ref);
   const Title = isMobile ? DrawerPrimitive.Title : DialogPrimitive.Title;
   return (
     <Title
-      ref={ref}
+      ref={setRef}
       className={cn(
         "text-lg font-semibold leading-none tracking-tight",
         className,

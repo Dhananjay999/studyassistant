@@ -18,6 +18,8 @@ export enum AnalyticsEvent {
   PAGE_ENTRY = "PAGE_ENTRY",
   PAGE_EXIT = "PAGE_EXIT",
   CLICK = "CLICK",
+  POPUP_OPENED = "POPUP_OPENED",
+  POPUP_CLOSED = "POPUP_CLOSED",
 
   // ---- Auth / landing ----------------------------------------------------
   LANDING_CTA_CLICKED = "LANDING_CTA_CLICKED",
@@ -216,12 +218,44 @@ export interface PageExitProps {
   time_on_page_s: number;
   exit_type: "navigation" | "hidden";
 }
+/**
+ * Generic click on any interactive element (button, link, menu item, tab,
+ * switch, checkbox…) — emitted by the delegated listener in clicks.ts.
+ * `element_id` is the explicit `data-analytics-id` when present, otherwise a
+ * slug of the label. Labels inside `[data-analytics-private]` containers are
+ * masked (`label_source: "private"`) so user content never leaks.
+ */
 export interface ClickProps {
   element_id: string;
   element_name?: string;
   element_type: string;
   location?: string;
   href?: string;
+  /** The element carried an explicit `data-analytics-id`. */
+  explicit: boolean;
+  label_source: "attr" | "aria" | "title" | "text" | "private" | "none";
+  /** Name of the dialog / sheet / menu the element lives in, if any. */
+  popup?: string;
+}
+
+export type PopupKind =
+  | "dialog"
+  | "alert"
+  | "sheet"
+  | "drawer"
+  | "popover"
+  | "dropdown"
+  | "modal";
+export type PopupCloseVia = "escape" | "outside" | "dismiss" | "unmount";
+export interface PopupOpenedProps {
+  popup: string;
+  kind: PopupKind;
+}
+export interface PopupClosedProps {
+  popup: string;
+  kind: PopupKind;
+  duration_ms: number;
+  via: PopupCloseVia;
 }
 
 /* --------------------------- feature event props -------------------------- */
@@ -311,6 +345,8 @@ export interface EventPropsMap {
   [AnalyticsEvent.PAGE_ENTRY]: PageEntryProps;
   [AnalyticsEvent.PAGE_EXIT]: PageExitProps;
   [AnalyticsEvent.CLICK]: ClickProps;
+  [AnalyticsEvent.POPUP_OPENED]: PopupOpenedProps;
+  [AnalyticsEvent.POPUP_CLOSED]: PopupClosedProps;
 
   [AnalyticsEvent.LANDING_CTA_CLICKED]: { location: CtaLocation };
   [AnalyticsEvent.LANDING_DEMO_INTERACTED]: {
@@ -637,4 +673,6 @@ export const CORE_EVENTS: ReadonlySet<string> = new Set([
   AnalyticsEvent.PAGE_ENTRY,
   AnalyticsEvent.PAGE_EXIT,
   AnalyticsEvent.CLICK,
+  AnalyticsEvent.POPUP_OPENED,
+  AnalyticsEvent.POPUP_CLOSED,
 ]);

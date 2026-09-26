@@ -470,7 +470,11 @@ export default function BookmarksPage() {
             ) : filtered.length === 0 ? (
               <EmptyBookmarks hasAny={bookmarks.length > 0} />
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div
+                className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+                data-analytics-private
+                data-analytics-section="bookmarks_list"
+              >
                 {filtered.map((b) => (
                   <BookmarkCard
                     key={b.id}
@@ -581,7 +585,11 @@ function BookmarkContentDialog({
   const Icon = meta?.icon ?? FileText;
 
   return (
-    <Dialog open={bookmark !== null} onOpenChange={onOpenChange}>
+    <Dialog
+      open={bookmark !== null}
+      onOpenChange={onOpenChange}
+      analyticsName="Bookmark content"
+    >
       <DialogContent className="max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0">
         {bookmark && (
           <>
@@ -716,6 +724,7 @@ function FolderRow({
       )}
     >
       <button
+      data-analytics-name="Bookmark folder"
         type="button"
         onClick={onClick}
         className="flex flex-1 items-center gap-2 truncate text-left"

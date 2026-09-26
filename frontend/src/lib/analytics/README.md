@@ -55,6 +55,25 @@ adapter + one line in the registry + its env var in `config.ts`.
 - PostHog's own `$session_id` is forwarded as `posthog_session_id` so a
   session replay can be found from any event.
 
+## Clicks and popups
+
+Every press on a button, link, menu item, tab, switch or checkbox emits a
+`CLICK` (delegated listener in `clicks.ts`, no per-button wiring). The label
+comes from `data-analytics-name`, else `aria-label`/`aria-labelledby`, else
+`title`, else the visible text. Wrap lists of user content in
+`data-analytics-private` (chat titles, file names, quiz answers…) so labels
+there are masked as `[private]`; add `data-analytics-name` to buttons inside
+such a zone that deserve a label, and `data-analytics-section` to give them a
+location. `data-analytics-ignore` opts an element out.
+
+Every shared popup primitive (`components/ui/dialog`, `alert-dialog`,
+`sheet`, `drawer`, `popover`, `dropdown-menu`, `responsive-modal`, and the
+command palette) emits `POPUP_OPENED` / `POPUP_CLOSED` from
+`hooks/usePopupAnalytics.tsx`. The name is the Root's `analyticsName` prop,
+else the Title text, else the trigger's label (popovers, menus). `via` says
+how it closed: `escape`, `outside` (overlay / outside click), `dismiss`
+(close button or code) or `unmount`.
+
 ## Page lifecycle
 
 `useAnalyticsRouteTracker` (mounted in `App.tsx`) emits `PAGE_EXIT` for the

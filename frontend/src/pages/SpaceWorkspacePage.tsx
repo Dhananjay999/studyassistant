@@ -79,6 +79,7 @@ function Row({
 }) {
   return (
     <button
+      data-analytics-name="Space item"
       type="button"
       onClick={onClick}
       disabled={!onClick}
@@ -171,7 +172,11 @@ function SpaceSearchResults({
   );
 
   return (
-    <div className="space-y-4">
+    <div
+      className="space-y-4"
+      data-analytics-private
+      data-analytics-section="space_search_results"
+    >
       {results.sessions.length > 0 && (
         <Group label="Chats">
           {results.sessions.map((s) => (
@@ -472,7 +477,11 @@ export default function SpaceWorkspacePage() {
 
           {/* Aeva's recommendations — only when there's something useful. */}
           {!searching && recommendations.length > 0 && (
-            <div className="mb-4 flex snap-x items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div
+              className="mb-4 flex snap-x items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              data-analytics-private
+              data-analytics-section="space_recommendations"
+            >
               <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground">
                 <Lightbulb className="h-3.5 w-3.5 text-brand-1" />
                 Next up

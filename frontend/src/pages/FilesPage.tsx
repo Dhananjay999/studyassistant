@@ -166,7 +166,11 @@ export default function FilesPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+            data-analytics-private
+            data-analytics-section="files_list"
+          >
             {filtered.map((m) => {
               const isImage = m.mime_type.startsWith("image/");
               const ready = isImage || isMediaReady(m);

@@ -179,6 +179,8 @@ export function MediaSidebar({
               !!activeSessionId && m.session_id === activeSessionId;
             return (
               <div
+                data-analytics-private
+                data-analytics-section="media_sidebar_files"
                 key={m.id}
                 className={cn(
                   "flex items-center gap-2 rounded-xl border p-2 transition-colors",
@@ -191,6 +193,7 @@ export function MediaSidebar({
                   checked={isSelected}
                   disabled={!ready}
                   onCheckedChange={() => onToggle(m.id)}
+                  data-analytics-name="Use file as chat context"
                   aria-label={`Use ${m.file_name}`}
                 />
                 <button
@@ -206,6 +209,7 @@ export function MediaSidebar({
                           mediaId: m.id,
                         })
                   }
+                  data-analytics-name="Preview file"
                   aria-label={`Preview ${m.file_name}`}
                   className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-muted"
                 >
@@ -323,6 +327,7 @@ export function MediaSidebar({
               <>
                 {quizzes.map((q) => (
                   <button
+                    data-analytics-name="Open quiz from sidebar"
                     key={q.quiz_id}
                     type="button"
                     onClick={() => onOpenQuiz(q.quiz_id)}
@@ -344,6 +349,7 @@ export function MediaSidebar({
                 ))}
                 {flashcardSets.map((f) => (
                   <button
+                    data-analytics-name="Open flashcard set from sidebar"
                     key={f.set_id}
                     type="button"
                     onClick={() => onOpenFlashcards(f.set_id)}

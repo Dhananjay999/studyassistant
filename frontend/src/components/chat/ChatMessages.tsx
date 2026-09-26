@@ -216,7 +216,11 @@ export function ChatMessages({
     .at(-1)?.id;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6">
+    <div
+      className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6"
+      data-analytics-private
+      data-analytics-section="chat_thread"
+    >
       {messages.map((msg, i) => {
         const prevUser = [...messages.slice(0, i)]
           .reverse()

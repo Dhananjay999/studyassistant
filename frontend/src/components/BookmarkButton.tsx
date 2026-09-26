@@ -163,7 +163,12 @@ export function BookmarkButton({
           </Button>
         )}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-2">
+      <PopoverContent
+        align="start"
+        className="w-64 p-2"
+        data-analytics-private
+        data-analytics-section="bookmark_popover"
+      >
         {saved ? (
           <div className="space-y-2">
             <p className="px-1 text-sm font-semibold">Bookmarked</p>

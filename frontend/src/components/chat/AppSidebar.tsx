@@ -265,6 +265,8 @@ export function AppSidebar({
     return (
       <div
         key={s.id}
+        data-analytics-private
+        data-analytics-section="sidebar_sessions"
         className={cn(
           "group flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors",
           activeId === s.id && onChats
@@ -274,6 +276,7 @@ export function AppSidebar({
       >
         <button
           type="button"
+          data-analytics-name="Open chat session"
           onClick={() => onSelectSession(s.id)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
@@ -299,6 +302,7 @@ export function AppSidebar({
               ? "opacity-100"
               : "opacity-0 group-hover:opacity-100",
           )}
+          data-analytics-name={pinnedRow ? "Unpin chat" : "Pin chat"}
           aria-label={pinnedRow ? "Unpin chat" : "Pin chat"}
           title={pinnedRow ? "Unpin chat" : "Pin chat"}
         >
@@ -313,6 +317,7 @@ export function AppSidebar({
           onClick={() => handleConvert(s)}
           disabled={convertingId === s.id}
           className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-brand-1 group-hover:opacity-100 disabled:opacity-100"
+          data-analytics-name="Turn into Study Space"
           aria-label="Turn into Study Space"
           title="Turn into Study Space"
         >
@@ -327,6 +332,7 @@ export function AppSidebar({
           onClick={() => handleDelete(s.id)}
           disabled={deletingId === s.id}
           className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-100"
+          data-analytics-name="Delete chat"
           aria-label="Delete chat"
         >
           {deletingId === s.id ? (
@@ -557,7 +563,11 @@ export function AppSidebar({
           className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {spaces.length > 0 && (
-            <div className="mb-2">
+            <div
+              className="mb-2"
+              data-analytics-private
+              data-analytics-section="sidebar_spaces"
+            >
               <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Study Spaces
               </p>

@@ -166,7 +166,11 @@ export function GlobalCommandPalette({
         value={query}
         onValueChange={setQuery}
       />
-      <CommandList className="max-sm:max-h-none max-sm:flex-1">
+      <CommandList
+        className="max-sm:max-h-none max-sm:flex-1"
+        data-analytics-private
+        data-analytics-section="command_palette"
+      >
         {!searching && recents.length > 0 && (
           <CommandGroup heading="Recent searches">
             {recents.map((term) => (

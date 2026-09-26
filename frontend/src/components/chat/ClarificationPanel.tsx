@@ -163,6 +163,7 @@ export function ClarificationPanel({
     <button
       key={option}
       type="button"
+      data-analytics-name="Clarification option"
       disabled={busy}
       onClick={onClick}
       className={cn(

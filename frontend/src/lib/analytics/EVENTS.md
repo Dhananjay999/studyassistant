@@ -20,10 +20,18 @@ conversion-funnel step. Types are the source of truth: `events.ts`.
 | `SESSION_ENDED` | Lazily, when the previous session is found expired, or on logout | `duration_s`, `event_count`, `exit_page?`, `reason: timeout\|logout` | `service.ts` |
 | `PAGE_ENTRY` | Route pathname changed (or first load) | `page_path`, `page_name`, `previous_path`, `entry_source: initial\|navigation\|back_forward`, `qp_session_id?`, `qp_quiz_id?`, `qp_set_id?`, `qp_file_id?`, `qp_auth_error?` | `hooks/useAnalyticsRouteTracker.ts` |
 | `PAGE_EXIT` | Leaving a route, or tab hidden / pagehide | `page_path`, `page_name`, `time_on_page_s`, `exit_type: navigation\|hidden` | same |
-| `CLICK` | Click on any element with `data-analytics-id` | `element_id`, `element_name?`, `element_type`, `location?`, `href?` | `clicks.ts` |
+| `CLICK` | Every press on an interactive element (button, link, menu item, tab, switch, checkbox, or anything with `data-analytics-id`) | `element_id` (explicit id or a slug of the label), `element_name?`, `element_type`, `location?` (`data-analytics-location` → nearest `data-analytics-section` → landmark), `href?`, `explicit`, `label_source: attr\|aria\|title\|text\|private\|none`, `popup?` | `clicks.ts` |
+| `POPUP_OPENED` | Any Dialog / AlertDialog / Sheet / Drawer / Popover / DropdownMenu / ResponsiveModal opened | `popup` (explicit `analyticsName`, else the title text, else `trigger: <label>`), `kind: dialog\|alert\|sheet\|drawer\|popover\|dropdown\|modal` | `hooks/usePopupAnalytics.tsx` via `components/ui/*` |
+| `POPUP_CLOSED` | The same popup closed | `popup`, `kind`, `duration_ms`, `via: escape\|outside\|dismiss\|unmount` | same |
 
-Click ids in use: `landing.nav.<slug>`, `landing.hero.explore_features`,
-`sidebar.nav.<route>`.
+Explicit click ids in use: `landing.nav.<slug>`, `landing.hero.explore_features`,
+`sidebar.nav.<route>`. Every other interactive element is tracked
+automatically with a label-derived id. Labels inside
+`[data-analytics-private]` containers (chat thread, sidebar sessions and
+spaces, quiz options, recommendations, bookmark/quiz/flashcard/file/note/space
+lists, command palette, bookmark popover, media sidebar rows) are masked as
+`[private]`; give a button in one of those zones a `data-analytics-name` to
+label it explicitly. `data-analytics-ignore` skips an element entirely.
 
 ## Auth / landing
 

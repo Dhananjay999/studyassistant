@@ -149,7 +149,11 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
 
       {/* Aeva's recommendations, each with its "why" */}
       {home.recommendations.length > 0 && (
-        <div className="flex w-full flex-col gap-2">
+        <div
+          className="flex w-full flex-col gap-2"
+          data-analytics-private
+          data-analytics-section="chat_recommendations"
+        >
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Recommended for you
           </p>

@@ -52,7 +52,11 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <ResponsiveModal open={open} onOpenChange={(o) => !o && onClose()}>
+    <ResponsiveModal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      analyticsName="Admin inspect"
+    >
       <ResponsiveModalContent className="max-h-[85vh] sm:max-w-2xl">
         <ResponsiveModalHeader>
           <ResponsiveModalTitle className="truncate pr-6">

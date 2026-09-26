@@ -4,8 +4,28 @@ import { X } from "lucide-react"
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import {
+  PopupAnalyticsContext,
+  usePopupAnalytics,
+  usePopupContentProps,
+  usePopupTitle,
+  usePopupTriggerProps,
+} from "@/hooks/usePopupAnalytics"
 
-const Sheet = SheetPrimitive.Root
+type SheetRootProps = React.ComponentProps<typeof SheetPrimitive.Root> & {
+  /** Analytics name for POPUP_OPENED / POPUP_CLOSED (defaults to the SheetTitle text). */
+  analyticsName?: string
+}
+
+const Sheet = (props: SheetRootProps) => {
+  const { rootProps, handle } = usePopupAnalytics("sheet", props)
+  return (
+    <PopupAnalyticsContext.Provider value={handle}>
+      <SheetPrimitive.Root {...rootProps} />
+    </PopupAnalyticsContext.Provider>
+  )
+}
+Sheet.displayName = "Sheet"
 
 const SheetTrigger = SheetPrimitive.Trigger
 
@@ -54,13 +74,15 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
+>(({ side = "right", className, children, ...props }, ref) => {
+  const popupProps = usePopupContentProps(props)
+  return (
   <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
       ref={ref}
       className={cn(sheetVariants({ side }), className)}
-      {...props}
+      {...popupProps}
     >
       {children}
       <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
@@ -69,7 +91,8 @@ const SheetContent = React.forwardRef<
       </SheetPrimitive.Close>
     </SheetPrimitive.Content>
   </SheetPortal>
-))
+)
+})
 SheetContent.displayName = SheetPrimitive.Content.displayName
 
 const SheetHeader = ({
@@ -103,13 +126,16 @@ SheetFooter.displayName = "SheetFooter"
 const SheetTitle = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Title>
->(({ className, ...props }, ref) => (
+>(({ className, ...props }, ref) => {
+  const setRef = usePopupTitle(ref)
+  return (
   <SheetPrimitive.Title
-    ref={ref}
+    ref={setRef}
     className={cn("text-lg font-semibold text-foreground", className)}
     {...props}
   />
-))
+)
+})
 SheetTitle.displayName = SheetPrimitive.Title.displayName
 
 const SheetDescription = React.forwardRef<

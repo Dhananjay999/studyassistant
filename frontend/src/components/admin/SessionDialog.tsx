@@ -258,6 +258,7 @@ export function SessionDialog({
     <ResponsiveModal
       open={sessionId !== null}
       onOpenChange={(o) => !o && onClose()}
+      analyticsName="Admin session"
     >
       <ResponsiveModalContent className="max-h-[85vh] sm:max-w-3xl">
         <ResponsiveModalHeader>

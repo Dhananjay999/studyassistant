@@ -25,7 +25,7 @@ type CommandDialogProps = DialogProps
 
 const CommandDialog = ({ children, ...props }: CommandDialogProps) => {
   return (
-    <Dialog {...props}>
+    <Dialog analyticsName="Command palette" {...props}>
       {/* On phones this fills the screen like a native search page; on desktop
           it stays a centered command dialog. */}
       <DialogContent className="overflow-hidden p-0 shadow-lg max-sm:left-0 max-sm:top-0 max-sm:h-[100dvh] max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 max-sm:pt-[env(safe-area-inset-top)] max-sm:duration-300 max-sm:data-[state=open]:[--tw-enter-translate-y:100%] max-sm:data-[state=open]:[--tw-enter-translate-x:0px] max-sm:data-[state=open]:[--tw-enter-scale:1] max-sm:data-[state=closed]:[--tw-exit-translate-y:100%] max-sm:data-[state=closed]:[--tw-exit-translate-x:0px] max-sm:data-[state=closed]:[--tw-exit-scale:1]">

@@ -262,7 +262,11 @@ export default function SpacesPage() {
           </Button>
         </GlassCard>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          data-analytics-private
+          data-analytics-section="spaces_list"
+        >
           {spaces.map((space) => (
             <SpaceCard
               key={space.id}

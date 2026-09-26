@@ -310,7 +310,7 @@ export function FlashcardViewer({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} analyticsName="Flashcard viewer">
       <DialogContent
         className={cn(
           "flex flex-col gap-0 overflow-hidden bg-gradient-to-b from-background to-muted/30 p-0",

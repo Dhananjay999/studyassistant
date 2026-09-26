@@ -312,7 +312,11 @@ export function QuizRunner({
               <MathText>{q.prompt}</MathText>
             </p>
             {q.type === "multi_select" ? (
-              <div className="space-y-2">
+              <div
+                className="space-y-2"
+                data-analytics-private
+                data-analytics-section="quiz_options"
+              >
                 {q.options.map((opt) => (
                   <label
                     key={opt}
@@ -340,6 +344,8 @@ export function QuizRunner({
                 onValueChange={(v) => setSingle(q.id, v)}
                 disabled={lockedQ === q.id}
                 className="space-y-2"
+                data-analytics-private
+                data-analytics-section="quiz_options"
               >
                 {q.options.map((opt) => {
                   const selected = answers[q.id]?.[0] === opt;

@@ -210,7 +210,7 @@ export function QuizDrawer({
   };
 
   return (
-    <Dialog open={open} onOpenChange={requestClose}>
+    <Dialog open={open} onOpenChange={requestClose} analyticsName="Quiz dashboard">
       <DialogContent
         className={cn(
           "flex flex-col gap-0 overflow-hidden p-0",

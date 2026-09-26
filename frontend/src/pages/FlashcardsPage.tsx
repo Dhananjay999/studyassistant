@@ -119,7 +119,11 @@ export default function FlashcardsPage() {
                 No flashcard sets match your search or filters.
               </p>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div
+                className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+                data-analytics-private
+                data-analytics-section="flashcards_list"
+              >
                 {filtered.map((s) => {
                   const pct = s.card_count
                     ? Math.round((s.studied / s.card_count) * 100)

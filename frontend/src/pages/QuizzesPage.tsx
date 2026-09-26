@@ -185,7 +185,11 @@ export default function QuizzesPage() {
                 No quizzes match your search or filters.
               </p>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div
+                className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+                data-analytics-private
+                data-analytics-section="quizzes_list"
+              >
                 {filtered.map((q) => (
                   <QuizGridCard
                     key={q.id}

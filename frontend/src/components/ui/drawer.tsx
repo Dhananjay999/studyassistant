@@ -2,16 +2,33 @@ import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/lib/utils"
+import {
+  PopupAnalyticsContext,
+  usePopupAnalytics,
+  usePopupContentProps,
+  usePopupTitle,
+  usePopupTriggerProps,
+} from "@/hooks/usePopupAnalytics"
+
+type DrawerRootProps = React.ComponentProps<typeof DrawerPrimitive.Root> & {
+  /** Analytics name for POPUP_OPENED / POPUP_CLOSED (defaults to the DrawerTitle text). */
+  analyticsName?: string
+}
 
 const Drawer = ({
   shouldScaleBackground = true,
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
-  <DrawerPrimitive.Root
-    shouldScaleBackground={shouldScaleBackground}
-    {...props}
-  />
-)
+}: DrawerRootProps) => {
+  const { rootProps, handle } = usePopupAnalytics("drawer", props)
+  return (
+    <PopupAnalyticsContext.Provider value={handle}>
+      <DrawerPrimitive.Root
+        shouldScaleBackground={shouldScaleBackground}
+        {...rootProps}
+      />
+    </PopupAnalyticsContext.Provider>
+  )
+}
 Drawer.displayName = "Drawer"
 
 const DrawerTrigger = DrawerPrimitive.Trigger
@@ -35,7 +52,9 @@ DrawerOverlay.displayName = DrawerPrimitive.Overlay.displayName
 const DrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => {
+  const popupProps = usePopupContentProps(props)
+  return (
   <DrawerPortal>
     <DrawerOverlay />
     <DrawerPrimitive.Content
@@ -44,13 +63,14 @@ const DrawerContent = React.forwardRef<
         "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
         className
       )}
-      {...props}
+      {...popupProps}
     >
       <div className="mx-auto mt-4 h-2 w-[100px] rounded-full bg-muted" />
       {children}
     </DrawerPrimitive.Content>
   </DrawerPortal>
-))
+)
+})
 DrawerContent.displayName = "DrawerContent"
 
 const DrawerHeader = ({
@@ -78,16 +98,19 @@ DrawerFooter.displayName = "DrawerFooter"
 const DrawerTitle = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Title>
->(({ className, ...props }, ref) => (
+>(({ className, ...props }, ref) => {
+  const setRef = usePopupTitle(ref)
+  return (
   <DrawerPrimitive.Title
-    ref={ref}
+    ref={setRef}
     className={cn(
       "text-lg font-semibold leading-none tracking-tight",
       className
     )}
     {...props}
   />
-))
+)
+})
 DrawerTitle.displayName = DrawerPrimitive.Title.displayName
 
 const DrawerDescription = React.forwardRef<

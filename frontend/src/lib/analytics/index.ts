@@ -52,6 +52,8 @@ export type {
   ChatSource,
   ChatIntent,
   ItemType,
+  PopupKind,
+  PopupCloseVia,
 } from "./events";
 export type { AnalyticsUser, TrackPayload } from "./types";
 export { routeName } from "./routeName";
