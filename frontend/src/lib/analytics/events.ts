@@ -17,9 +17,6 @@ export enum AnalyticsEvent {
   SESSION_ENDED = "SESSION_ENDED",
   PAGE_ENTRY = "PAGE_ENTRY",
   PAGE_EXIT = "PAGE_EXIT",
-  CLICK = "CLICK",
-  POPUP_OPENED = "POPUP_OPENED",
-  POPUP_CLOSED = "POPUP_CLOSED",
 
   // ---- Auth / landing ----------------------------------------------------
   LANDING_CTA_CLICKED = "LANDING_CTA_CLICKED",
@@ -218,9 +215,50 @@ export interface PageExitProps {
   time_on_page_s: number;
   exit_type: "navigation" | "hidden";
 }
+/* ------------------------- dynamic event names ------------------------- */
+
+/** Wire names must match sanitize.ts EVENT_NAME_PATTERN (≤ 40 chars). */
+const MAX_EVENT_NAME = 40;
+
+/** UPPER_SNAKE slug of a label or id: "New chat" → "NEW_CHAT". */
+export function eventSlug(s: string, maxLen: number): string {
+  return (
+    s
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, maxLen)
+      .replace(/_+$/, "") || "UNLABELED"
+  );
+}
+
 /**
- * Generic click on any interactive element (button, link, menu item, tab,
- * switch, checkbox…) — emitted by the delegated listener in clicks.ts.
+ * Per-element click event name, e.g. "New chat" → `NEW_CHAT_CLICK`,
+ * `sidebar.nav.chat` → `SIDEBAR_NAV_CHAT_CLICK`. Every click event also
+ * carries `event_group: "click"` so they can be aggregated together.
+ */
+export function clickEventName(idOrLabel: string): string {
+  const suffix = "_CLICK";
+  return eventSlug(idOrLabel, MAX_EVENT_NAME - suffix.length) + suffix;
+}
+
+/**
+ * Per-popup lifecycle event name, e.g. ("Quiz dashboard", "dialog",
+ * "OPENED") → `QUIZ_DASHBOARD_DIALOG_OPENED`. Carries
+ * `event_group: "popup_opened" | "popup_closed"`.
+ */
+export function popupEventName(
+  name: string,
+  kind: PopupKind,
+  phase: "OPENED" | "CLOSED",
+): string {
+  const suffix = `_${kind.toUpperCase()}_${phase}`;
+  return eventSlug(name, MAX_EVENT_NAME - suffix.length) + suffix;
+}
+
+/**
+ * Props of a `<ELEMENT>_CLICK` event — emitted by the delegated listener in
+ * clicks.ts for every button, link, menu item, tab, switch, checkbox….
  * `element_id` is the explicit `data-analytics-id` when present, otherwise a
  * slug of the label. Labels inside `[data-analytics-private]` containers are
  * masked (`label_source: "private"`) so user content never leaks.
@@ -247,6 +285,7 @@ export type PopupKind =
   | "dropdown"
   | "modal";
 export type PopupCloseVia = "escape" | "outside" | "dismiss" | "unmount";
+/** Props of a `<POPUP>_<KIND>_OPENED` event. */
 export interface PopupOpenedProps {
   popup: string;
   kind: PopupKind;
@@ -344,9 +383,6 @@ export interface EventPropsMap {
   [AnalyticsEvent.SESSION_ENDED]: SessionEndedProps;
   [AnalyticsEvent.PAGE_ENTRY]: PageEntryProps;
   [AnalyticsEvent.PAGE_EXIT]: PageExitProps;
-  [AnalyticsEvent.CLICK]: ClickProps;
-  [AnalyticsEvent.POPUP_OPENED]: PopupOpenedProps;
-  [AnalyticsEvent.POPUP_CLOSED]: PopupClosedProps;
 
   [AnalyticsEvent.LANDING_CTA_CLICKED]: { location: CtaLocation };
   [AnalyticsEvent.LANDING_DEMO_INTERACTED]: {
@@ -672,7 +708,4 @@ export const CORE_EVENTS: ReadonlySet<string> = new Set([
   AnalyticsEvent.SESSION_ENDED,
   AnalyticsEvent.PAGE_ENTRY,
   AnalyticsEvent.PAGE_EXIT,
-  AnalyticsEvent.CLICK,
-  AnalyticsEvent.POPUP_OPENED,
-  AnalyticsEvent.POPUP_CLOSED,
 ]);

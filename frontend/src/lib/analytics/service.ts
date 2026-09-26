@@ -64,6 +64,23 @@ export class AnalyticsService {
     this.safe(`track ${event}`, () => this.doTrack(event, props));
   }
 
+  /**
+   * Track an SDK-generated event whose name is derived at runtime — per-element
+   * clicks (`NEW_CHAT_CLICK`) and popup lifecycles
+   * (`QUIZ_DASHBOARD_DIALOG_OPENED`). `group` lands on the event as
+   * `event_group` so all clicks / popups can still be aggregated together.
+   * Application code should use the typed `track()` instead.
+   */
+  trackNamed<P extends object>(
+    event: string,
+    props: P,
+    group: "click" | "popup_opened" | "popup_closed",
+  ): void {
+    this.safe(`track ${event}`, () =>
+      this.doTrack(event, { ...(props as Props), event_group: group }),
+    );
+  }
+
   identify(user: AnalyticsUser): void {
     this.safe("identify", () => this.doIdentify(user));
   }
@@ -95,6 +112,10 @@ export class AnalyticsService {
 
   getAnonymousId(): string | null {
     return isBrowser() ? this.identity.getAnonymousId() : null;
+  }
+
+  getDeviceId(): string | null {
+    return isBrowser() ? this.identity.getDeviceId() : null;
   }
 
   getSession(): StoredSession | null {
@@ -133,9 +154,10 @@ export class AnalyticsService {
     this.session = new SessionManager(config.sessionTimeoutMs, config.sessionMaxAgeMs);
     this.session.installListeners();
     const anonymousId = this.identity.getAnonymousId();
+    const deviceId = this.identity.getDeviceId();
 
     this.exposeDebugHandle();
-    installClickTracking((props) => this.track(AnalyticsEvent.CLICK, props));
+    installClickTracking((name, props) => this.trackNamed(name, props, "click"));
 
     if (!config.enabled) {
       if (this.debugOn) logInfo("disabled (no provider key) — events log only");
@@ -148,7 +170,7 @@ export class AnalyticsService {
       const onReady = () => this.drain(slot);
       let result: void | Promise<void>;
       try {
-        result = provider.init(config, { anonymousId, onReady });
+        result = provider.init(config, { anonymousId, deviceId, onReady });
       } catch (err) {
         this.disable(slot, err);
         continue;
@@ -269,6 +291,7 @@ export class AnalyticsService {
       timestamp: timestamp ?? new Date().toISOString(),
       props,
       identity: {
+        device_id: this.identity.getDeviceId(),
         anonymous_id: this.identity.getAnonymousId(),
         user_id: userId ?? undefined,
       },
@@ -292,6 +315,7 @@ export class AnalyticsService {
     this.ensureInit();
     if (!user?.id) return;
     const extra: Partial<UserTraits> = {
+      device_id: this.identity.getDeviceId(),
       is_app_mode: this.app?.is_app_mode,
       app_env: this.config?.appEnv,
     };
@@ -327,6 +351,7 @@ export class AnalyticsService {
         },
         session: { get: () => this.getSession(), enumerable: true },
         anonymousId: { get: () => this.getAnonymousId(), enumerable: true },
+        deviceId: { get: () => this.getDeviceId(), enumerable: true },
         ready: { get: () => this.isReady(), enumerable: true },
       });
       (window as Window & { __aeva_analytics?: unknown }).__aeva_analytics =

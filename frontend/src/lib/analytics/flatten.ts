@@ -10,6 +10,7 @@ export function flatten(payload: TrackPayload): FlatProps {
   const first = campaign.first_touch;
 
   const flat: FlatProps = {
+    device_id: identity.device_id,
     anonymous_id: identity.anonymous_id,
     user_id: identity.user_id,
     session_id: session.id,

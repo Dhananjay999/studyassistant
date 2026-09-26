@@ -12,6 +12,7 @@ interface Window {
     debug: boolean;
     readonly session: unknown;
     readonly anonymousId: string | null;
+    readonly deviceId: string | null;
     readonly ready: boolean;
   };
 }

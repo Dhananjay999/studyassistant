@@ -1,7 +1,10 @@
 // Delegated click tracking. One capture-phase listener on `document` fires a
-// `CLICK` event for every interactive element the user presses: buttons,
+// per-element event for every interactive element the user presses: buttons,
 // links, menu items, tabs, switches, checkboxes and anything carrying
-// `data-analytics-id`. No per-button wiring is needed.
+// `data-analytics-id`. The event NAME is derived from the element —
+// "New chat" → `NEW_CHAT_CLICK`, `sidebar.nav.chat` → `SIDEBAR_NAV_CHAT_CLICK`,
+// a masked row in a private list → `BOOKMARKS_LIST_ITEM_CLICK` — and every
+// click carries `event_group: "click"`. No per-button wiring is needed.
 //
 // Labelling, in priority order:
 //   1. `data-analytics-name` (explicit, always wins)
@@ -16,7 +19,7 @@
 // `data-analytics-section`, else the nearest landmark (nav/aside/main…).
 // `popup` names the dialog / sheet / menu the element lives in.
 
-import type { ClickProps } from "./events";
+import { clickEventName, type ClickProps } from "./events";
 
 const INTERACTIVE = [
   "button",
@@ -155,8 +158,17 @@ function describe(el: HTMLElement): ClickProps {
   };
 }
 
+/** Event name for a described click (see header for examples). */
+export function clickNameFor(props: ClickProps): string {
+  if (props.explicit) return clickEventName(props.element_id);
+  if (props.label_source === "private") {
+    return clickEventName(`${props.location ?? "private"}_item`);
+  }
+  return clickEventName(props.element_name ?? "unlabeled");
+}
+
 export function installClickTracking(
-  onClick: (props: ClickProps) => void,
+  onClick: (name: string, props: ClickProps) => void,
 ): () => void {
   const handler = (e: MouseEvent) => {
     try {
@@ -167,7 +179,8 @@ export function installClickTracking(
       if (target.closest(IGNORE)) return;
       const el = target.closest<HTMLElement>(INTERACTIVE);
       if (!el) return;
-      onClick(describe(el));
+      const props = describe(el);
+      onClick(clickNameFor(props), props);
     } catch {
       /* never break the app over analytics */
     }

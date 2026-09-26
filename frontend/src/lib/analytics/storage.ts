@@ -3,6 +3,7 @@
 
 export const STORAGE_KEYS = {
   anonymousId: "aeva_anonymous_id",
+  deviceId: "aeva_device_id",
   session: "aeva_analytics_session",
   attribution: "aeva_attribution",
   debug: "aeva_analytics_debug",
@@ -28,6 +29,33 @@ export function write(key: string, value: string | null): void {
     else window.localStorage.setItem(key, value);
   } catch {
     // Private mode / quota / disabled storage — analytics simply won't persist.
+  }
+}
+
+/** Cookie name for the device id backup (survives a localStorage wipe). */
+export const DEVICE_COOKIE = "aeva_did";
+
+export function readCookie(name: string): string | null {
+  if (!isBrowser()) return null;
+  try {
+    const m = document.cookie.match(
+      new RegExp("(?:^|; )" + name.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&") + "=([^;]*)"),
+    );
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCookie(name: string, value: string, days: number): void {
+  if (!isBrowser()) return;
+  try {
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie =
+      `${name}=${encodeURIComponent(value)}; Max-Age=${days * 86400}` +
+      `; Path=/; SameSite=Lax${secure}`;
+  } catch {
+    /* cookies blocked — localStorage still holds the value */
   }
 }
 

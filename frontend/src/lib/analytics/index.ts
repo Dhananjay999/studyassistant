@@ -44,7 +44,7 @@ export function analyticsAttrs(
   return attrs;
 }
 
-export { AnalyticsEvent } from "./events";
+export { AnalyticsEvent, clickEventName, popupEventName } from "./events";
 export type {
   EventPropsMap,
   ErrorKind,
@@ -54,6 +54,9 @@ export type {
   ItemType,
   PopupKind,
   PopupCloseVia,
+  ClickProps,
+  PopupOpenedProps,
+  PopupClosedProps,
 } from "./events";
 export type { AnalyticsUser, TrackPayload } from "./types";
 export { routeName } from "./routeName";

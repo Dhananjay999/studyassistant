@@ -1,7 +1,7 @@
 # Event catalogue
 
 Wire names are UPPER_SNAKE_CASE (identical to the enum member). Every event automatically carries the
-common context (see `README.md`): `anonymous_id`, `user_id`, `session_id`,
+common context (see `README.md`): `device_id`, `anonymous_id`, `user_id`, `session_id`,
 `session_number`, `posthog_session_id`, `page_path`, `page_name`, `page_url`,
 `page_title`, `referrer`, device (`device_type`, `os`, `browser`,
 `browser_version`, `screen_*`, `viewport_*`, `language`, `timezone`,
@@ -20,9 +20,9 @@ conversion-funnel step. Types are the source of truth: `events.ts`.
 | `SESSION_ENDED` | Lazily, when the previous session is found expired, or on logout | `duration_s`, `event_count`, `exit_page?`, `reason: timeout\|logout` | `service.ts` |
 | `PAGE_ENTRY` | Route pathname changed (or first load) | `page_path`, `page_name`, `previous_path`, `entry_source: initial\|navigation\|back_forward`, `qp_session_id?`, `qp_quiz_id?`, `qp_set_id?`, `qp_file_id?`, `qp_auth_error?` | `hooks/useAnalyticsRouteTracker.ts` |
 | `PAGE_EXIT` | Leaving a route, or tab hidden / pagehide | `page_path`, `page_name`, `time_on_page_s`, `exit_type: navigation\|hidden` | same |
-| `CLICK` | Every press on an interactive element (button, link, menu item, tab, switch, checkbox, or anything with `data-analytics-id`) | `element_id` (explicit id or a slug of the label), `element_name?`, `element_type`, `location?` (`data-analytics-location` → nearest `data-analytics-section` → landmark), `href?`, `explicit`, `label_source: attr\|aria\|title\|text\|private\|none`, `popup?` | `clicks.ts` |
-| `POPUP_OPENED` | Any Dialog / AlertDialog / Sheet / Drawer / Popover / DropdownMenu / ResponsiveModal opened | `popup` (explicit `analyticsName`, else the title text, else `trigger: <label>`), `kind: dialog\|alert\|sheet\|drawer\|popover\|dropdown\|modal` | `hooks/usePopupAnalytics.tsx` via `components/ui/*` |
-| `POPUP_CLOSED` | The same popup closed | `popup`, `kind`, `duration_ms`, `via: escape\|outside\|dismiss\|unmount` | same |
+| `<ELEMENT>_CLICK` (e.g. `NEW_CHAT_CLICK`, `SIDEBAR_NAV_CHAT_CLICK`, `BOOKMARKS_LIST_ITEM_CLICK`) | Every press on an interactive element (button, link, menu item, tab, switch, checkbox, or anything with `data-analytics-id`). The name is the explicit id, else the label, else `<section>_ITEM` for masked rows | `event_group: "click"`, `element_id`, `element_name?`, `element_type`, `location?` (`data-analytics-location` → nearest `data-analytics-section` → landmark), `href?`, `explicit`, `label_source: attr\|aria\|title\|text\|private\|none`, `popup?` | `clicks.ts` |
+| `<POPUP>_<KIND>_OPENED` (e.g. `QUIZ_DASHBOARD_DIALOG_OPENED`, `LOG_OUT_MODAL_OPENED`, `BOOKMARK_POPOVER_OPENED`) | Any Dialog / AlertDialog / Sheet / Drawer / Popover / DropdownMenu / ResponsiveModal opened. Name = explicit `analyticsName`, else the title text, else the trigger's label | `event_group: "popup_opened"`, `popup`, `kind: dialog\|alert\|sheet\|drawer\|popover\|dropdown\|modal` | `hooks/usePopupAnalytics.tsx` via `components/ui/*` |
+| `<POPUP>_<KIND>_CLOSED` | The same popup closed | `event_group: "popup_closed"`, `popup`, `kind`, `duration_ms`, `via: escape\|outside\|dismiss\|unmount` | same |
 
 Explicit click ids in use: `landing.nav.<slug>`, `landing.hero.explore_features`,
 `sidebar.nav.<route>`. Every other interactive element is tracked

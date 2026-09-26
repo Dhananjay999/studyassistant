@@ -125,11 +125,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // and the back button can never reach a signed-in view.
   const hardLogout = useCallback(() => {
     // Forget the analytics identity first (new anonymous id + session) so
-    // nothing after this point is attributed to the signed-out user.
+    // nothing after this point is attributed to the signed-out user, and
+    // push any queued events out before the page goes away.
     analytics.reset();
+    analytics.flush();
     clearSession();
     queryClient.clear();
-    window.location.replace("/");
+    // Always a full page reload onto the landing screen: nothing from the
+    // signed-in session (React state, query cache, streams, the old
+    // analytics identity) survives it.
+    try {
+      window.location.replace("/");
+    } catch {
+      window.location.reload();
+    }
   }, [clearSession]);
 
   // The session became invalid behind the user's back (401 from the API or a

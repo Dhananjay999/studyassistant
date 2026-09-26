@@ -35,6 +35,12 @@ adapter + one line in the registry + its env var in `config.ts`.
 
 ## Identity and sessions
 
+- **Device id** (`aeva_device_id` in localStorage, mirrored in the
+  `aeva_did` cookie for a year, `dev_<uuid>`) is created once per browser
+  profile and never rotated: not on logout, not on login. It rides on every
+  event as `device_id`, is a person property, and is pinned as PostHog's
+  `$device_id`. Either store surviving is enough to keep it. This is the
+  "same device, whoever is signed in" key; no fingerprinting is used.
 - **Anonymous id** (`aeva_anonymous_id`, `anon_<uuid>`) is created on first
   use and handed to PostHog as its bootstrap distinct id. `identify(user)`
   therefore merges the pre-login trail into the person. `reset()` mints a new
@@ -57,22 +63,32 @@ adapter + one line in the registry + its env var in `config.ts`.
 
 ## Clicks and popups
 
-Every press on a button, link, menu item, tab, switch or checkbox emits a
-`CLICK` (delegated listener in `clicks.ts`, no per-button wiring). The label
-comes from `data-analytics-name`, else `aria-label`/`aria-labelledby`, else
-`title`, else the visible text. Wrap lists of user content in
-`data-analytics-private` (chat titles, file names, quiz answers…) so labels
-there are masked as `[private]`; add `data-analytics-name` to buttons inside
-such a zone that deserve a label, and `data-analytics-section` to give them a
-location. `data-analytics-ignore` opts an element out.
+Every press on a button, link, menu item, tab, switch or checkbox emits its
+own event, named after the element: `NEW_CHAT_CLICK`, `LOG_OUT_CLICK`,
+`SIDEBAR_NAV_CHAT_CLICK` (delegated listener in `clicks.ts`, no per-button
+wiring). The name is the explicit `data-analytics-id`, else the label
+(`data-analytics-name` → `aria-label` → `title` → visible text). Wrap lists
+of user content in `data-analytics-private` (chat titles, file names, quiz
+answers…) so rows there become `<SECTION>_ITEM_CLICK` with the label masked;
+add `data-analytics-name` to buttons inside such a zone that deserve their
+own name, and `data-analytics-section` to give them a location.
+`data-analytics-ignore` opts an element out. All click events carry
+`event_group: "click"`, so "all clicks" is a filter on that property.
 
 Every shared popup primitive (`components/ui/dialog`, `alert-dialog`,
 `sheet`, `drawer`, `popover`, `dropdown-menu`, `responsive-modal`, and the
-command palette) emits `POPUP_OPENED` / `POPUP_CLOSED` from
-`hooks/usePopupAnalytics.tsx`. The name is the Root's `analyticsName` prop,
-else the Title text, else the trigger's label (popovers, menus). `via` says
-how it closed: `escape`, `outside` (overlay / outside click), `dismiss`
-(close button or code) or `unmount`.
+command palette) emits `<NAME>_<KIND>_OPENED` / `<NAME>_<KIND>_CLOSED`
+(`QUIZ_DASHBOARD_DIALOG_OPENED`, `LOG_OUT_MODAL_CLOSED`,
+`BOOKMARK_POPOVER_OPENED`) from `hooks/usePopupAnalytics.tsx`. The name is
+the Root's `analyticsName` prop, else the Title text, else the trigger's
+label (popovers, menus); pass `analyticsName` when a title contains user
+content. `via` says how it closed: `escape`, `outside` (overlay / outside
+click), `dismiss` (close button or code) or `unmount`. They carry
+`event_group: "popup_opened" | "popup_closed"`.
+
+Dynamic names go through `clickEventName()` / `popupEventName()` in
+`events.ts` (UPPER_SNAKE, ≤ 40 chars) and the same sanitize/enrich pipeline
+as typed events via `analytics.trackNamed()`.
 
 ## Page lifecycle
 

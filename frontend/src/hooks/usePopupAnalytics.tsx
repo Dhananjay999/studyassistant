@@ -2,9 +2,10 @@
 // AlertDialog, Sheet, Drawer, Popover, DropdownMenu, ResponsiveModal).
 //
 // Each primitive's Root calls `usePopupAnalytics(kind, props)` once, which
-// watches the open state (controlled or uncontrolled) and emits
-// `POPUP_OPENED` / `POPUP_CLOSED` with the popup's name, how long it stayed
-// open and how it was closed. The name comes from, in order: an explicit
+// watches the open state (controlled or uncontrolled) and emits a per-popup
+// pair of events — `<NAME>_<KIND>_OPENED` / `<NAME>_<KIND>_CLOSED`, e.g.
+// `QUIZ_DASHBOARD_DIALOG_OPENED`, `LOG_OUT_MODAL_CLOSED` — with the popup's
+// name, how long it stayed open and how it was closed. The name comes from, in order: an explicit
 // `analyticsName` prop on the Root, the popup's Title text (registered by
 // the Title component), or the trigger's label for title-less popovers and
 // menus. Call sites need no changes.
@@ -22,7 +23,7 @@ import {
 } from "react";
 import {
   analytics,
-  AnalyticsEvent,
+  popupEventName,
   type PopupCloseVia,
   type PopupKind,
 } from "@/lib/analytics";
@@ -87,7 +88,7 @@ export function usePopupAnalytics<P extends OpenStateProps>(
   });
 
   const popupName = useCallback(
-    () => explicitRef.current || nameRef.current || `unnamed_${kind}`,
+    () => explicitRef.current || nameRef.current || "unnamed",
     [kind],
   );
 
@@ -96,15 +97,23 @@ export function usePopupAnalytics<P extends OpenStateProps>(
       if (!openedAtRef.current) return;
       const name = popupName();
       if (!reportedRef.current) {
-        analytics.track(AnalyticsEvent.POPUP_OPENED, { popup: name, kind });
+        analytics.trackNamed(
+          popupEventName(name, kind, "OPENED"),
+          { popup: name, kind },
+          "popup_opened",
+        );
         reportedRef.current = true;
       }
-      analytics.track(AnalyticsEvent.POPUP_CLOSED, {
-        popup: name,
-        kind,
-        duration_ms: Math.round(performance.now() - openedAtRef.current),
-        via,
-      });
+      analytics.trackNamed(
+        popupEventName(name, kind, "CLOSED"),
+        {
+          popup: name,
+          kind,
+          duration_ms: Math.round(performance.now() - openedAtRef.current),
+          via,
+        },
+        "popup_closed",
+      );
       openedAtRef.current = 0;
     },
     [kind, popupName],
@@ -117,10 +126,12 @@ export function usePopupAnalytics<P extends OpenStateProps>(
       viaRef.current = "dismiss";
       const t = window.setTimeout(() => {
         reportedRef.current = true;
-        analytics.track(AnalyticsEvent.POPUP_OPENED, {
-          popup: popupName(),
-          kind,
-        });
+        const name = popupName();
+        analytics.trackNamed(
+          popupEventName(name, kind, "OPENED"),
+          { popup: name, kind },
+          "popup_opened",
+        );
       }, NAME_SETTLE_MS);
       return () => window.clearTimeout(t);
     }
@@ -213,8 +224,7 @@ export function usePopupTriggerProps<P extends object>(
   const p = props as P & TriggerHandlers;
   const note = (el: HTMLElement) => {
     if (!ctx) return;
-    const { name } = describeElementLabel(el);
-    ctx.setName(name ? `trigger: ${name}` : undefined);
+    ctx.setName(describeElementLabel(el).name);
   };
   return {
     ...props,

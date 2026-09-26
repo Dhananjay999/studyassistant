@@ -20,6 +20,7 @@ export interface AnalyticsUser {
 export interface UserTraits {
   email?: string;
   name?: string;
+  device_id?: string;
   personalization_status?: string;
   is_debug_user?: boolean;
   is_app_mode?: boolean;
@@ -49,6 +50,9 @@ export interface SessionContext {
 }
 
 export interface IdentityContext {
+  /** Never rotates for a browser profile (localStorage + cookie backup). */
+  device_id: string;
+  /** Rotates on logout; bootstraps PostHog's distinct id. */
   anonymous_id: string;
   user_id?: string;
 }

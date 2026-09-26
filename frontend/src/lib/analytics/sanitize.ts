@@ -14,6 +14,7 @@ import type { Primitive, PropValue, Props } from "./types";
 export const RESERVED_KEYS: ReadonlySet<string> = new Set([
   "event",
   "timestamp",
+  "device_id",
   "anonymous_id",
   "user_id",
   "session_id",

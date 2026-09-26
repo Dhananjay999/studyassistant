@@ -17,6 +17,7 @@ export class PostHogProvider implements AnalyticsProvider {
   readonly name = "posthog" as const;
   private ph: PostHog | null = null;
   private ready = false;
+  private deviceId = "";
 
   async init(config: AnalyticsConfig, ctx: ProviderInitContext): Promise<void> {
     if (!config.posthogKey) throw new Error("posthog key missing");
@@ -40,11 +41,16 @@ export class PostHogProvider implements AnalyticsProvider {
       request_batching: true,
       debug: false,
     });
+    this.deviceId = ctx.deviceId;
     posthog.register({
       app_env: config.appEnv,
       app_version: config.appVersion,
       build_id: config.buildId,
       anonymous_id: ctx.anonymousId,
+      device_id: ctx.deviceId,
+      // Bootstrapping the distinct id also overwrote PostHog's own device id
+      // with the (rotating) anonymous id; pin it to our stable one instead.
+      $device_id: ctx.deviceId,
     });
     this.ph = posthog;
     this.ready = true;
@@ -64,7 +70,11 @@ export class PostHogProvider implements AnalyticsProvider {
   reset(newAnonymousId: string): void {
     if (!this.ph) return;
     this.ph.reset();
-    this.ph.register({ anonymous_id: newAnonymousId });
+    this.ph.register({
+      anonymous_id: newAnonymousId,
+      device_id: this.deviceId,
+      $device_id: this.deviceId,
+    });
   }
 
   track(payload: TrackPayload): void {

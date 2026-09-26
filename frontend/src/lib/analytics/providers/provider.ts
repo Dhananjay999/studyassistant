@@ -8,6 +8,8 @@ export type ProviderName = "posthog" | "ga" | "custom";
 
 export interface ProviderInitContext {
   anonymousId: string;
+  /** Stable per-browser id; providers should expose it as their device id. */
+  deviceId: string;
   /** Call once the provider can accept events; queued ops are replayed. */
   onReady: () => void;
 }
