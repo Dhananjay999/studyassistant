@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import {
   Dialog,
   DialogContent,
@@ -174,6 +175,7 @@ export default function SpacesPage() {
   const submitCreate = (values: SpaceFormValues) =>
     createSpace.mutate(values, {
       onSuccess: (space) => {
+        analytics.track(AnalyticsEvent.SPACE_CREATED, { space_id: space.id });
         setCreateOpen(false);
         navigate(`/spaces/${space.id}`);
       },
@@ -185,7 +187,10 @@ export default function SpacesPage() {
     updateSpace.mutate(
       { id: editing.id, patch: values },
       {
-        onSuccess: () => setEditing(null),
+        onSuccess: () => {
+          analytics.track(AnalyticsEvent.SPACE_UPDATED, { space_id: editing.id });
+          setEditing(null);
+        },
         onError: () => toast.error("Couldn't update the space"),
       },
     );
@@ -197,6 +202,10 @@ export default function SpacesPage() {
       { id: deleting.id, mode: deleteMode },
       {
         onSuccess: () => {
+          analytics.track(AnalyticsEvent.SPACE_DELETED, {
+            space_id: deleting.id,
+            mode: deleteMode,
+          });
           toast.success(
             deleteMode === "move"
               ? "Space deleted — its content moved to General"

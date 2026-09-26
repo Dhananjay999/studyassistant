@@ -35,7 +35,7 @@ export function AppHeader({
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const confirmLogout = useConfirmLogout();
+  const confirmLogout = useConfirmLogout("header");
   const { open: openSettings } = useSettings();
   const { start, end } = useHeaderSlotContent();
 

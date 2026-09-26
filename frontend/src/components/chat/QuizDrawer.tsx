@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { History, Loader2, Play } from "lucide-react";
 import {
   Dialog,
@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { QuizExportButton } from "@/components/quiz/QuizExportButton";
 import { ShareQuizButton } from "@/components/quiz/ShareQuizButton";
@@ -46,11 +47,14 @@ export function QuizDrawer({
   open,
   onOpenChange,
   initialView = "run",
+  source = "chat_card",
 }: {
   quiz: QuizContent | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialView?: QuizInitialView;
+  /** Where the quiz was opened from (analytics). */
+  source?: string;
 }) {
   const isMobile = useIsMobile();
   const [view, setView] = useState<View>("menu");
@@ -78,6 +82,26 @@ export function QuizDrawer({
 
   const quizId = quiz?.quiz_id ?? "";
   const isExam = hasExamConfig(quiz?.exam_config);
+  // Analytics: one `quiz_opened` per open, and whether an attempt already ran
+  // in this dashboard (so a later run is a retake).
+  const attemptsThisOpenRef = useRef(0);
+  const runStartedAtRef = useRef(0);
+  useEffect(() => {
+    if (!open || !quizId) return;
+    attemptsThisOpenRef.current = 0;
+    analytics.track(AnalyticsEvent.QUIZ_OPENED, {
+      quiz_id: quizId,
+      initial_view: initialView,
+      source,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, quizId]);
+  useEffect(() => {
+    if (view === "run") {
+      runStartedAtRef.current = Date.now();
+      attemptsThisOpenRef.current += 1;
+    }
+  }, [view]);
   // Exam quizzes open a briefing screen first; ordinary quizzes go straight in.
   const takeView: View = isExam ? "summary" : "run";
 
@@ -164,6 +188,7 @@ export function QuizDrawer({
   // Retake: start a fresh attempt, keeping the quiz and all prior attempts. The
   // runner remounts clean, and submitting appends a new row to the history.
   const retake = () => {
+    analytics.track(AnalyticsEvent.QUIZ_RETAKEN, { quiz_id: quizId });
     setFreshResult(null);
     setOpenAttemptId(null);
     setView(takeView);
@@ -172,7 +197,13 @@ export function QuizDrawer({
   // Guard against losing progress: closing mid-attempt asks first.
   const requestClose = async (next: boolean) => {
     if (!next && view === "run") {
-      if (await confirmLeave()) onOpenChange(false);
+      if (await confirmLeave()) {
+        analytics.track(AnalyticsEvent.QUIZ_ABANDONED, {
+          quiz_id: quizId,
+          elapsed_s: Math.round((Date.now() - runStartedAtRef.current) / 1000),
+        });
+        onOpenChange(false);
+      }
       return;
     }
     onOpenChange(next);
@@ -248,6 +279,7 @@ export function QuizDrawer({
             </header>
             <QuizRunner
               quiz={effectiveQuiz}
+              isRetake={attemptsThisOpenRef.current > 0}
               onSubmitted={(res) => {
                 setFreshResult(res);
                 setView("report");
@@ -287,6 +319,10 @@ export function QuizDrawer({
                   quizId={quizId}
                   onStartAttempt={() => setView(takeView)}
                   onOpenAttempt={(attemptId) => {
+                    analytics.track(AnalyticsEvent.QUIZ_ATTEMPT_OPENED, {
+                      quiz_id: quizId,
+                      attempt_id: attemptId,
+                    });
                     setFreshResult(null);
                     setOpenAttemptId(attemptId);
                     setView("report");

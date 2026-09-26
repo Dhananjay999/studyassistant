@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import type { ComponentType } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AppLoader } from "@/components/common/AppLoader";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { Seo } from "@/components/common/Seo";
 import { Button } from "@/components/ui/button";
@@ -76,6 +78,22 @@ export default function SharePage() {
     enabled: Boolean(shareId),
     retry: false,
   });
+
+  // Public, anonymous analytics: which shares get viewed (and which links
+  // are dead). No share content is sent, only the id and kind.
+  useEffect(() => {
+    if (share) {
+      analytics.track(AnalyticsEvent.SHARE_VIEWED, {
+        share_id: shareId,
+        kind: share.content_type,
+      });
+    } else if (isError) {
+      analytics.track(AnalyticsEvent.SHARE_RESOLVE_FAILED, {
+        share_id: shareId,
+        kind: "unknown",
+      });
+    }
+  }, [share, isError, shareId]);
 
   if (isLoading) return <AppLoader />;
 

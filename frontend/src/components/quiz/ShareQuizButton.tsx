@@ -15,6 +15,7 @@ import {
   ResponsiveModalTitle,
 } from "@/components/ui/responsive-modal";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { ShareLinkPanel } from "@/components/quiz/ShareLinkPanel";
 import { createShare } from "@/lib/api";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -57,6 +58,11 @@ export function ShareQuizButton({
       const shared = isMobile
         ? await nativeShare({ title: quizTitle, text: shareText, url })
         : false;
+      analytics.track(AnalyticsEvent.QUIZ_SHARED, {
+        kind: "quiz",
+        quiz_id: quizId,
+        channel: shared ? "native" : "dialog",
+      });
       if (shared) {
         return;
       }

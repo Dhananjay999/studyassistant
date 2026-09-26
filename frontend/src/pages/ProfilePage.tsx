@@ -31,7 +31,7 @@ const MENU_GROUPS: ReadonlyArray<{
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const confirmLogout = useConfirmLogout();
+  const confirmLogout = useConfirmLogout("profile_page");
 
   return (
     <PageContainer title="Profile">

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { analytics, AnalyticsEvent, analyticsAttrs } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -230,6 +231,10 @@ export function AppSidebar({
       { session_id: s.id },
       {
         onSuccess: (space) => {
+          analytics.track(AnalyticsEvent.SPACE_CONVERTED_FROM_CHAT, {
+            space_id: space.id,
+            chat_session_id: s.id,
+          });
           toast.success(`“${space.name}” is now a Study Space`);
           go(`/spaces/${space.id}`);
         },
@@ -281,7 +286,13 @@ export function AppSidebar({
         </button>
         <button
           type="button"
-          onClick={() => togglePin(s.id)}
+          onClick={() => {
+            analytics.track(AnalyticsEvent.CHAT_SESSION_PINNED, {
+              chat_session_id: s.id,
+              pinned: !pinnedRow,
+            });
+            togglePin(s.id);
+          }}
           className={cn(
             "shrink-0 text-muted-foreground transition-opacity hover:text-brand-1",
             pinnedRow
@@ -411,6 +422,11 @@ export function AppSidebar({
             <button
               key={item.to}
               type="button"
+              {...analyticsAttrs(
+                `sidebar.nav.${item.to.replace(/^\//, "") || "home"}`,
+                undefined,
+                "sidebar",
+              )}
               onClick={() => go(item.to)}
               className={cn(
                 "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",

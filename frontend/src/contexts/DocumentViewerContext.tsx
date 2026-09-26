@@ -3,25 +3,36 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getMediaStatus } from "@/lib/api";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { qk } from "@/hooks/api";
 import { useBackClose } from "@/hooks/useBackClose";
 import type { MediaItem } from "@/types";
+
+export type ViewerOpenSource = "thumbnail" | "citation" | "files" | "deeplink";
 
 interface OpenDocArgs {
   url: string;
   fileName?: string;
   page?: number;
+  /** Where the open came from (analytics). */
+  source?: ViewerOpenSource;
+  mediaId?: string;
 }
 
 interface DocumentViewerContextValue {
   openDocument: (args: OpenDocArgs) => void;
   /** Resolve a signed URL by media id (cache, else fetch), then open it. */
-  openDocumentByMediaId: (mediaId: string, page?: number) => Promise<void>;
+  openDocumentByMediaId: (
+    mediaId: string,
+    page?: number,
+    source?: ViewerOpenSource,
+  ) => Promise<void>;
 }
 
 const DocumentViewerContext = createContext<DocumentViewerContextValue | null>(
@@ -60,13 +71,35 @@ export function useDocumentViewerController(): DocumentViewerController {
   const qc = useQueryClient();
   const [viewer, setViewer] = useState<ViewerState | null>(null);
   const [mode, setMode] = useState<ViewerMode>("docked");
+  // Analytics: when the current document was opened and whether fullscreen
+  // was used during this viewing.
+  const openedAtRef = useRef<number | null>(null);
+  const fullscreenUsedRef = useRef(false);
 
-  const openDocument = useCallback((args: OpenDocArgs) => {
-    setViewer({ url: args.url, fileName: args.fileName, page: args.page });
-  }, []);
+  const trackOpen = useCallback(
+    (source: ViewerOpenSource, mediaId?: string, page?: number) => {
+      openedAtRef.current = performance.now();
+      fullscreenUsedRef.current = false;
+      analytics.track(AnalyticsEvent.MEDIA_VIEWER_OPENED, {
+        media_id: mediaId,
+        source,
+        kind: "pdf",
+        page,
+      });
+    },
+    [],
+  );
+
+  const openDocument = useCallback(
+    (args: OpenDocArgs) => {
+      trackOpen(args.source ?? "thumbnail", args.mediaId, args.page);
+      setViewer({ url: args.url, fileName: args.fileName, page: args.page });
+    },
+    [trackOpen],
+  );
 
   const openDocumentByMediaId = useCallback(
-    async (mediaId: string, page?: number) => {
+    async (mediaId: string, page?: number, source: ViewerOpenSource = "citation") => {
       const cached = qc
         .getQueryData<MediaItem[]>(qk.media)
         ?.find((m) => m.id === mediaId);
@@ -79,6 +112,7 @@ export function useDocumentViewerController(): DocumentViewerController {
         }
       }
       if (item?.signed_url) {
+        trackOpen(source, mediaId, page);
         setViewer({ url: item.signed_url, fileName: item.file_name, page });
       } else {
         // Don't leave the click silently dead — the document couldn't be
@@ -86,14 +120,23 @@ export function useDocumentViewerController(): DocumentViewerController {
         toast.error("Couldn't open that document");
       }
     },
-    [qc],
+    [qc, trackOpen],
   );
 
-  const close = useCallback(() => setViewer(null), []);
-  const toggleFullscreen = useCallback(
-    () => setMode((m) => (m === "docked" ? "fullscreen" : "docked")),
-    [],
-  );
+  const close = useCallback(() => {
+    if (openedAtRef.current !== null) {
+      analytics.track(AnalyticsEvent.MEDIA_VIEWER_CLOSED, {
+        duration_ms: Math.round(performance.now() - openedAtRef.current),
+        fullscreen_used: fullscreenUsedRef.current,
+      });
+      openedAtRef.current = null;
+    }
+    setViewer(null);
+  }, []);
+  const toggleFullscreen = useCallback(() => {
+    fullscreenUsedRef.current = true;
+    setMode((m) => (m === "docked" ? "fullscreen" : "docked"));
+  }, []);
 
   // Back gesture/button returns from the PDF viewer to the chat.
   useBackClose(viewer !== null, close);

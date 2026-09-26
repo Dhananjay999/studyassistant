@@ -2,20 +2,28 @@ import { Loader2 } from "lucide-react";
 import { GoogleIcon } from "@/components/icons/BrandIcons";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { analytics, AnalyticsEvent, type CtaLocation } from "@/lib/analytics";
 
-/** Primary CTA with an animated gradient border that runs continuously. */
+/** Primary CTA with an animated gradient border that runs continuously.
+ *  `location` names where on the public site the button sits (analytics). */
 export function GoogleButton({
   label = "Continue with Google",
   className,
+  location,
 }: {
   label?: string;
   className?: string;
+  location: CtaLocation;
 }) {
   const { signInWithGoogle, signingIn } = useAuth();
+  const onClick = () => {
+    analytics.track(AnalyticsEvent.LANDING_CTA_CLICKED, { location });
+    signInWithGoogle();
+  };
   return (
     <button
       type="button"
-      onClick={signInWithGoogle}
+      onClick={onClick}
       disabled={signingIn}
       className={cn(
         "group relative inline-flex items-center justify-center rounded-full p-[1.5px]",

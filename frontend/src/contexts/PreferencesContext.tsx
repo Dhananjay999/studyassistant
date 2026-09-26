@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { ACCENT_VARS, accentVarsFromHex } from "@/lib/accentColor";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
 /**
  * Appearance preferences that aren't covered by light/dark (which `next-themes`
@@ -110,6 +111,11 @@ function apply(prefs: Preferences): void {
   }
 }
 
+/** Analytics: one event per preference change (values are enums/hex only). */
+function changed(key: string, value: string | boolean): void {
+  analytics.track(AnalyticsEvent.PREFERENCE_CHANGED, { key, value: String(value) });
+}
+
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [prefs, setPrefs] = useState<Preferences>(load);
 
@@ -123,36 +129,38 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     }
   }, [prefs]);
 
-  const setColorTheme = useCallback(
-    (colorTheme: ColorTheme) => setPrefs((p) => ({ ...p, colorTheme })),
-    [],
-  );
-  const setCustomAccent = useCallback(
-    (customAccent: string) =>
-      setPrefs((p) => ({ ...p, customAccent, colorTheme: "custom" })),
-    [],
-  );
-  const setFontSize = useCallback(
-    (fontSize: FontSize) => setPrefs((p) => ({ ...p, fontSize })),
-    [],
-  );
-  const setContentFont = useCallback(
-    (contentFont: ContentFont) => setPrefs((p) => ({ ...p, contentFont })),
-    [],
-  );
-  const setReduceMotion = useCallback(
-    (reduceMotion: boolean) => setPrefs((p) => ({ ...p, reduceMotion })),
-    [],
-  );
-  const setCompact = useCallback(
-    (compact: boolean) => setPrefs((p) => ({ ...p, compact })),
-    [],
-  );
-  const setVoiceLang = useCallback(
-    (voiceLang: VoiceLang) => setPrefs((p) => ({ ...p, voiceLang })),
-    [],
-  );
-  const reset = useCallback(() => setPrefs(DEFAULTS), []);
+  const setColorTheme = useCallback((colorTheme: ColorTheme) => {
+    changed("color_theme", colorTheme);
+    setPrefs((p) => ({ ...p, colorTheme }));
+  }, []);
+  const setCustomAccent = useCallback((customAccent: string) => {
+    changed("custom_accent", customAccent);
+    setPrefs((p) => ({ ...p, customAccent, colorTheme: "custom" }));
+  }, []);
+  const setFontSize = useCallback((fontSize: FontSize) => {
+    changed("font_size", fontSize);
+    setPrefs((p) => ({ ...p, fontSize }));
+  }, []);
+  const setContentFont = useCallback((contentFont: ContentFont) => {
+    changed("content_font", contentFont);
+    setPrefs((p) => ({ ...p, contentFont }));
+  }, []);
+  const setReduceMotion = useCallback((reduceMotion: boolean) => {
+    changed("reduce_motion", reduceMotion);
+    setPrefs((p) => ({ ...p, reduceMotion }));
+  }, []);
+  const setCompact = useCallback((compact: boolean) => {
+    changed("compact", compact);
+    setPrefs((p) => ({ ...p, compact }));
+  }, []);
+  const setVoiceLang = useCallback((voiceLang: VoiceLang) => {
+    changed("voice_lang", voiceLang);
+    setPrefs((p) => ({ ...p, voiceLang }));
+  }, []);
+  const reset = useCallback(() => {
+    analytics.track(AnalyticsEvent.PREFERENCES_RESET);
+    setPrefs(DEFAULTS);
+  }, []);
 
   const value = useMemo<PreferencesContextValue>(
     () => ({

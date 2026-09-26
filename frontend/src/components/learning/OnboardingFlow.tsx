@@ -8,6 +8,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { errorKind } from "@/lib/errorMessage";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ChipSelect } from "@/components/learning/ChipSelect";
@@ -182,13 +184,30 @@ export function OnboardingFlow({
     setScreen("question");
   };
 
-  const handleSkipAll = async () => {
+  const handleSkipAll = async (via: "button" | "dismiss" = "button") => {
+    if (!editing) {
+      analytics.track(AnalyticsEvent.ONBOARDING_SKIPPED, {
+        at_step_index: screen === "question" ? idx : -1,
+        via,
+      });
+    }
     try {
       if (!editing) await skipMutation.mutateAsync();
     } finally {
       onDone();
     }
   };
+
+  /** Non-empty answers in the draft (analytics). */
+  const answeredCount = () =>
+    [
+      draft.level,
+      draft.language,
+      draft.style,
+      draft.subjects.length ? "x" : "",
+      draft.goal,
+      draft.examTarget,
+    ].filter(Boolean).length;
 
   const save = async (): Promise<boolean> => {
     const level = draft.level === OTHER ? draft.otherLevel.trim() : draft.level;
@@ -209,19 +228,44 @@ export function OnboardingFlow({
         learning_traits: profile?.learning_traits ?? {},
       });
       return true;
-    } catch {
+    } catch (err) {
+      analytics.track(AnalyticsEvent.ONBOARDING_SAVE_FAILED, {
+        error_kind: errorKind(err),
+      });
       return false; // surfaced via mutation state; stay on the step
     }
   };
 
   const finish = async () => {
     if (await save()) {
-      if (editing) onDone();
-      else setScreen("done");
+      if (editing) {
+        analytics.track(AnalyticsEvent.LEARNING_PROFILE_SAVED, {
+          fields_set: answeredCount(),
+        });
+        onDone();
+      } else {
+        analytics.track(AnalyticsEvent.ONBOARDING_COMPLETED, {
+          steps_answered: answeredCount(),
+          has_exam_target: !!draft.examTarget,
+          subject_count: draft.subjects.length,
+        });
+        setScreen("done");
+      }
     }
   };
 
   const next = () => {
+    if (screen === "question") {
+      const value = draft[step.key];
+      const skipped = Array.isArray(value) ? value.length === 0 : !value;
+      analytics.track(AnalyticsEvent.ONBOARDING_STEP_COMPLETED, {
+        step: step.key,
+        step_index: idx,
+        skipped,
+        selection_count:
+          step.key === "subjects" ? draft.subjects.length : undefined,
+      });
+    }
     if (editing) {
       setScreen("intro"); // back to the jump overview after each answer
     } else if (idx < TOTAL - 1) {
@@ -261,14 +305,30 @@ export function OnboardingFlow({
   // Closing via X / Escape / overlay: "skip for now" on first run, plain
   // close while editing.
   const onOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && !busy) void handleSkipAll();
+    if (!nextOpen && !busy) void handleSkipAll("dismiss");
   };
+
+  // Edit mode opens straight onto the overview: that is the "start".
+  useEffect(() => {
+    if (open && editing) {
+      analytics.track(AnalyticsEvent.ONBOARDING_STARTED, { mode: "edit" });
+    }
+  }, [open, editing]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-dvh w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 pt-safe pb-safe sm:h-auto sm:min-h-[560px] sm:w-full sm:max-w-md sm:rounded-3xl sm:border">
         {screen === "intro" && !editing && (
-          <Welcome busy={busy} onStart={() => goto(0)} onSkip={handleSkipAll} />
+          <Welcome
+            busy={busy}
+            onStart={() => {
+              analytics.track(AnalyticsEvent.ONBOARDING_STARTED, {
+                mode: "first_run",
+              });
+              goto(0);
+            }}
+            onSkip={() => handleSkipAll("button")}
+          />
         )}
 
         {screen === "intro" && editing && (

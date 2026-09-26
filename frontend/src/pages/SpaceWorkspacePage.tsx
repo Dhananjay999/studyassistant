@@ -2,7 +2,7 @@
 // files, quizzes, flashcards, bookmarks. Read/organize surface for Phase 1;
 // items open in their existing full experiences (chat page, quizzes page, …).
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -277,11 +278,27 @@ export default function SpaceWorkspacePage() {
   const Icon = spaceIcon(space?.icon);
   const counts = data?.counts ?? {};
 
+  useEffect(() => {
+    if (spaceId) {
+      analytics.track(AnalyticsEvent.SPACE_OPENED, { space_id: spaceId });
+    }
+  }, [spaceId]);
+
+  const trackSessionCreated = (id: string) =>
+    analytics.track(AnalyticsEvent.CHAT_SESSION_CREATED, {
+      chat_session_id: id,
+      space_id: spaceId ?? null,
+      trigger: "space",
+    });
+
   const startChat = () => {
     createSession.mutate(
       { spaceId },
       {
-        onSuccess: (s) => navigate(`/chat?sessionId=${s.id}`),
+        onSuccess: (s) => {
+          trackSessionCreated(s.id);
+          navigate(`/chat?sessionId=${s.id}`);
+        },
         onError: () => toast.error("Couldn't start a chat"),
       },
     );
@@ -291,6 +308,7 @@ export default function SpaceWorkspacePage() {
   const seedChat = async (autoSend: string) => {
     try {
       const s = await createSession.mutateAsync({ spaceId });
+      trackSessionCreated(s.id);
       const seed: ChatSeed = { mode: "followup", content: "", autoSend };
       navigate(`/chat?sessionId=${s.id}`, { state: { seed } });
     } catch {
@@ -367,7 +385,10 @@ export default function SpaceWorkspacePage() {
     updateSpace.mutate(
       { id: spaceId, patch: values },
       {
-        onSuccess: () => setEditOpen(false),
+        onSuccess: () => {
+          analytics.track(AnalyticsEvent.SPACE_UPDATED, { space_id: spaceId });
+          setEditOpen(false);
+        },
         onError: () => toast.error("Couldn't update the space"),
       },
     );

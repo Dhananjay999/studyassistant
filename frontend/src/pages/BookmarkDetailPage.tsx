@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Badge } from "@/components/ui/badge";
 import { Seo } from "@/components/common/Seo";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -53,17 +54,31 @@ export default function BookmarkDetailPage() {
 
   const resume = async (mode: ChatSeed["mode"]) => {
     if (!bookmark) return;
+    analytics.track(AnalyticsEvent.BOOKMARK_RESUMED_IN_CHAT, {
+      bookmark_id: bookmark.id,
+      mode,
+      source: "detail",
+    });
     const seed: ChatSeed = {
       mode,
       content: bookmark.content || bookmark.title,
       title: bookmark.title,
     };
     const session = await createSession.mutateAsync({});
+    analytics.track(AnalyticsEvent.CHAT_SESSION_CREATED, {
+      chat_session_id: session.id,
+      space_id: null,
+      trigger: "bookmark_resume",
+    });
     navigate(`/chat?sessionId=${session.id}`, { state: { seed } });
   };
 
   const startQuiz = async () => {
     if (!bookmark?.item_ref) return;
+    analytics.track(AnalyticsEvent.BOOKMARK_OPENED, {
+      bookmark_id: bookmark.id,
+      item_type: "quiz",
+    });
     try {
       const q = await getQuiz(bookmark.item_ref);
       setQuiz(q);
@@ -193,11 +208,17 @@ export default function BookmarkDetailPage() {
         </div>
       </div>
 
-      <QuizDrawer quiz={quiz} open={quizOpen} onOpenChange={setQuizOpen} />
+      <QuizDrawer
+        quiz={quiz}
+        open={quizOpen}
+        onOpenChange={setQuizOpen}
+        source="bookmark"
+      />
       <FlashcardViewer
         setId={bookmark.item_type === "flashcard" ? bookmark.item_ref : null}
         open={cardsOpen}
         onOpenChange={setCardsOpen}
+        source="bookmark"
       />
     </PageContainer>
   );

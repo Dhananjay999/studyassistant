@@ -16,6 +16,7 @@ import {
   ResponsiveModalTitle,
 } from "@/components/ui/responsive-modal";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -60,9 +61,21 @@ export function QuizExportButton({
     try {
       const quiz = await getQuizExport(quizId);
       await downloadQuizPdf(quiz, { includeAnswerKey, paper });
+      analytics.track(AnalyticsEvent.QUIZ_EXPORTED, {
+        quiz_id: quizId,
+        include_answer_key: includeAnswerKey,
+        paper: String(paper),
+        success: true,
+      });
       setOpen(false);
       toast.success("Quiz exported as PDF");
     } catch {
+      analytics.track(AnalyticsEvent.QUIZ_EXPORTED, {
+        quiz_id: quizId,
+        include_answer_key: includeAnswerKey,
+        paper: String(paper),
+        success: false,
+      });
       toast.error("Couldn't export the quiz. Please try again.");
     } finally {
       setBusy(false);

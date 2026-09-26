@@ -19,7 +19,7 @@ import { useDiscardGuard } from "./useDiscardGuard";
  */
 export function SettingsModal() {
   const { isOpen, section, close, setSection } = useSettings();
-  const confirmLogout = useConfirmLogout();
+  const confirmLogout = useConfirmLogout("settings_modal");
   const { guard, isPrompting, confirm, cancel } = useDiscardGuard();
 
   const active = getSection(section);

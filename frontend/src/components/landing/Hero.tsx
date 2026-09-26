@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { AuroraBackground } from "@/components/common/AuroraBackground";
+import { analyticsAttrs } from "@/lib/analytics";
 import { RotatingWords } from "@/components/common/RotatingWords";
 import { Marquee } from "@/components/common/Marquee";
 import { GoogleButton } from "@/components/landing/GoogleButton";
@@ -75,9 +76,14 @@ export function Hero() {
             {...entrance(0.18)}
             className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row"
           >
-            <GoogleButton label="Start learning free" />
+            <GoogleButton label="Start learning free" location="hero" />
             <a
               href="#features"
+              {...analyticsAttrs(
+                "landing.hero.explore_features",
+                "Explore features",
+                "hero",
+              )}
               className="inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
             >
               Explore features <ArrowRight className="h-4 w-4" aria-hidden="true" />

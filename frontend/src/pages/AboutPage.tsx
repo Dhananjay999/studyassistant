@@ -72,7 +72,7 @@ export default function AboutPage() {
           </p>
         </div>
         <div className="mt-12 flex justify-center">
-          <GoogleButton label="Start learning free" />
+          <GoogleButton label="Start learning free" location="about" />
         </div>
       </PublicPage>
     </>

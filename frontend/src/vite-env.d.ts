@@ -5,3 +5,13 @@
 declare const __APP_VERSION__: string;
 declare const __BUILD_ID__: string;
 declare const __BUILD_ENV__: string;
+
+// Runtime debug handle installed by the analytics SDK (src/lib/analytics).
+interface Window {
+  __aeva_analytics?: {
+    debug: boolean;
+    readonly session: unknown;
+    readonly anonymousId: string | null;
+    readonly ready: boolean;
+  };
+}

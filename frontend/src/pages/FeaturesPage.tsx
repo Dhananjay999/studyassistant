@@ -137,7 +137,7 @@ export default function FeaturesPage() {
           ))}
         </div>
         <div className="mt-12 flex justify-center">
-          <GoogleButton label="Start learning free" />
+          <GoogleButton label="Start learning free" location="features" />
         </div>
       </PublicPage>
     </>

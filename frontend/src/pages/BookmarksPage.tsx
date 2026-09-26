@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SwipeableRow } from "@/components/common/SwipeableRow";
@@ -160,6 +161,10 @@ export default function BookmarksPage() {
   const [openingQuizId, setOpeningQuizId] = useState<string | null>(null);
 
   const openBookmark = async (b: BookmarkT) => {
+    analytics.track(AnalyticsEvent.BOOKMARK_OPENED, {
+      bookmark_id: b.id,
+      item_type: b.item_type,
+    });
     if (b.item_type === "quiz" && b.item_ref) {
       setOpeningQuizId(b.id);
       try {
@@ -182,6 +187,11 @@ export default function BookmarksPage() {
   };
 
   const continueInChat = async (b: BookmarkT) => {
+    analytics.track(AnalyticsEvent.BOOKMARK_RESUMED_IN_CHAT, {
+      bookmark_id: b.id,
+      mode: b.session_id ? "reopen" : "continue",
+      source: "list",
+    });
     setContentBookmark(null);
     // Prefer reopening the exact conversation this bookmark came from. Only
     // when there's no origin session (deleted, or a note/media bookmark) do
@@ -232,6 +242,10 @@ export default function BookmarksPage() {
     setBulkBusy(true);
     try {
       await Promise.all(ids.map((id) => removeBookmark.mutateAsync(id)));
+      analytics.track(AnalyticsEvent.BOOKMARK_REMOVED, {
+        source: "page",
+        bulk_count: ids.length,
+      });
       toast.success(
         ids.length === 1
           ? "Removed from bookmarks"
@@ -256,6 +270,10 @@ export default function BookmarksPage() {
           updateBookmark.mutateAsync({ id, collection_id: collectionId }),
         ),
       );
+      analytics.track(AnalyticsEvent.BOOKMARK_MOVED, {
+        count: ids.length,
+        to_collection_id: collectionId,
+      });
       toast.success(ids.length === 1 ? "Moved" : `Moved ${ids.length} bookmarks`);
       setMoveState(null);
       exitSelect();
@@ -296,7 +314,10 @@ export default function BookmarksPage() {
     const name = newName.trim();
     if (!name) return;
     try {
-      await createCollection.mutateAsync(name);
+      const col = await createCollection.mutateAsync(name);
+      analytics.track(AnalyticsEvent.COLLECTION_CREATED, {
+        collection_id: col?.id,
+      });
       toast.success("Folder created");
       setNewName("");
       setCreating(false);
@@ -310,6 +331,7 @@ export default function BookmarksPage() {
     if (!name) return;
     try {
       await renameCollection.mutateAsync({ id, name });
+      analytics.track(AnalyticsEvent.COLLECTION_RENAMED, { collection_id: id });
       toast.success("Folder renamed");
       setEditingId(null);
     } catch {
@@ -321,6 +343,7 @@ export default function BookmarksPage() {
     setDeletingFolderId(id);
     try {
       await deleteCollection.mutateAsync(id);
+      analytics.track(AnalyticsEvent.COLLECTION_DELETED, { collection_id: id });
       toast.success("Folder deleted");
       if (activeCollection === id) setActiveCollection("all");
     } catch {
@@ -515,11 +538,17 @@ export default function BookmarksPage() {
         />
 
         {/* Center popups — open a saved item in place instead of a new chat. */}
-        <QuizDrawer quiz={quiz} open={quizOpen} onOpenChange={setQuizOpen} />
+        <QuizDrawer
+          quiz={quiz}
+          open={quizOpen}
+          onOpenChange={setQuizOpen}
+          source="bookmark"
+        />
         <FlashcardViewer
           setId={flashcardSetId}
           open={cardsOpen}
           onOpenChange={setCardsOpen}
+          source="bookmark"
         />
         <BookmarkContentDialog
           bookmark={contentBookmark}

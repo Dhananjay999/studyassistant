@@ -9,6 +9,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { GlassCard } from "@/components/common/GlassCard";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { errorKind } from "@/lib/errorMessage";
 import { useSubmitConfidence } from "@/hooks/api";
 import { cn } from "@/lib/utils";
 import type { ConfidenceInput, ConfidenceLevel } from "@/types";
@@ -58,8 +60,17 @@ export function ConfidencePrompt({
   const pick = async (confidence: ConfidenceLevel) => {
     try {
       await submit.mutateAsync({ topic, confidence, source, ref_id: refId });
+      analytics.track(AnalyticsEvent.CONFIDENCE_SUBMITTED, {
+        confidence,
+        source,
+        ref_id: refId,
+      });
       setDone(confidence);
-    } catch {
+    } catch (err) {
+      analytics.track(AnalyticsEvent.CONFIDENCE_SUBMIT_FAILED, {
+        source,
+        error_kind: errorKind(err),
+      });
       toast.error("Couldn't save that — try again?");
     }
   };

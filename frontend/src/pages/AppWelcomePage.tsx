@@ -5,6 +5,7 @@ import { GoogleIcon } from "@/components/icons/BrandIcons";
 import { Button } from "@/components/ui/button";
 import { Seo } from "@/components/common/Seo";
 import { useAuth } from "@/contexts/AuthContext";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { useSwipe } from "@/hooks/useSwipe";
 import { hasSeenAppOnboarding, markAppOnboardingSeen } from "@/lib/appMode";
 import { cn } from "@/lib/utils";
@@ -150,6 +151,12 @@ function Onboarding({ onDone }: { onDone: () => void }) {
 
 function Welcome() {
   const { signInWithGoogle, signingIn } = useAuth();
+  const startLogin = () => {
+    analytics.track(AnalyticsEvent.LANDING_CTA_CLICKED, {
+      location: "app_welcome",
+    });
+    signInWithGoogle();
+  };
   return (
     <div className="flex min-h-dvh flex-col bg-gradient-to-b from-background to-muted/40 pt-safe pb-safe">
       <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
@@ -174,7 +181,7 @@ function Welcome() {
            animated-gradient pill doesn't stretch well on mobile). */}
         <button
           type="button"
-          onClick={signInWithGoogle}
+          onClick={startLogin}
           disabled={signingIn}
           className="flex h-12 w-full items-center justify-center gap-2.5 rounded-full border border-border bg-card text-base font-semibold shadow-sm transition-transform active:scale-[0.98] disabled:opacity-70"
         >
@@ -187,7 +194,7 @@ function Welcome() {
         </button>
         <Button
           variant="outline"
-          onClick={signInWithGoogle}
+          onClick={startLogin}
           disabled={signingIn}
           className="h-12 w-full rounded-full text-base"
         >

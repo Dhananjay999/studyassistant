@@ -11,7 +11,7 @@ import { SettingsGroup } from "@/components/settings/primitives";
 export function AccountSection() {
   const { user } = useAuth();
   const { close } = useSettings();
-  const confirmLogout = useConfirmLogout();
+  const confirmLogout = useConfirmLogout("settings_account");
 
   const name = user?.full_name || "Student";
   const initial = user?.full_name?.[0] || user?.email?.[0] || "?";

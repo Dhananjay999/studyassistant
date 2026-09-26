@@ -45,6 +45,8 @@ import type {
   StudySpace,
   User,
 } from "@/types";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { errorKind } from "@/lib/errorMessage";
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -133,6 +135,37 @@ interface RequestExtras {
   public?: boolean;
 }
 
+// Analytics: collapse ids so `api_error` groups by route, never by record.
+const ID_SEGMENT =
+  /\/(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+)(?=\/|$)/gi;
+function normalizeEndpoint(path: string): string {
+  return path.split("?")[0].replace(ID_SEGMENT, "/:id").slice(0, 120);
+}
+let lastUnauthorizedAt = 0;
+function reportApiError(
+  path: string,
+  method: string,
+  status: number,
+  err: unknown,
+  timeout: boolean,
+): void {
+  // Refresh failures are the auth flow's own signal (`session_invalidated`).
+  if (path.startsWith(ENDPOINTS.AUTH_REFRESH)) return;
+  // A dead token fails every in-flight call at once; report the burst once.
+  if (status === 401) {
+    const now = Date.now();
+    if (now - lastUnauthorizedAt < 5000) return;
+    lastUnauthorizedAt = now;
+  }
+  analytics.track(AnalyticsEvent.API_ERROR, {
+    method,
+    endpoint: normalizeEndpoint(path),
+    status,
+    error_kind: errorKind(err),
+    timeout,
+  });
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -140,6 +173,7 @@ async function request<T>(
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT);
+  const method = (options.method ?? "GET").toUpperCase();
   try {
     const res = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
@@ -152,9 +186,19 @@ async function request<T>(
       // but never for an intentionally public call.
       if (res.status === 401 && !extras.public) onUnauthorized();
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.msg || `Request failed (${res.status})`);
+      const error = new Error(err.msg || `Request failed (${res.status})`);
+      reportApiError(path, method, res.status, error, false);
+      throw error;
     }
     return (await res.json()) as T;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      reportApiError(path, method, 0, "timeout", true);
+    } else if (e instanceof TypeError) {
+      // fetch rejected before any response (offline, DNS, CORS).
+      reportApiError(path, method, 0, e, false);
+    }
+    throw e;
   } finally {
     clearTimeout(timer);
   }

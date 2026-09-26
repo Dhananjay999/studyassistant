@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   BarChart3,
@@ -126,7 +126,14 @@ export default function QuizzesPage() {
     [quizzes, config, listQuery.state],
   );
 
-  const openQuiz = async (id: string, initialView: QuizInitialView) => {
+  // Analytics: how the currently open quiz was reached.
+  const openSourceRef = useRef<"quizzes_page" | "deeplink">("quizzes_page");
+  const openQuiz = async (
+    id: string,
+    initialView: QuizInitialView,
+    source: "quizzes_page" | "deeplink" = "quizzes_page",
+  ) => {
+    openSourceRef.current = source;
     setLoadingAction({ id, view: initialView });
     try {
       const q = await getQuiz(id);
@@ -144,7 +151,7 @@ export default function QuizzesPage() {
   useEffect(() => {
     const quizId = searchParams.get("quizId");
     if (!quizId) return;
-    openQuiz(quizId, "take");
+    openQuiz(quizId, "take", "deeplink");
     const next = new URLSearchParams(searchParams);
     next.delete("quizId");
     setSearchParams(next, { replace: true });
@@ -201,6 +208,7 @@ export default function QuizzesPage() {
         quiz={quiz}
         open={open}
         onOpenChange={setOpen}
+        source={openSourceRef.current}
         initialView={view}
       />
     </PageContainer>

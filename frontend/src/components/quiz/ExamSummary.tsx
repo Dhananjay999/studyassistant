@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { GraduationCap, Loader2, Pencil, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { ExamSettingsFields } from "@/components/quiz/ExamSettingsFields";
 import { useExamPatterns, useUpdateExamConfig } from "@/hooks/api";
 import {
@@ -54,6 +55,11 @@ export function ExamSummary({
       const res = await updateConfig.mutateAsync({
         id: quiz.quiz_id,
         examConfig: draft,
+      });
+      analytics.track(AnalyticsEvent.QUIZ_EXAM_CONFIG_UPDATED, {
+        quiz_id: quiz.quiz_id,
+        timer_seconds: draft.timer_seconds ?? null,
+        negative_marking: !!draft.negative,
       });
       onConfigSaved?.(res.exam_config);
       setDraft(null);

@@ -44,6 +44,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/common/GlassCard";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
@@ -851,6 +852,10 @@ export function HeroDemo() {
   };
 
   const revealFromChip = (id: "quiz" | "flashcards") => {
+    analytics.track(AnalyticsEvent.LANDING_DEMO_INTERACTED, {
+      action: id === "quiz" ? "reveal_quiz" : "reveal_flashcards",
+      demo_index: demoIdx,
+    });
     if (revealed[id]) return;
     setLoadingAction(id);
     loadingTimerRef.current = window.setTimeout(() => {

@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -78,6 +79,10 @@ export function MediaSidebar({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
+    analytics.track(AnalyticsEvent.MEDIA_DELETED, {
+      media_id: id,
+      source: "sidebar",
+    });
     setDeletingId(id);
     try {
       await onDelete(id);
@@ -197,6 +202,8 @@ export function MediaSidebar({
                         viewer.openDocument({
                           url: m.signed_url,
                           fileName: m.file_name,
+                          source: "thumbnail",
+                          mediaId: m.id,
                         })
                   }
                   aria-label={`Preview ${m.file_name}`}

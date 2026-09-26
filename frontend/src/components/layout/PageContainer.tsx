@@ -21,7 +21,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "h-full overflow-y-auto pb-bottomnav lg:pb-0",
+        "h-full overflow-y-auto pb-bottomnav lg:pb-0 p-4",
         className,
       )}
     >

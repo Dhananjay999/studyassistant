@@ -11,10 +11,13 @@ export interface ProcessingFrame {
   recoverable?: boolean;
 }
 
+/** Which transport delivered the terminal state (analytics). */
+export type ProcessingVia = "stream" | "poll";
+
 export interface ProcessingCallbacks {
   onFrame: (frame: ProcessingFrame) => void;
-  onReady: () => void;
-  onError: (message: string, recoverable: boolean) => void;
+  onReady: (via: ProcessingVia) => void;
+  onError: (message: string, recoverable: boolean, via: ProcessingVia) => void;
 }
 
 const POLL_INTERVAL_MS = 2500;
@@ -56,7 +59,7 @@ export function useMediaProcessing() {
         } catch {
           misses += 1;
           if (misses >= MAX_POLL_MISSES) {
-            cb.onError("Processing failed.", false);
+            cb.onError("Processing failed.", false, "poll");
             stopOne(mediaId);
             return;
           }
@@ -64,12 +67,16 @@ export function useMediaProcessing() {
         }
         const status = item.processing_status ?? "ready";
         if (status === "ready") {
-          cb.onReady();
+          cb.onReady("poll");
           stopOne(mediaId);
           return;
         }
         if (status === "error" || status === "failed") {
-          cb.onError(item.processing_error || "Processing failed.", true);
+          cb.onError(
+            item.processing_error || "Processing failed.",
+            true,
+            "poll",
+          );
           stopOne(mediaId);
           return;
         }
@@ -116,12 +123,16 @@ export function useMediaProcessing() {
               continue;
             }
             if (frame.stage === "ready") {
-              cb.onReady();
+              cb.onReady("stream");
               stopOne(mediaId);
               return;
             }
             if (frame.stage === "error") {
-              cb.onError(frame.msg || "Processing failed.", !!frame.recoverable);
+              cb.onError(
+                frame.msg || "Processing failed.",
+                !!frame.recoverable,
+                "stream",
+              );
               stopOne(mediaId);
               return;
             }

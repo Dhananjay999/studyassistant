@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Bookmark, BookmarkCheck, Check, Folder, FolderPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { errorKind } from "@/lib/errorMessage";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -60,10 +62,19 @@ export function BookmarkButton({
   const saveTo = async (collectionId: string) => {
     try {
       await create.mutateAsync({ ...item, collection_id: collectionId });
+      analytics.track(AnalyticsEvent.BOOKMARK_CREATED, {
+        item_type: item.item_type,
+        collection_id: collectionId,
+        new_collection: false,
+      });
       const where = collections.find((c) => c.id === collectionId)?.name;
       toast.success(`Saved to ${where ?? "Favorites"}`);
       setOpen(false);
-    } catch {
+    } catch (err) {
+      analytics.track(AnalyticsEvent.BOOKMARK_CREATE_FAILED, {
+        item_type: item.item_type,
+        error_kind: errorKind(err),
+      });
       toast.error("Couldn't save bookmark");
     }
   };
@@ -73,7 +84,15 @@ export function BookmarkButton({
     if (!name) return;
     try {
       const col = await createCollection.mutateAsync(name);
+      analytics.track(AnalyticsEvent.COLLECTION_CREATED, {
+        collection_id: col.id,
+      });
       await create.mutateAsync({ ...item, collection_id: col.id });
+      analytics.track(AnalyticsEvent.BOOKMARK_CREATED, {
+        item_type: item.item_type,
+        collection_id: col.id,
+        new_collection: true,
+      });
       toast.success(`Saved to ${name}`);
       setNewFolder("");
       setCreating(false);
@@ -87,6 +106,11 @@ export function BookmarkButton({
     if (!existing) return;
     try {
       await remove.mutateAsync(existing.id);
+      analytics.track(AnalyticsEvent.BOOKMARK_REMOVED, {
+        bookmark_id: existing.id,
+        item_type: item.item_type,
+        source: "button",
+      });
       toast.success("Removed from bookmarks");
       setOpen(false);
     } catch {

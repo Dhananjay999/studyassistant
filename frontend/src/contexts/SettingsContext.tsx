@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useBackClose } from "@/hooks/useBackClose";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import type { SettingsSectionId } from "@/components/settings/types";
 
 /**
@@ -41,10 +42,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   );
   const [dirty, setDirty] = useState(false);
 
-  const open = useCallback((next?: SettingsSectionId) => {
-    if (next) setSectionState(next);
-    setIsOpen(true);
-  }, []);
+  const open = useCallback(
+    (next?: SettingsSectionId) => {
+      analytics.track(AnalyticsEvent.SETTINGS_OPENED, {
+        section: next ?? section,
+      });
+      if (next) setSectionState(next);
+      setIsOpen(true);
+    },
+    [section],
+  );
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -52,6 +59,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setSection = useCallback((next: SettingsSectionId) => {
+    analytics.track(AnalyticsEvent.SETTINGS_SECTION_VIEWED, { section: next });
     setSectionState(next);
     setDirty(false);
   }, []);

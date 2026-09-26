@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { NotebookPen, Plus, Search, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { GlassCard } from "@/components/common/GlassCard";
@@ -82,7 +83,14 @@ export default function NotesPage() {
     createNote.mutate(
       {},
       {
-        onSuccess: (note) => navigate(`/notes/${note.id}`),
+        onSuccess: (note) => {
+          analytics.track(AnalyticsEvent.NOTE_CREATED, {
+            note_id: note.id,
+            content_length: 0,
+            source_type: "manual",
+          });
+          navigate(`/notes/${note.id}`);
+        },
         onError: () => toast.error("Couldn't create a note"),
       },
     );

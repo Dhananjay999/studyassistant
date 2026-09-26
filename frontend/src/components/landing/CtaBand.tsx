@@ -22,7 +22,7 @@ export function CtaBand() {
               review next. Start free with Aeva today.
             </p>
             <div className="mt-8 flex justify-center">
-              <GoogleButton label="Start learning free" />
+              <GoogleButton label="Start learning free" location="cta_band" />
             </div>
           </div>
         </Reveal>

@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { FileText, FolderOpen, ImageIcon, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { GlassCard } from "@/components/common/GlassCard";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { Seo } from "@/components/common/Seo";
@@ -86,12 +87,20 @@ export default function FilesPage() {
     [media, listQuery.state],
   );
 
-  const openFile = async (m: MediaItem) => {
+  const openFile = async (
+    m: MediaItem,
+    source: "files" | "deeplink" = "files",
+  ) => {
     const isImage = isImageMedia(m);
     if (!isImage && !isMediaReady(m)) {
       toast.warning("This file is still being processed.");
       return;
     }
+    analytics.track(AnalyticsEvent.MEDIA_VIEWER_OPENED, {
+      media_id: m.id,
+      source,
+      kind: isImage ? "image" : "pdf",
+    });
     setOpeningId(m.id);
     try {
       // Signed URLs expire (~1h), so always resolve a fresh one on open.
@@ -116,7 +125,7 @@ export default function FilesPage() {
     if (!fileId) return;
     const item = media.find((m) => m.id === fileId);
     if (!item) return; // list still loading — reruns when `media` arrives
-    openFile(item);
+    openFile(item, "deeplink");
     const next = new URLSearchParams(searchParams);
     next.delete("fileId");
     setSearchParams(next, { replace: true });

@@ -28,7 +28,7 @@ const MENU_GROUPS: ReadonlyArray<{
 export function SettingsMobile() {
   const { section, close, setSection } = useSettings();
   const { user } = useAuth();
-  const confirmLogout = useConfirmLogout();
+  const confirmLogout = useConfirmLogout("settings_mobile");
   const { guard, isPrompting, confirm, cancel } = useDiscardGuard();
 
   // `null` = the grouped menu; otherwise a section sub-screen.

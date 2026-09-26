@@ -34,6 +34,7 @@ import {
   type SpeechErrorCode,
 } from "@/hooks/useSpeechRecognition";
 import { filterSlashCommands, type SlashCommand } from "@/lib/slashCommands";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { isModifier } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +83,7 @@ function VoiceBars({ active }: { active: boolean }) {
 export const ChatComposer = forwardRef<
   ChatComposerHandle,
   {
-    onSend: (text: string) => void;
+    onSend: (text: string, meta?: { voiceUsed: boolean }) => void;
     onUpload: (files: FileList) => void;
     onQuizCommand?: () => void;
     disabled?: boolean;
@@ -123,6 +124,10 @@ export const ChatComposer = forwardRef<
   // Composer text at the moment dictation started; the session transcript
   // is appended to this, so typed text is never overwritten.
   const dictationBaseRef = useRef("");
+  // Analytics: whether dictation contributed text to the pending message, and
+  // when the current dictation session started.
+  const voiceContributedRef = useRef(false);
+  const voiceStartedAtRef = useRef(0);
   const isMobile = useIsMobile();
   const voiceEnabled = useFeature("voice_input");
   // Full prompt wraps to two lines on a narrow phone (and the second line gets
@@ -186,6 +191,7 @@ export const ChatComposer = forwardRef<
   } = useSpeechRecognition({
     lang: voiceLang === "auto" ? undefined : voiceLang,
     onTranscript: (finalText, interimText) => {
+      if (finalText) voiceContributedRef.current = true;
       setValue(joinDictation(dictationBaseRef.current, finalText));
       setInterim(interimText);
       if (finalText || interimText) bumpActivity();
@@ -197,10 +203,17 @@ export const ChatComposer = forwardRef<
       });
     },
     onError: (code) => {
+      analytics.track(AnalyticsEvent.CHAT_VOICE_FAILED, { code });
       const { title, description } = VOICE_ERROR_MESSAGES[code];
       toast.error(title, description ? { description } : undefined);
     },
     onEnd: ({ transcript, canceled }) => {
+      analytics.track(AnalyticsEvent.CHAT_VOICE_ENDED, {
+        transcript_length: transcript.length,
+        canceled,
+        duration_ms: Math.round(performance.now() - voiceStartedAtRef.current),
+      });
+      if (canceled) voiceContributedRef.current = false;
       setInterim("");
       if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
       if (canceled) {
@@ -215,6 +228,8 @@ export const ChatComposer = forwardRef<
   const startVoice = () => {
     if (locked || listening) return;
     dictationBaseRef.current = value;
+    voiceStartedAtRef.current = performance.now();
+    analytics.track(AnalyticsEvent.CHAT_VOICE_STARTED, { lang: voiceLang });
     setInterim("");
     bumpActivity();
     startDictation();
@@ -263,13 +278,17 @@ export const ChatComposer = forwardRef<
     const text = value.trim();
     if (!text || disabled || locked) return;
     if (listening) stopDictation();
-    onSend(text);
+    onSend(text, { voiceUsed: voiceContributedRef.current });
+    voiceContributedRef.current = false;
     setValue("");
     setShowMenu(false);
     resetHeight();
   };
 
   const selectCommand = (command: SlashCommand) => {
+    analytics.track(AnalyticsEvent.CHAT_SLASH_COMMAND_SELECTED, {
+      command_id: command.id,
+    });
     setShowMenu(false);
     if (command.action === "quiz") {
       setValue("");

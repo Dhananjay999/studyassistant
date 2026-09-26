@@ -10,6 +10,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { QuizSetupPopover } from "@/components/chat/QuizSetupPopover";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { PRIMARY_ACTIONS, type PrimaryAction } from "@/lib/suggestedActions";
@@ -114,17 +115,26 @@ export function SuggestedActions({
 
   const firePrompt = (action: PrimaryAction) => {
     if (busy || !action.instruction) return;
+    analytics.track(AnalyticsEvent.CHAT_ACTION_CLICKED, {
+      action: "primary_prompt",
+      action_id: action.id,
+    });
     setActiveId(action.id);
     onAction(action.instruction);
   };
 
   const fireFlashcards = (action: PrimaryAction) => {
     if (busy) return;
+    analytics.track(AnalyticsEvent.CHAT_ACTION_CLICKED, {
+      action: "flashcards",
+      action_id: action.id,
+    });
     setActiveId(action.id);
     onCreateFlashcards();
   };
 
   const copy = async () => {
+    analytics.track(AnalyticsEvent.CHAT_ACTION_CLICKED, { action: "copy" });
     const ok = await onCopy();
     if (ok) {
       setCopied(true);
@@ -242,7 +252,14 @@ export function SuggestedActions({
               whileHover={{ x: 2 }}
               whileTap={{ scale: 0.99 }}
               disabled={busy}
-              onClick={() => !busy && onFollowup(f.prompt, f.title)}
+              onClick={() => {
+                if (busy) return;
+                analytics.track(AnalyticsEvent.CHAT_ACTION_CLICKED, {
+                  action: "followup",
+                  followup_index: i,
+                });
+                onFollowup(f.prompt, f.title);
+              }}
               className={cn(
                 "group inline-flex w-full items-center justify-between gap-2",
                 "rounded-xl border border-border/60 bg-muted/30 px-3 py-2",
@@ -266,6 +283,9 @@ export function SuggestedActions({
             type="button"
             onClick={async () => {
               if (noteState !== "idle") return;
+              analytics.track(AnalyticsEvent.CHAT_ACTION_CLICKED, {
+                action: "save_note",
+              });
               setNoteState("saving");
               const ok = await onSaveNote();
               setNoteState(ok ? "saved" : "idle");

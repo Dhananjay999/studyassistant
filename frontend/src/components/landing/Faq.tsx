@@ -5,6 +5,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Reveal } from "@/components/common/Reveal";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
 /**
  * Landing-page FAQ. Questions target the long-tail searches students actually
@@ -93,6 +94,12 @@ export function Faq() {
           <Accordion
             type="single"
             collapsible
+            onValueChange={(v) => {
+              const faq_index = FAQS.findIndex((f) => f.q === v);
+              if (faq_index >= 0) {
+                analytics.track(AnalyticsEvent.LANDING_FAQ_OPENED, { faq_index });
+              }
+            }}
             className="w-full [&_[role=region][data-state=closed]]:hidden"
           >
             {FAQS.map((f) => (

@@ -18,7 +18,11 @@ import {
 } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { qk } from "@/hooks/api";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import type { User } from "@/types";
+
+type LoadReason = "boot" | "login" | "refresh";
+type LoginMethod = "popup" | "redirect";
 
 interface AuthContextValue {
   user: User | null;
@@ -98,6 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [signingIn, setSigningIn] = useState(false);
   const tokenRef = useRef<string | null>(null);
   const refreshTimer = useRef<number>();
+  // How the in-flight login was started; null after a full-page redirect
+  // (the callback page is a fresh load), which is itself the answer.
+  const loginMethodRef = useRef<LoginMethod | null>(null);
 
   // True once the initial token restore has settled. Session teardowns that
   // happen *during* boot (dead token found at startup) must clear quietly —
@@ -117,6 +124,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // hard replace so the page fully reloads onto the landing/welcome screen
   // and the back button can never reach a signed-in view.
   const hardLogout = useCallback(() => {
+    // Forget the analytics identity first (new anonymous id + session) so
+    // nothing after this point is attributed to the signed-out user.
+    analytics.reset();
     clearSession();
     queryClient.clear();
     window.location.replace("/");
@@ -127,8 +137,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // explicit logout — never leave a signed-out user on a stale page. During
   // boot, just clear state and let the normal render take over.
   const onSessionInvalid = useCallback(() => {
-    if (bootDoneRef.current) hardLogout();
-    else clearSession();
+    if (bootDoneRef.current) {
+      analytics.track(AnalyticsEvent.SESSION_INVALIDATED);
+      hardLogout();
+    } else {
+      clearSession();
+    }
   }, [hardLogout, clearSession]);
 
   const doRefresh = useCallback(async (): Promise<boolean> => {
@@ -173,10 +187,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [scheduleRefresh],
   );
 
-  const loadUser = useCallback(async () => {
+  const loadUser = useCallback(async (reason: LoadReason = "boot") => {
     const me = await getMe();
     reconcileUserState(me.id);
     setUser(me);
+    // Single place identity reaches analytics: covers popup login, redirect
+    // login and boot restore. The anonymous trail merges into this person.
+    analytics.identify(me);
+    if (reason === "login") {
+      analytics.track(AnalyticsEvent.LOGIN_SUCCEEDED, {
+        method: loginMethodRef.current ?? "redirect",
+        is_new_user: (me.personalization_status ?? "pending") === "pending",
+      });
+      loginMethodRef.current = null;
+    }
     // Warm the learning profile once at app init so the first chat (and any
     // personalization-aware UI) reads it from cache instead of re-fetching.
     // Fire-and-forget: it must never block or fail user load.
@@ -195,7 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ignoring transient failures so a stale-but-usable session is kept.
   const refreshUser = useCallback(async () => {
     try {
-      await loadUser();
+      await loadUser("refresh");
     } catch {
       /* keep existing user */
     }
@@ -245,7 +269,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       persist(accessToken, refreshToken, expiresIn);
       try {
-        await loadUser();
+        await loadUser("login");
       } finally {
         setLoading(false);
       }
@@ -267,10 +291,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Popup blocked (or mobile) — fall back to a full-page redirect.
     if (!popup) {
+      analytics.track(AnalyticsEvent.LOGIN_STARTED, { method: "redirect" });
+      analytics.flush();
       window.location.href = url;
       return;
     }
 
+    loginMethodRef.current = "popup";
+    analytics.track(AnalyticsEvent.LOGIN_STARTED, { method: "popup" });
     setSigningIn(true);
 
     const onMessage = (e: MessageEvent) => {
@@ -292,6 +320,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (popup.closed) {
         cleanup();
         setSigningIn(false);
+        // Closed without posting tokens back: the user gave up (or the
+        // callback failed inside the popup, which tracks its own failure).
+        analytics.track(AnalyticsEvent.LOGIN_ABANDONED);
+        loginMethodRef.current = null;
       }
     }, 600);
 

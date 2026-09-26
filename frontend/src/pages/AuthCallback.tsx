@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AppLoader } from "@/components/common/AppLoader";
 import { Seo } from "@/components/common/Seo";
 import { AUTH_MESSAGES } from "@/lib/loadingMessages";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
 export default function AuthCallback() {
   const { setSession } = useAuth();
@@ -32,6 +33,9 @@ export default function AuthCallback() {
           },
           window.location.origin,
         );
+      } else {
+        analytics.track(AnalyticsEvent.LOGIN_FAILED, { reason: "missing_token" });
+        analytics.flush();
       }
       window.close();
       return;
@@ -41,8 +45,12 @@ export default function AuthCallback() {
     if (accessToken && refreshToken) {
       setSession(accessToken, refreshToken, expiresIn)
         .then(() => navigate("/chat", { replace: true }))
-        .catch(() => navigate("/?auth_error=session", { replace: true }));
+        .catch(() => {
+          analytics.track(AnalyticsEvent.LOGIN_FAILED, { reason: "session" });
+          navigate("/?auth_error=session", { replace: true });
+        });
     } else {
+      analytics.track(AnalyticsEvent.LOGIN_FAILED, { reason: "missing_token" });
       navigate("/?auth_error=missing_token", { replace: true });
     }
   }, [setSession, navigate]);

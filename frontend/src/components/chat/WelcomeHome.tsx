@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Flame } from "lucide-react";
 import { EmptyState } from "@/components/chat/EmptyState";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { MemoryHint } from "@/components/chat/MemoryHint";
 import { RecommendationCard } from "@/components/revision/RecommendationCard";
 import { useAuth } from "@/contexts/AuthContext";
@@ -72,6 +73,10 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
     : "Recently you studied";
 
   const openRecommendation = (r: RevisionRecommendation) => {
+    analytics.track(AnalyticsEvent.CHAT_SUGGESTED_PROMPT_CLICKED, {
+      kind: "recommendation",
+      action: r.action,
+    });
     if (r.action === "quiz" && r.quiz_id) {
       navigate(`/quizzes?quizId=${r.quiz_id}`);
     } else if (r.action === "flashcards" && r.set_id) {
@@ -167,7 +172,12 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
           <motion.button
             key={p.text}
             type="button"
-            onClick={() => onPick(p.text)}
+            onClick={() => {
+              analytics.track(AnalyticsEvent.CHAT_SUGGESTED_PROMPT_CLICKED, {
+                kind: "empty_state",
+              });
+              onPick(p.text);
+            }}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}

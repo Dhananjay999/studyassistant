@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { GraduationCap, Layers } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -70,7 +70,10 @@ export default function FlashcardsPage() {
     [sets, listQuery.state],
   );
 
-  const study = (id: string) => {
+  // Analytics: how the currently open set was reached.
+  const openSourceRef = useRef<"flashcards_page" | "deeplink">("flashcards_page");
+  const study = (id: string, source: "flashcards_page" | "deeplink" = "flashcards_page") => {
+    openSourceRef.current = source;
     setActiveSet(id);
     setOpen(true);
   };
@@ -81,7 +84,7 @@ export default function FlashcardsPage() {
   useEffect(() => {
     const setId = searchParams.get("setId");
     if (!setId) return;
-    study(setId);
+    study(setId, "deeplink");
     const next = new URLSearchParams(searchParams);
     next.delete("setId");
     setSearchParams(next, { replace: true });
@@ -166,7 +169,12 @@ export default function FlashcardsPage() {
         )}
       </div>
 
-      <FlashcardViewer setId={activeSet} open={open} onOpenChange={setOpen} />
+      <FlashcardViewer
+        setId={activeSet}
+        open={open}
+        onOpenChange={setOpen}
+        source={openSourceRef.current}
+      />
     </PageContainer>
   );
 }

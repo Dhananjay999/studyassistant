@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Copy, ExternalLink, FileText, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import {
   Tooltip,
   TooltipContent,
@@ -20,7 +21,13 @@ function domainOf(url?: string): string {
   }
 }
 
-function SourceCard({ source }: { source: SourceInfo }) {
+function SourceCard({
+  source,
+  position,
+}: {
+  source: SourceInfo;
+  position: number;
+}) {
   const domain = domainOf(source.url);
   const [iconOk, setIconOk] = useState(true);
   const favicon = domain
@@ -43,6 +50,12 @@ function SourceCard({ source }: { source: SourceInfo }) {
       href={source.url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() =>
+        analytics.track(AnalyticsEvent.CHAT_SOURCE_CLICKED, {
+          kind: "web",
+          position,
+        })
+      }
       whileHover={{ y: -2 }}
       className="group flex w-[220px] shrink-0 snap-start flex-col gap-1.5 rounded-xl border border-border/60 bg-card/50 p-2.5 transition-colors hover:border-brand-1/40 hover:bg-card"
     >
@@ -165,6 +178,12 @@ export function SourceCards({ sources }: { sources: SourceInfo[] }) {
               key={`doc-${i}`}
               source={s}
               onOpen={() => {
+                analytics.track(AnalyticsEvent.CHAT_SOURCE_CLICKED, {
+                  kind: "document",
+                  media_id: s.media_id ?? undefined,
+                  page: s.page_number ?? undefined,
+                  position: i,
+                });
                 if (s.media_id) {
                   void viewer.openDocumentByMediaId(
                     s.media_id,
@@ -181,7 +200,7 @@ export function SourceCards({ sources }: { sources: SourceInfo[] }) {
       {webs.length > 0 && (
         <div className="mt-2 flex snap-x scroll-smooth gap-2 overflow-x-auto pb-1 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {webs.map((s, i) => (
-            <SourceCard key={`web-${i}`} source={s} />
+            <SourceCard key={`web-${i}`} source={s} position={i} />
           ))}
         </div>
       )}

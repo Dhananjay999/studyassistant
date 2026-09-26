@@ -9,8 +9,13 @@ const GENERIC =
 const OFFLINE =
   "⚠️ You appear to be offline. Check your connection and try again.";
 
-/** Map an error (or error message) to friendly, non-technical copy. */
-export function friendlyErrorMessage(error: unknown): string {
+export type ErrorKind = "offline" | "high_demand" | "generic";
+
+/**
+ * Bucket an error (or error message) for analytics and copy selection.
+ * Never returns the raw message, so it is safe to send anywhere.
+ */
+export function errorKind(error: unknown): ErrorKind {
   const raw =
     error instanceof Error
       ? error.message
@@ -24,7 +29,7 @@ export function friendlyErrorMessage(error: unknown): string {
     "onLine" in navigator &&
     !navigator.onLine
   ) {
-    return OFFLINE;
+    return "offline";
   }
   // Overloaded / rate-limited / temporarily unavailable → "high demand".
   if (
@@ -32,10 +37,21 @@ export function friendlyErrorMessage(error: unknown): string {
       text,
     )
   ) {
-    return HIGH_DEMAND;
+    return "high_demand";
   }
   if (/\b(network|timeout|timed out|failed to fetch|connection)\b/.test(text)) {
-    return OFFLINE;
+    return "offline";
   }
-  return GENERIC;
+  return "generic";
+}
+
+const COPY: Record<ErrorKind, string> = {
+  offline: OFFLINE,
+  high_demand: HIGH_DEMAND,
+  generic: GENERIC,
+};
+
+/** Map an error (or error message) to friendly, non-technical copy. */
+export function friendlyErrorMessage(error: unknown): string {
+  return COPY[errorKind(error)];
 }

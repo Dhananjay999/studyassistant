@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { analytics as tracker, AnalyticsEvent } from "@/lib/analytics";
 import { Badge } from "@/components/ui/badge";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { MathText } from "@/components/common/MathText";
@@ -97,10 +98,13 @@ export function FlashcardViewer({
   setId,
   open,
   onOpenChange,
+  source = "chat",
 }: {
   setId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Where the set was opened from (analytics). */
+  source?: string;
 }) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -127,6 +131,14 @@ export function FlashcardViewer({
   // into `elapsed` when the deck is finished.
   const startedAtRef = useRef<number>(0);
   const [elapsed, setElapsed] = useState(0);
+  // Analytics bookkeeping for the study session (see finish / flushStudy).
+  const flipCountRef = useRef(0);
+  const reviewAgainRef = useRef(false);
+  const studyTrackedRef = useRef(false);
+  const completedRef = useRef(false);
+  const indexRef = useRef(0);
+  const totalRef = useRef(0);
+  const shuffledRef = useRef(false);
 
   const cards = useMemo(() => data?.cards ?? [], [data?.cards]);
   const order = useMemo(
@@ -140,6 +152,9 @@ export function FlashcardViewer({
     [cards, shuffleSeed],
   );
   const total = cards.length;
+  indexRef.current = index;
+  totalRef.current = total;
+  shuffledRef.current = shuffleSeed !== 0;
   const card = total > 0 ? cards[order[index] ?? 0] : null;
   const progress = total > 0 ? ((index + 1) / total) * 100 : 0;
 
@@ -154,7 +169,21 @@ export function FlashcardViewer({
     setElapsed(0);
     ratingsRef.current = new Map();
     startedAtRef.current = Date.now();
+    flipCountRef.current = 0;
+    reviewAgainRef.current = false;
+    studyTrackedRef.current = false;
+    completedRef.current = false;
   }, [setId, open]);
+  // `flashcards_study_started` once the set's card count is known.
+  useEffect(() => {
+    if (!open || !setId || !data || studyTrackedRef.current) return;
+    studyTrackedRef.current = true;
+    tracker.track(AnalyticsEvent.FLASHCARDS_STUDY_STARTED, {
+      set_id: setId,
+      card_count: data.cards?.length ?? 0,
+      source,
+    });
+  }, [open, setId, data, source]);
   useEffect(() => {
     if (data?.analytics) setAnalytics(data.analytics);
   }, [data?.analytics]);
@@ -164,6 +193,14 @@ export function FlashcardViewer({
   flushStudy.current = () => {
     const buffered = ratingsRef.current;
     if (!setId || buffered.size === 0) return;
+    if (!completedRef.current) {
+      // Closing mid-session with unsaved ratings.
+      tracker.track(AnalyticsEvent.FLASHCARDS_STUDY_ABANDONED, {
+        set_id: setId,
+        rated_count: buffered.size,
+        index: indexRef.current,
+      });
+    }
     const ratings = [...buffered.entries()].map(([flashcard_id, rating]) => ({
       flashcard_id,
       rating,
@@ -178,19 +215,38 @@ export function FlashcardViewer({
   useEffect(() => () => flushStudy.current(), []);
 
   const finish = useCallback(() => {
-    setElapsed((Date.now() - startedAtRef.current) / 1000);
+    const duration_s = (Date.now() - startedAtRef.current) / 1000;
+    setElapsed(duration_s);
     setCompleted(true);
+    completedRef.current = true;
+    const counts = { easy: 0, medium: 0, hard: 0, needs_revision: 0 };
+    for (const r of ratingsRef.current.values()) {
+      if (r in counts) counts[r as keyof typeof counts] += 1;
+    }
+    tracker.track(AnalyticsEvent.FLASHCARDS_STUDY_COMPLETED, {
+      set_id: setId ?? "",
+      card_count: totalRef.current,
+      duration_s: Math.round(duration_s),
+      rated_count: ratingsRef.current.size,
+      ...counts,
+      flip_count: flipCountRef.current,
+      shuffled: shuffledRef.current,
+      review_again: reviewAgainRef.current,
+    });
     flushStudy.current();
-  }, []);
+  }, [setId]);
 
   const reviewAgain = () => {
     setIndex(0);
     setDir(1);
     setShuffleSeed(0);
     setCompleted(false);
+    completedRef.current = false;
     setElapsed(0);
     ratingsRef.current = new Map();
     startedAtRef.current = Date.now();
+    flipCountRef.current = 0;
+    reviewAgainRef.current = true;
   };
 
   const go = useCallback(
@@ -231,7 +287,16 @@ export function FlashcardViewer({
       `${data.title}\n\n` +
       data.cards.map((c) => `Q: ${c.front}\nA: ${c.back}`).join("\n\n");
     const seed: ChatSeed = { mode, content, title: data.title };
+    tracker.track(AnalyticsEvent.FLASHCARDS_RESUMED_IN_CHAT, {
+      set_id: setId ?? "",
+      mode,
+    });
     const session = await createSession.mutateAsync({});
+    tracker.track(AnalyticsEvent.CHAT_SESSION_CREATED, {
+      chat_session_id: session.id,
+      space_id: null,
+      trigger: "flashcard_resume",
+    });
     onOpenChange(false);
     navigate(`/chat?sessionId=${session.id}`, { state: { seed } });
   };
@@ -431,6 +496,9 @@ export function FlashcardViewer({
                           card={card}
                           dir={dir}
                           onSwipe={go}
+                          onFlip={() => {
+                            flipCountRef.current += 1;
+                          }}
                         />
                       </AnimatePresence>
                     </div>
@@ -540,9 +608,21 @@ export function FlashcardViewer({
  */
 const StudyCard = forwardRef<
   HTMLDivElement,
-  { card: Flashcard; dir: number; onSwipe: (delta: number) => void }
->(function StudyCard({ card, dir, onSwipe }, ref) {
+  {
+    card: Flashcard;
+    dir: number;
+    onSwipe: (delta: number) => void;
+    onFlip?: () => void;
+  }
+>(function StudyCard({ card, dir, onSwipe, onFlip }, ref) {
   const [flipped, setFlipped] = useState(false);
+  // Keep the latest callback without re-subscribing the key listener.
+  const onFlipRef = useRef(onFlip);
+  onFlipRef.current = onFlip;
+  const flip = useCallback(() => {
+    onFlipRef.current?.();
+    setFlipped((f) => !f);
+  }, []);
   // Only the card actually on screen (the present one) reacts to Space/Enter,
   // so a keypress mid-swipe doesn't flip the card that's leaving.
   const isPresent = useIsPresent();
@@ -552,12 +632,12 @@ const StudyCard = forwardRef<
     const onKey = (e: KeyboardEvent) => {
       if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
-        setFlipped((f) => !f);
+        flip();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isPresent]);
+  }, [isPresent, flip]);
 
   const onDragEnd = (_e: unknown, info: PanInfo) => {
     const forward =
@@ -581,7 +661,7 @@ const StudyCard = forwardRef<
       dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.4}
       onDragEnd={onDragEnd}
-      onTap={() => setFlipped((f) => !f)}
+      onTap={flip}
       role="button"
       tabIndex={0}
       aria-label="Flip card; swipe left or right to navigate"

@@ -45,7 +45,7 @@ export function SharedNoteView({ content }: { content: SharedNoteContent }) {
             quizzes and flashcards.
           </p>
           <div className="flex justify-center">
-            <GoogleButton label="Start learning free" />
+            <GoogleButton label="Start learning free" location="share" />
           </div>
         </div>
       </div>

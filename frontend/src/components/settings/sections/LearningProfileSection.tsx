@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CircleSlash, Pencil, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -186,6 +187,7 @@ export function LearningProfileSection() {
   };
 
   const startEdit = () => {
+    analytics.track(AnalyticsEvent.LEARNING_PROFILE_EDIT_STARTED);
     setDraft(saved);
     setEditing(true);
   };
@@ -197,7 +199,13 @@ export function LearningProfileSection() {
 
   const save = async () => {
     try {
-      await saveMutation.mutateAsync(toInput(draft));
+      const input = toInput(draft);
+      await saveMutation.mutateAsync(input);
+      analytics.track(AnalyticsEvent.LEARNING_PROFILE_SAVED, {
+        fields_set: Object.values(input).filter((v) =>
+          Array.isArray(v) ? v.length > 0 : !!v,
+        ).length,
+      });
       await refreshUser();
       setEditing(false);
       toast.success("Learning profile saved");
@@ -209,6 +217,7 @@ export function LearningProfileSection() {
   const reset = async () => {
     try {
       await saveMutation.mutateAsync(toInput(EMPTY));
+      analytics.track(AnalyticsEvent.LEARNING_PROFILE_RESET);
       await refreshUser();
       setDraft(EMPTY);
       setEditing(false);

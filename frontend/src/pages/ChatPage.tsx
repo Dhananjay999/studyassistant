@@ -73,7 +73,13 @@ import {
   useSessions,
 } from "@/hooks/api";
 import { getMessages, getQuiz, uploadFileWithProgress } from "@/lib/api";
-import { friendlyErrorMessage } from "@/lib/errorMessage";
+import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
+import {
+  analytics,
+  AnalyticsEvent,
+  type ChatIntent,
+  type ChatSource,
+} from "@/lib/analytics";
 import { compressFiles } from "@/utils/compress";
 import type {
   Bookmark as BookmarkData,
@@ -286,6 +292,8 @@ export default function ChatPage() {
   const { start, stop, streaming } = useAssistantStream();
   const processing = useMediaProcessing();
   const streamIdRef = useRef<string | null>(null);
+  // performance.now() when the in-flight turn was sent (analytics timing).
+  const sendStartedAtRef = useRef(0);
   const composerRef = useRef<ChatComposerHandle>(null);
   // True while the user is on a fresh, empty "New chat" with no session yet.
   const newChatRef = useRef(false);
@@ -374,6 +382,12 @@ export default function ChatPage() {
 
   // Stop generation: abort the stream, keep whatever was already produced.
   const handleStop = () => {
+    const cur = messages.find((m) => m.id === streamIdRef.current);
+    analytics.track(AnalyticsEvent.CHAT_RESPONSE_STOPPED, {
+      chat_session_id: activeId,
+      elapsed_ms: Math.round(performance.now() - sendStartedAtRef.current),
+      had_content: !!cur?.content,
+    });
     stop();
     setThinkingHint(undefined);
     setMessages((prev) =>
@@ -397,9 +411,38 @@ export default function ChatPage() {
         /** Don't render a user bubble for this turn — the reply appears to
          * continue the previous flow (used for clarification answers). */
         silent?: boolean;
+        /** Where the message came from (analytics). */
+        source?: ChatSource;
+        /** Dictation contributed to the text (analytics). */
+        voiceUsed?: boolean;
       },
     ) => {
       if (streaming) return;
+
+      const sentAt = performance.now();
+      sendStartedAtRef.current = sentAt;
+      let firstChunkAt: number | null = null;
+      const intent: ChatIntent = opts?.clarification
+        ? "clarification"
+        : opts?.quizOptions
+          ? "quiz"
+          : opts?.flashcardOptions
+            ? "flashcards"
+            : opts?.sourceContent
+              ? "source_seed"
+              : opts?.source === "followup"
+                ? "followup"
+                : "text";
+      analytics.track(AnalyticsEvent.CHAT_MESSAGE_SENT, {
+        chat_session_id: activeId,
+        is_new_session: !activeId,
+        message_length: text.length,
+        media_count: selected.size,
+        intent,
+        source: opts?.source ?? "composer",
+        voice_used: !!opts?.voiceUsed,
+        has_seed_context: !!seedContextRef.current,
+      });
 
       const streamId = `stream-${uid()}`;
       const userMsgId = uid();
@@ -469,17 +512,24 @@ export default function ChatPage() {
           // Inherit the Study Space when the chat was opened from one
           // (/chat?spaceId=…). Read at call time to avoid a stale closure;
           // absent → the backend files the chat into General.
-          const s = await createSession.mutateAsync({
-            spaceId:
-              new URLSearchParams(window.location.search).get("spaceId") ??
-              undefined,
-          });
+          const spaceId =
+            new URLSearchParams(window.location.search).get("spaceId") ??
+            undefined;
+          const s = await createSession.mutateAsync({ spaceId });
           sid = s.id;
+          analytics.track(AnalyticsEvent.CHAT_SESSION_CREATED, {
+            chat_session_id: sid,
+            space_id: spaceId ?? null,
+            trigger: "first_message",
+          });
           newChatRef.current = false;
           loadedSession.current = sid;
           setStickyId(sid);
           setSearchParams({ sessionId: sid });
-        } catch {
+        } catch (err) {
+          analytics.track(AnalyticsEvent.CHAT_SESSION_CREATE_FAILED, {
+            error_kind: errorKind(err),
+          });
           // Roll back the optimistic messages we rendered above.
           setMessages((prev) =>
             prev.filter((m) => m.id !== userMsgId && m.id !== streamId),
@@ -502,9 +552,17 @@ export default function ChatPage() {
           source_content: opts?.sourceContent,
         },
         {
-          onChunk: upsertStreaming,
-          onToolSelected: (tool) =>
-            setThinkingHint(TOOL_TO_HINT[tool] ?? "thinking"),
+          onChunk: (delta) => {
+            if (firstChunkAt === null) firstChunkAt = performance.now();
+            upsertStreaming(delta);
+          },
+          onToolSelected: (tool) => {
+            analytics.track(AnalyticsEvent.CHAT_TOOL_SELECTED, {
+              chat_session_id: sid,
+              tool,
+            });
+            setThinkingHint(TOOL_TO_HINT[tool] ?? "thinking");
+          },
           onComplete: (full, meta) => {
             const content = (meta.content ?? {}) as Record<string, unknown>;
             const toolUsed = meta.tool_used as Message["meta"]["tool_used"];
@@ -516,6 +574,28 @@ export default function ChatPage() {
               toolUsed === "flashcard_generator"
                 ? (content as unknown as FlashcardContent)
                 : undefined;
+            analytics.track(AnalyticsEvent.CHAT_RESPONSE_COMPLETED, {
+              chat_session_id: sid,
+              tool_used: toolUsed,
+              response_type: content.response_type as string | undefined,
+              latency_ms: Math.round(performance.now() - sentAt),
+              first_token_ms:
+                firstChunkAt === null
+                  ? null
+                  : Math.round(firstChunkAt - sentAt),
+              response_length: full.length,
+              source_count: Array.isArray(content.sources)
+                ? content.sources.length
+                : 0,
+              image_count: Array.isArray(content.images)
+                ? content.images.length
+                : 0,
+              has_quiz: !!quiz,
+              has_flashcards: !!flashcards,
+              followup_count: Array.isArray(content.suggested_followups)
+                ? content.suggested_followups.length
+                : 0,
+            });
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamId
@@ -563,6 +643,12 @@ export default function ChatPage() {
           },
           onClarification: (data) => {
             removeStreaming();
+            const questions = (data.clarification as { questions?: unknown[] })
+              ?.questions;
+            analytics.track(AnalyticsEvent.CHAT_CLARIFICATION_REQUESTED, {
+              chat_session_id: sid,
+              question_count: Array.isArray(questions) ? questions.length : 0,
+            });
             setPendingClar({
               runId: data.run_id as string,
               data: data.clarification as PendingClarification["data"],
@@ -570,6 +656,11 @@ export default function ChatPage() {
           },
           onQuizSetup: (data) => {
             removeStreaming();
+            analytics.track(AnalyticsEvent.QUIZ_SETUP_REQUESTED, {
+              chat_session_id: sid,
+              media_available: Boolean(data.media_available),
+              source: "assistant",
+            });
             quizDraftRef.current = null;
             setQuizSetupOpen(true);
             setPendingQuiz({
@@ -589,8 +680,17 @@ export default function ChatPage() {
             // Keep the turn in the thread as a friendly, AI-styled error card
             // (with retry) instead of dropping it to a transient toast.
             const friendly = friendlyErrorMessage(msg);
+            analytics.track(AnalyticsEvent.CHAT_RESPONSE_FAILED, {
+              chat_session_id: sid,
+              error_kind: errorKind(msg),
+              phase: firstChunkAt === null ? "pre_stream" : "mid_stream",
+              latency_ms: Math.round(performance.now() - sentAt),
+            });
             retryHandlers.current.set(streamId, () => {
               retryHandlers.current.delete(streamId);
+              analytics.track(AnalyticsEvent.CHAT_RESPONSE_RETRIED, {
+                chat_session_id: sid,
+              });
               setMessages((prev) =>
                 prev.filter((m) => m.id !== streamId && m.id !== userMsgId),
               );
@@ -669,6 +769,13 @@ export default function ChatPage() {
           ? answer.custom_text || "Custom answer"
           : Object.values(answer.answers ?? {}).join(", ") || "Submitted answer";
     setPendingClar(null);
+    analytics.track(AnalyticsEvent.CHAT_CLARIFICATION_ANSWERED, {
+      action: answer.action === "skip" ? "skip" : "answer",
+      answered_count:
+        answer.action === "custom"
+          ? 1
+          : Object.keys(answer.answers ?? {}).length,
+    });
     // Silent: the clarification answers never appear as a chat bubble — the
     // response simply continues generating in the same flow.
     send(label, { runId: pendingClar?.runId, clarification: answer, silent: true });
@@ -683,6 +790,16 @@ export default function ChatPage() {
     setQuizSetupOpen(false);
     quizDraftRef.current = null;
     const resolved = { ...options, topic: options.topic || topic || undefined };
+    analytics.track(AnalyticsEvent.QUIZ_GENERATION_REQUESTED, {
+      question_count: resolved.question_count ?? 0,
+      difficulty: resolved.difficulty ?? "default",
+      question_types: resolved.question_types ?? [],
+      use_media: !!resolved.use_media,
+      is_exam: !!resolved.exam_config,
+      has_topic: !!resolved.topic,
+      has_instructions: !!resolved.additional_instructions,
+      source: sourceContent ? "action" : "setup",
+    });
     // Show a short action label instead of echoing a near-duplicate of the
     // user's own request as a second bubble. The canonical text still goes to
     // the backend so topic inference keeps working when no topic was set.
@@ -694,6 +811,10 @@ export default function ChatPage() {
   };
 
   const handleCreateFlashcards = (sourceContent: string) => {
+    analytics.track(AnalyticsEvent.FLASHCARDS_GENERATION_REQUESTED, {
+      chat_session_id: activeId,
+      source: "action",
+    });
     send("Create flashcards from this", {
       flashcardOptions: {},
       sourceContent,
@@ -765,9 +886,15 @@ export default function ChatPage() {
 
   // Drive the SSE processing stream for an uploaded media id, mapping frames to
   // the upload card and keeping the shared media cache in lock-step.
-  const runProcessing = (rowId: string, mediaId: string) =>
-    processing.start(mediaId, {
+  const runProcessing = (rowId: string, mediaId: string) => {
+    const startedAt = performance.now();
+    const stagesSeen = new Set<string>();
+    let lastStage = "pending";
+    const elapsed = () => Math.round(performance.now() - startedAt);
+    return processing.start(mediaId, {
       onFrame: (f) => {
+        stagesSeen.add(f.stage);
+        lastStage = f.stage;
         patchUpload(rowId, {
           status: "processing",
           stage: f.stage,
@@ -776,7 +903,13 @@ export default function ChatPage() {
         });
         setMediaStatus(mediaId, f.stage);
       },
-      onReady: () => {
+      onReady: (via) => {
+        analytics.track(AnalyticsEvent.MEDIA_PROCESSING_COMPLETED, {
+          media_id: mediaId,
+          processing_ms: elapsed(),
+          via,
+          stages_seen: stagesSeen.size,
+        });
         patchUpload(rowId, { status: "ready", stage: "ready", progress: 100 });
         setMediaStatus(mediaId, "ready");
         // The freshly indexed file becomes active context automatically.
@@ -784,6 +917,12 @@ export default function ChatPage() {
         dropUpload(rowId, 900);
       },
       onError: (msg, recoverable) => {
+        analytics.track(AnalyticsEvent.MEDIA_PROCESSING_FAILED, {
+          media_id: mediaId,
+          stage_last: lastStage,
+          recoverable,
+          processing_ms: elapsed(),
+        });
         patchUpload(rowId, { status: "error", message: msg, recoverable });
         // A recoverable run keeps its record (resume); an unrecoverable one was
         // scrubbed by the backend, so drop it from the cache too.
@@ -791,8 +930,23 @@ export default function ChatPage() {
         else removeMediaCache(mediaId);
       },
     });
+  };
 
-  const startUpload = async (file: File, rowId = uid()) => {
+  const startUpload = async (
+    file: File,
+    rowId = uid(),
+    meta: { batchSize?: number; isRetry?: boolean } = {},
+  ) => {
+    const uploadStartedAt = performance.now();
+    analytics.track(AnalyticsEvent.MEDIA_UPLOAD_STARTED, {
+      upload_id: rowId,
+      file_extension: (file.name.split(".").pop() || "").toLowerCase().slice(0, 10),
+      mime_type: file.type || "unknown",
+      size_bytes: file.size,
+      batch_size: meta.batchSize ?? 1,
+      chat_session_id: activeId,
+      is_retry: !!meta.isRetry,
+    });
     setUploads((prev) => {
       const row: UploadProgress = {
         id: rowId,
@@ -812,6 +966,12 @@ export default function ChatPage() {
         patchUpload(rowId, { progress: p }),
       );
     } catch (e) {
+      analytics.track(AnalyticsEvent.MEDIA_UPLOAD_FAILED, {
+        upload_id: rowId,
+        error_kind: errorKind(e),
+        mime_type: file.type || "unknown",
+        size_bytes: file.size,
+      });
       patchUpload(rowId, {
         status: "error",
         recoverable: false,
@@ -819,6 +979,13 @@ export default function ChatPage() {
       });
       return;
     }
+    analytics.track(AnalyticsEvent.MEDIA_UPLOAD_COMPLETED, {
+      upload_id: rowId,
+      media_id: item.id,
+      mime_type: item.mime_type || file.type || "unknown",
+      size_bytes: item.size_bytes ?? file.size,
+      upload_ms: Math.round(performance.now() - uploadStartedAt),
+    });
 
     // Surface the new file immediately, then let the SSE stream advance its
     // status in place — no GET /media round-trip anywhere in this flow.
@@ -838,12 +1005,18 @@ export default function ChatPage() {
     uploadWatchRef.current = true;
     if (!window.matchMedia("(min-width: 1280px)").matches) setMediaOpen(true);
     const list = await compressFiles(files);
-    await Promise.all(list.map((file) => startUpload(file)));
+    await Promise.all(
+      list.map((file) => startUpload(file, uid(), { batchSize: list.length })),
+    );
   };
 
   const handleRetryUpload = (rowId: string) => {
     const row = uploads.find((u) => u.id === rowId);
     if (!row) return;
+    analytics.track(AnalyticsEvent.MEDIA_UPLOAD_RETRIED, {
+      upload_id: rowId,
+      mode: row.recoverable && row.mediaId ? "resume" : "reupload",
+    });
     if (row.recoverable && row.mediaId) {
       // Resume the still-present run rather than re-uploading.
       patchUpload(rowId, {
@@ -855,13 +1028,19 @@ export default function ChatPage() {
       });
       void runProcessing(rowId, row.mediaId);
     } else if (row.file) {
-      void startUpload(row.file, rowId);
+      void startUpload(row.file, rowId, { isRetry: true });
     } else {
       dropUpload(rowId);
     }
   };
 
-  const handleDismissUpload = (rowId: string) => dropUpload(rowId);
+  const handleDismissUpload = (rowId: string) => {
+    analytics.track(AnalyticsEvent.MEDIA_UPLOAD_DISMISSED, {
+      upload_id: rowId,
+      status: uploads.find((u) => u.id === rowId)?.status ?? "unknown",
+    });
+    dropUpload(rowId);
+  };
 
   // Auto-close the media panel once an upload batch finishes cleanly; keep it
   // open (showing the failing card with Retry / Remove) if anything errored.
@@ -914,6 +1093,11 @@ export default function ChatPage() {
   const openQuizSetup = () => {
     // Reuse the pending request (and its typed draft) when one exists so the
     // /quiz command doubles as "resume the setup I closed".
+    analytics.track(AnalyticsEvent.QUIZ_SETUP_REQUESTED, {
+      chat_session_id: activeId,
+      media_available: selected.size > 0,
+      source: "slash",
+    });
     setPendingQuiz(
       (prev) => prev ?? { topic: "", mediaAvailable: selected.size > 0 },
     );
@@ -933,7 +1117,20 @@ export default function ChatPage() {
     return () => registerSlashHandler(null);
   }, [registerSlashHandler]);
 
-  const toggleMedia = (id: string) =>
+  const toggleMedia = (id: string) => {
+    const wasSelected = selected.has(id);
+    const item = media.find((m) => m.id === id);
+    const refused = !wasSelected && !!item && !isMediaReady(item);
+    analytics.track(AnalyticsEvent.MEDIA_CONTEXT_TOGGLED, {
+      media_id: id,
+      selected: !wasSelected && !refused,
+      selected_count: wasSelected
+        ? selected.size - 1
+        : refused
+          ? selected.size
+          : selected.size + 1,
+      refused_not_ready: refused,
+    });
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -949,6 +1146,7 @@ export default function ChatPage() {
       next.add(id);
       return next;
     });
+  };
 
   // Chat-specific header content published into the persistent AppHeader: the
   // active session title (left) and the mobile/tablet Files & Tools toggles
@@ -974,7 +1172,12 @@ export default function ChatPage() {
             variant="ghost"
             size="icon"
             className="lg:hidden"
-            onClick={handleNewChat}
+            onClick={() => {
+              analytics.track(AnalyticsEvent.CHAT_NEW_STARTED, {
+                source: "header",
+              });
+              handleNewChat();
+            }}
             aria-label="New chat"
           >
             <MessageSquarePlus className="h-5 w-5" />
@@ -1067,7 +1270,9 @@ export default function ChatPage() {
                 <div className="h-full">
                   {/* Rich revision-aware welcome; falls back to EmptyState
                      for brand-new users. */}
-                  <WelcomeHome onPick={(t) => send(t)} />
+                  <WelcomeHome
+                    onPick={(t) => send(t, { source: "suggested_prompt" })}
+                  />
                   {/* Opt-in: renders nothing until real Study Spaces exist. */}
                   <ContinueLearningRail />
                 </div>
@@ -1088,6 +1293,11 @@ export default function ChatPage() {
                         source_ref: messageId,
                         session_id: activeId ?? undefined,
                       });
+                      analytics.track(AnalyticsEvent.CHAT_NOTE_SAVED, {
+                        note_id: note.id,
+                        chat_session_id: activeId,
+                        content_length: content.length,
+                      });
                       toast.success("Saved to Notes", {
                         action: {
                           label: "Open",
@@ -1095,16 +1305,23 @@ export default function ChatPage() {
                         },
                       });
                       return true;
-                    } catch {
+                    } catch (err) {
+                      analytics.track(AnalyticsEvent.CHAT_NOTE_SAVE_FAILED, {
+                        error_kind: errorKind(err),
+                      });
                       toast.error("Couldn't save the note");
                       return false;
                     }
                   }}
                   onAction={(message, sourceContent) =>
-                    send(message, { sourceContent, displayText: message })
+                    send(message, {
+                      sourceContent,
+                      displayText: message,
+                      source: "action",
+                    })
                   }
                   onFollowup={(prompt, title) =>
-                    send(prompt, { displayText: title })
+                    send(prompt, { displayText: title, source: "followup" })
                   }
                   onGenerateQuiz={handleGenerateQuiz}
                   onCreateFlashcards={handleCreateFlashcards}
@@ -1215,7 +1432,11 @@ export default function ChatPage() {
 
             <ChatComposer
               ref={composerRef}
-              onSend={(t) => (preview ? previewAct("followup", t) : send(t))}
+              onSend={(t, meta) =>
+                preview
+                  ? previewAct("followup", t)
+                  : send(t, { source: "composer", voiceUsed: meta?.voiceUsed })
+              }
               onUpload={handleUpload}
               onQuizCommand={openQuizSetup}
               disabled={streaming}

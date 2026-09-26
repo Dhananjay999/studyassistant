@@ -29,7 +29,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { SigningInModal } from "@/components/auth/SigningInModal";
 import { SettingsExperience } from "@/components/settings/SettingsExperience";
 import { queryClient } from "@/lib/queryClient";
-import { trackPageview } from "@/lib/analytics";
+import { useAnalyticsRouteTracker } from "@/hooks/useAnalyticsRouteTracker";
 import { isAppMode } from "@/lib/appMode";
 import LandingPage from "@/pages/LandingPage";
 import AuthCallback from "@/pages/AuthCallback";
@@ -90,12 +90,9 @@ function TabRoute({ Component }: { Component: ElementType }) {
   return isMobileShell ? null : <Component />;
 }
 
-/** Reports SPA route changes to GA4 (no-op unless configured). */
-function AnalyticsTracker() {
-  const { pathname, search } = useLocation();
-  useEffect(() => {
-    trackPageview(pathname + search);
-  }, [pathname, search]);
+/** Emits page_entry / page_exit analytics from router location changes. */
+function AnalyticsRouteTracker() {
+  useAnalyticsRouteTracker();
   return null;
 }
 
@@ -136,7 +133,7 @@ export default function App() {
                   <SigningInModal />
                   <SettingsExperience />
                   <BrowserRouter>
-                    <AnalyticsTracker />
+                    <AnalyticsRouteTracker />
                     <Suspense fallback={<RouteFallback />}>
                       <Routes>
                     <Route path="/" element={<HomeRoute />} />

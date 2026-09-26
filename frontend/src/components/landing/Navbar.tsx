@@ -10,6 +10,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { analyticsAttrs } from "@/lib/analytics";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { GoogleButton } from "@/components/landing/GoogleButton";
@@ -31,12 +32,17 @@ function NavLink({
   className: string;
   onClick?: () => void;
 }) {
+  const attrs = analyticsAttrs(
+    `landing.nav.${link.href.replace(/^\/#?/, "") || "home"}`,
+    link.label,
+    "navbar",
+  );
   return link.page ? (
-    <Link to={link.href} className={className} onClick={onClick}>
+    <Link to={link.href} className={className} onClick={onClick} {...attrs}>
       {link.label}
     </Link>
   ) : (
-    <a href={link.href} className={className} onClick={onClick}>
+    <a href={link.href} className={className} onClick={onClick} {...attrs}>
       {link.label}
     </a>
   );
@@ -67,7 +73,7 @@ export function Navbar() {
 
           <div className="hidden items-center gap-2 md:flex">
             <ThemeToggle />
-            <GoogleButton label="Get started free" />
+            <GoogleButton label="Get started free" location="navbar" />
           </div>
 
           <div className="flex items-center gap-1 md:hidden">
@@ -93,7 +99,7 @@ export function Navbar() {
                     />
                   ))}
                   <div className="mt-3">
-                    <GoogleButton className="w-full" label="Get started free" />
+                    <GoogleButton className="w-full" label="Get started free" location="navbar_mobile" />
                   </div>
                 </nav>
               </SheetContent>

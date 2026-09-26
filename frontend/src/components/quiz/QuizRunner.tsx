@@ -10,6 +10,8 @@ import {
   Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { errorKind } from "@/lib/errorMessage";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -39,9 +41,12 @@ export function QuizRunner({
   quiz,
   onSubmitted,
   onSubmit,
+  isRetake = false,
 }: {
   quiz: QuizContent;
   onSubmitted: (result: QuizSubmitResult) => void;
+  /** Analytics: this attempt follows a previous one in the same dashboard. */
+  isRetake?: boolean;
   /** Override the (authed) submit — e.g. a public guest submit on a share
    * page. Receives the answers + elapsed seconds, returns the scored result. */
   onSubmit?: (
@@ -106,6 +111,19 @@ export function QuizRunner({
     startedAt.current = Date.now();
     deadlineRef.current = startedAt.current + timerSeconds * 1000;
   }, [timerSeconds]);
+
+  // A mounted runner is a started attempt (guest submits have no attempt id).
+  useEffect(() => {
+    analytics.track(AnalyticsEvent.QUIZ_STARTED, {
+      quiz_id: quiz.quiz_id ?? "",
+      question_count: total,
+      is_exam: !!exam,
+      timer_seconds: hasTimer ? timerSeconds : null,
+      is_retake: isRetake,
+      is_guest: !!onSubmit,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Countdown: tick once a second and auto-submit when it hits zero.
   useEffect(() => {
@@ -194,9 +212,31 @@ export function QuizRunner({
             answers,
             timeTakenSeconds,
           });
+      const ev = res.evaluation;
+      analytics.track(AnalyticsEvent.QUIZ_COMPLETED, {
+        quiz_id: quiz.quiz_id,
+        attempt_id: res.attempt_id || undefined,
+        time_taken_s: timeTakenSeconds,
+        auto_submitted: auto,
+        answered_count: Object.values(answers).filter((a) => a.length).length,
+        question_count: total,
+        score: ev?.score ?? 0,
+        total: ev?.total ?? total,
+        correct: ev?.correct_count ?? 0,
+        partial: ev?.partial_count ?? 0,
+        incorrect: ev?.incorrect_count ?? 0,
+        unanswered: ev?.unanswered_count ?? 0,
+        final_score: ev?.final_score ?? undefined,
+        max_marks: ev?.max_marks ?? undefined,
+        is_guest: !!onSubmit,
+      });
       if (auto) toast.info("Time's up — your exam was submitted.");
       onSubmitted(res);
-    } catch {
+    } catch (err) {
+      analytics.track(AnalyticsEvent.QUIZ_SUBMIT_FAILED, {
+        quiz_id: quiz.quiz_id,
+        error_kind: errorKind(err),
+      });
       submittedRef.current = false;
       setSubmitting(false);
       toast.error("Couldn't submit the quiz. Please try again.");

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -77,6 +78,10 @@ export default function NoteEditorPage() {
       { id: noteId, patch: { title: title.trim() || "Untitled note", content_md: body } },
       {
         onSuccess: () => {
+          analytics.track(AnalyticsEvent.NOTE_UPDATED, {
+            note_id: noteId,
+            content_length: body.length,
+          });
           setDirty(false);
           onSaved?.();
         },
@@ -90,8 +95,17 @@ export default function NoteEditorPage() {
   const askAeva = (mode: ChatSeed["mode"], display: string) => {
     const run = async () => {
       try {
+        analytics.track(AnalyticsEvent.NOTE_ASKED_IN_CHAT, {
+          note_id: noteId ?? "",
+          mode,
+        });
         const s = await createSession.mutateAsync({
           spaceId: note?.space_id ?? undefined,
+        });
+        analytics.track(AnalyticsEvent.CHAT_SESSION_CREATED, {
+          chat_session_id: s.id,
+          space_id: note?.space_id ?? null,
+          trigger: "note",
         });
         const seed: ChatSeed = {
           mode,
@@ -141,7 +155,10 @@ export default function NoteEditorPage() {
     });
     if (!ok) return;
     deleteNote.mutate(noteId, {
-      onSuccess: () => navigate("/notes"),
+      onSuccess: () => {
+        analytics.track(AnalyticsEvent.NOTE_DELETED, { note_id: noteId });
+        navigate("/notes");
+      },
       onError: () => toast.error("Couldn't delete the note"),
     });
   };

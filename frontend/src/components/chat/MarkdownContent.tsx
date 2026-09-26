@@ -6,6 +6,7 @@ import { ExternalLink, FileText } from "lucide-react";
 import "katex/dist/katex.min.css";
 import "katex/dist/contrib/mhchem";
 import { useDocumentViewer } from "@/contexts/DocumentViewerContext";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import {
   citationUrlTransform,
   parseCiteTarget,
@@ -97,13 +98,18 @@ function CitationChip({
     <button
       type="button"
       disabled={!mediaId}
-      onClick={() =>
-        mediaId &&
-        viewer.openDocumentByMediaId(
+      onClick={() => {
+        if (!mediaId) return;
+        analytics.track(AnalyticsEvent.CHAT_SOURCE_CLICKED, {
+          kind: "document",
+          media_id: mediaId,
+          page: page ?? match?.page_number ?? undefined,
+        });
+        void viewer.openDocumentByMediaId(
           mediaId,
           page ?? match?.page_number ?? undefined,
-        )
-      }
+        );
+      }}
       title={mediaId ? "Open the cited page" : undefined}
       className="mx-0.5 inline-flex max-w-[16rem] items-center gap-1 rounded-md border border-brand-1/30 bg-brand-1/5 px-1.5 py-px align-baseline text-[0.72em] font-medium leading-tight text-brand-1 no-underline transition-colors hover:bg-brand-1/15 disabled:cursor-default disabled:opacity-70"
     >

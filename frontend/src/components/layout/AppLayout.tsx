@@ -13,6 +13,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { AppSidebar } from "@/components/chat/AppSidebar";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { MobileNav } from "@/components/MobileNav";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { AppHeader } from "@/components/layout/AppHeader";
@@ -102,21 +103,41 @@ export function AppLayout() {
   }, []);
 
   // Land on a fresh, empty chat; the session is created lazily on first send.
-  const newChat = useCallback(() => {
-    setMobileOpen(false);
-    navigate("/chat", { state: { newChat: true } });
-  }, [navigate]);
+  const newChat = useCallback(
+    (source: "sidebar" | "shortcut" | "palette") => {
+      analytics.track(AnalyticsEvent.CHAT_NEW_STARTED, { source });
+      setMobileOpen(false);
+      navigate("/chat", { state: { newChat: true } });
+    },
+    [navigate],
+  );
 
   const selectSession = useCallback(
-    (id: string) => {
+    (id: string, source: "sidebar" | "palette" = "sidebar") => {
+      analytics.track(AnalyticsEvent.CHAT_SESSION_OPENED, {
+        chat_session_id: id,
+        source,
+      });
       setMobileOpen(false);
       navigate(`/chat?sessionId=${id}`);
     },
     [navigate],
   );
 
+  const openPalette = useCallback(
+    (source: "shortcut" | "sidebar" | "header") => {
+      analytics.track(AnalyticsEvent.SEARCH_OPENED, { source });
+      setPaletteOpen(true);
+    },
+    [],
+  );
+
   const handleDeleteSession = useCallback(
     async (id: string) => {
+      analytics.track(AnalyticsEvent.CHAT_SESSION_DELETED, {
+        chat_session_id: id,
+        was_active: id === searchParams.get("sessionId"),
+      });
       await deleteSession.mutateAsync(id);
       if (id === searchParams.get("sessionId")) {
         const rest = sessions.filter((s) => s.id !== id);
@@ -134,10 +155,11 @@ export function AppLayout() {
   );
 
   useGlobalShortcuts({
-    onCommandPalette: () => setPaletteOpen((o) => !o),
-    onNewChat: newChat,
+    onCommandPalette: () =>
+      paletteOpen ? setPaletteOpen(false) : openPalette("shortcut"),
+    onNewChat: () => newChat("shortcut"),
     onSlashMenu: () =>
-      slashHandler.current ? slashHandler.current() : setPaletteOpen(true),
+      slashHandler.current ? slashHandler.current() : openPalette("shortcut"),
   });
 
   const openMobileNav = useCallback(() => setMobileOpen(true), []);
@@ -161,8 +183,8 @@ export function AppLayout() {
       collapsed={mobile ? false : collapsed}
       canCollapse={!mobile}
       onToggleCollapse={toggleCollapse}
-      onNewChat={newChat}
-      onSearch={() => setPaletteOpen(true)}
+      onNewChat={() => newChat("sidebar")}
+      onSearch={() => openPalette("sidebar")}
       onNavigate={mobile ? () => setMobileOpen(false) : undefined}
       sessions={sessions}
       loading={sessionsQuery.isLoading}
@@ -192,7 +214,7 @@ export function AppLayout() {
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <AppHeader
               onOpenMobileNav={() => setMobileOpen(true)}
-              onOpenSearch={() => setPaletteOpen(true)}
+              onOpenSearch={() => openPalette("header")}
             />
             <main className="relative min-h-0 flex-1 overflow-hidden">
               {/* Mobile keep-alive tab pages (mounted, visibility-toggled).
@@ -209,8 +231,8 @@ export function AppLayout() {
           <GlobalCommandPalette
             open={paletteOpen}
             onOpenChange={setPaletteOpen}
-            onNewChat={newChat}
-            onSelectSession={selectSession}
+            onNewChat={() => newChat("palette")}
+            onSelectSession={(id) => selectSession(id, "palette")}
           />
         </div>
       </HeaderSlotProvider>

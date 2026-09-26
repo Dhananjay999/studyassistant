@@ -19,6 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { ShareResultButton } from "@/components/quiz/ShareResultButton";
 import { useAnalyzeQuiz, useCreateSession } from "@/hooks/api";
@@ -120,6 +121,10 @@ export function QuizAttemptReport({
   }, [ev, hasMulti]);
 
   const runAnalysis = async () => {
+    analytics.track(AnalyticsEvent.QUIZ_ANALYSIS_REQUESTED, {
+      quiz_id: quiz.quiz_id,
+      attempt_id: attemptId,
+    });
     const res = await analyzeMutation.mutateAsync({
       id: quiz.quiz_id,
       attemptId,
@@ -129,6 +134,10 @@ export function QuizAttemptReport({
   };
 
   const makeFlashcards = async () => {
+    analytics.track(AnalyticsEvent.QUIZ_FLASHCARDS_REQUESTED, {
+      quiz_id: quiz.quiz_id,
+      attempt_id: attemptId,
+    });
     const focus = analysis?.revise_topics?.length
       ? `\n\nFocus areas: ${analysis.revise_topics.join(", ")}`
       : "";
@@ -136,6 +145,11 @@ export function QuizAttemptReport({
       `${quiz.title}\n\n` + questions.map((x) => x.prompt).join("\n") + focus;
     const seed: ChatSeed = { mode: "flashcards", content, title: quiz.title };
     const session = await createSession.mutateAsync({});
+    analytics.track(AnalyticsEvent.CHAT_SESSION_CREATED, {
+      chat_session_id: session.id,
+      space_id: null,
+      trigger: "quiz_report_flashcards",
+    });
     onClose();
     navigate(`/chat?sessionId=${session.id}`, { state: { seed } });
   };

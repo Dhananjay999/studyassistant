@@ -6,6 +6,7 @@
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useCreateSession } from "@/hooks/api";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import type { ChatSeed } from "@/types";
 
 export function revisionPrompt(topic: string): string {
@@ -28,32 +29,49 @@ export function useRevisionActions() {
       const s = await createSession.mutateAsync({
         spaceId: spaceId ?? undefined,
       });
+      analytics.track(AnalyticsEvent.CHAT_SESSION_CREATED, {
+        chat_session_id: s.id,
+        space_id: spaceId ?? null,
+        trigger: "revision",
+      });
       navigate(`/chat?sessionId=${s.id}`, { state: { seed } });
     } catch {
       toast.error("Couldn't start a chat");
     }
   };
 
+  const clicked = (action: string, hasTarget: boolean) =>
+    analytics.track(AnalyticsEvent.REVISION_ACTION_CLICKED, {
+      action,
+      has_existing_target: hasTarget,
+    });
+
   return {
     pending: createSession.isPending,
-    revise: (t: RevisionActionTarget) =>
-      seedChat(
+    revise: (t: RevisionActionTarget) => {
+      clicked("revise", false);
+      return seedChat(
         { mode: "followup", content: "", autoSend: revisionPrompt(t.topic) },
         t.space_id,
-      ),
-    quiz: (t: RevisionActionTarget) =>
-      t.quiz_id
+      );
+    },
+    quiz: (t: RevisionActionTarget) => {
+      clicked("quiz", !!t.quiz_id);
+      return t.quiz_id
         ? navigate(`/quizzes?quizId=${t.quiz_id}`)
         : seedChat(
             { mode: "quiz", content: t.topic, title: t.topic },
             t.space_id,
-          ),
-    flashcards: (t: RevisionActionTarget) =>
-      t.set_id
+          );
+    },
+    flashcards: (t: RevisionActionTarget) => {
+      clicked("flashcards", !!t.set_id);
+      return t.set_id
         ? navigate(`/flashcards?setId=${t.set_id}`)
         : seedChat(
             { mode: "flashcards", content: t.topic, title: t.topic },
             t.space_id,
-          ),
+          );
+    },
   };
 }

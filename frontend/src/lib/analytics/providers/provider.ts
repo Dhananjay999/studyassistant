@@ -1,0 +1,24 @@
+// Provider contract. Adding a destination (GA4, a custom DB, …) means
+// implementing this and registering it in providers/index.ts — application
+// code never changes.
+
+import type { AnalyticsConfig, TrackPayload, UserTraits } from "../types";
+
+export type ProviderName = "posthog" | "ga" | "custom";
+
+export interface ProviderInitContext {
+  anonymousId: string;
+  /** Call once the provider can accept events; queued ops are replayed. */
+  onReady: () => void;
+}
+
+export interface AnalyticsProvider {
+  readonly name: ProviderName;
+  /** May load an SDK asynchronously. A throw/rejection disables the provider. */
+  init(config: AnalyticsConfig, ctx: ProviderInitContext): void | Promise<void>;
+  identify(userId: string, traits: UserTraits): void;
+  reset(newAnonymousId: string): void;
+  track(payload: TrackPayload): void;
+  flush?(): void;
+  isReady(): boolean;
+}

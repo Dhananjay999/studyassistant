@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import {
@@ -25,6 +25,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useBookmarks, useCollections, useSearch } from "@/hooks/api";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useFeature } from "@/hooks/useFeature";
 
@@ -104,11 +105,19 @@ export function GlobalCommandPalette({
       return next;
     });
   };
-  const run = (fn: () => void) => {
+  const run = (fn: () => void, action?: string) => {
+    if (action) {
+      analytics.track(AnalyticsEvent.SEARCH_ACTION_CLICKED, { action });
+    }
     onOpenChange(false);
     fn();
   };
-  const go = (fn: () => void) => {
+  const go = (group: string, fn: () => void) => {
+    analytics.track(AnalyticsEvent.SEARCH_RESULT_CLICKED, {
+      scope: "global",
+      group,
+      query_length: query.trim().length,
+    });
     remember(query);
     run(fn);
   };
@@ -123,6 +132,32 @@ export function GlobalCommandPalette({
       (results.notes?.length ?? 0) > 0);
   const anything =
     hasResults || matchedBookmarks.length > 0 || matchedFolders.length > 0;
+
+  // One `search_performed` per settled query (debounced + results loaded).
+  const lastTrackedRef = useRef("");
+  useEffect(() => {
+    if (!searching || isFetching || !results) return;
+    if (lastTrackedRef.current === q) return;
+    lastTrackedRef.current = q;
+    const group_counts = {
+      sessions: results.sessions.length,
+      messages: results.messages.length,
+      quizzes: results.quizzes.length,
+      media: results.media.length,
+      flashcards: results.flashcards.length,
+      notes: results.notes?.length ?? 0,
+      bookmarks: matchedBookmarks.length,
+      folders: matchedFolders.length,
+    };
+    const result_count = Object.values(group_counts).reduce((a, b) => a + b, 0);
+    analytics.track(AnalyticsEvent.SEARCH_PERFORMED, {
+      scope: "global",
+      query_length: q.length,
+      result_count,
+      has_results: result_count > 0,
+      group_counts,
+    });
+  }, [searching, isFetching, results, q, matchedBookmarks.length, matchedFolders.length]);
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -152,7 +187,7 @@ export function GlobalCommandPalette({
           <CommandGroup heading="Actions">
             <CommandItem
               value="new chat"
-              onSelect={() => run(onNewChat)}
+              onSelect={() => run(onNewChat, "new_chat")}
               className="gap-2"
             >
               <MessageSquarePlus className="h-4 w-4" /> New chat
@@ -160,7 +195,7 @@ export function GlobalCommandPalette({
             {revisionEnabled && (
               <CommandItem
                 value="open revision"
-                onSelect={() => run(() => navigate("/revision"))}
+                onSelect={() => run(() => navigate("/revision"), "revision")}
                 className="gap-2"
               >
                 <BrainCircuit className="h-4 w-4" /> Open revision
@@ -168,14 +203,16 @@ export function GlobalCommandPalette({
             )}
             <CommandItem
               value="open bookmarks"
-              onSelect={() => run(() => navigate("/bookmarks"))}
+              onSelect={() => run(() => navigate("/bookmarks"), "bookmarks")}
               className="gap-2"
             >
               <Bookmark className="h-4 w-4" /> Open bookmarks
             </CommandItem>
             <CommandItem
               value="toggle theme"
-              onSelect={() => run(() => setTheme(isDark ? "light" : "dark"))}
+              onSelect={() =>
+                run(() => setTheme(isDark ? "light" : "dark"), "theme")
+              }
               className="gap-2"
             >
               {isDark ? (
@@ -200,7 +237,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`s-${s.id}`}
                 value={`chat ${s.id} ${s.title}`}
-                onSelect={() => go(() => onSelectSession(s.id))}
+                onSelect={() => go("sessions", () => onSelectSession(s.id))}
                 className="gap-2"
               >
                 <MessagesSquare className="h-4 w-4 shrink-0" />
@@ -212,7 +249,7 @@ export function GlobalCommandPalette({
                 key={`m-${m.id}`}
                 value={`msg ${m.id} ${m.content}`}
                 onSelect={() =>
-                  go(() =>
+                  go("messages", () =>
                     navigate(`/chat?sessionId=${m.session_id}`, {
                       state: { highlightMessageId: m.id },
                     }),
@@ -238,7 +275,9 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`q-${qz.id}`}
                 value={`quiz ${qz.id} ${qz.title} ${qz.topic}`}
-                onSelect={() => go(() => navigate(`/quizzes?quizId=${qz.id}`))}
+                onSelect={() =>
+                  go("quizzes", () => navigate(`/quizzes?quizId=${qz.id}`))
+                }
                 className="gap-2"
               >
                 <ListChecks className="h-4 w-4 shrink-0" />
@@ -254,7 +293,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`n-${n.id}`}
                 value={`note ${n.id} ${n.title} ${n.preview}`}
-                onSelect={() => go(() => navigate(`/notes/${n.id}`))}
+                onSelect={() => go("notes", () => navigate(`/notes/${n.id}`))}
                 className="gap-2"
               >
                 <NotebookPen className="h-4 w-4 shrink-0" />
@@ -270,7 +309,9 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`fc-${fc.id}`}
                 value={`flashcards ${fc.id} ${fc.title} ${fc.topic}`}
-                onSelect={() => go(() => navigate(`/flashcards?setId=${fc.id}`))}
+                onSelect={() =>
+                  go("flashcards", () => navigate(`/flashcards?setId=${fc.id}`))
+                }
                 className="gap-2"
               >
                 <Layers className="h-4 w-4 shrink-0" />
@@ -286,7 +327,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`b-${b.id}`}
                 value={`bookmark ${b.id} ${b.title}`}
-                onSelect={() => go(() => navigate(`/bookmarks/${b.id}`))}
+                onSelect={() => go("bookmarks", () => navigate(`/bookmarks/${b.id}`))}
                 className="gap-2"
               >
                 <Bookmark className="h-4 w-4 shrink-0" />
@@ -305,7 +346,7 @@ export function GlobalCommandPalette({
                 key={`f-${c.id}`}
                 value={`folder ${c.id} ${c.name}`}
                 onSelect={() =>
-                  go(() => navigate(`/bookmarks?collection=${c.id}`))
+                  go("folders", () => navigate(`/bookmarks?collection=${c.id}`))
                 }
                 className="gap-2"
               >
@@ -322,7 +363,7 @@ export function GlobalCommandPalette({
               <CommandItem
                 key={`file-${f.id}`}
                 value={`file ${f.id} ${f.file_name}`}
-                onSelect={() => go(() => navigate(`/files?fileId=${f.id}`))}
+                onSelect={() => go("files", () => navigate(`/files?fileId=${f.id}`))}
                 className="gap-2"
               >
                 <FileText className="h-4 w-4 shrink-0" />
