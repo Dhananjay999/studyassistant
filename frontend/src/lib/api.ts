@@ -135,7 +135,7 @@ interface RequestExtras {
   public?: boolean;
 }
 
-// Analytics: collapse ids so `api_error` groups by route, never by record.
+// Analytics: collapse ids so `API_ERROR` groups by route, never by record.
 const ID_SEGMENT =
   /\/(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+)(?=\/|$)/gi;
 function normalizeEndpoint(path: string): string {
@@ -149,7 +149,7 @@ function reportApiError(
   err: unknown,
   timeout: boolean,
 ): void {
-  // Refresh failures are the auth flow's own signal (`session_invalidated`).
+  // Refresh failures are the auth flow's own signal (`SESSION_INVALIDATED`).
   if (path.startsWith(ENDPOINTS.AUTH_REFRESH)) return;
   // A dead token fails every in-flight call at once; report the burst once.
   if (status === 401) {

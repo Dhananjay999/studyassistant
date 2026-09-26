@@ -1,10 +1,10 @@
-// Automatic page lifecycle from the router: `page_exit` for the page being
-// left (with time on page) then `page_entry` for the new one. Keyed on
+// Automatic page lifecycle from the router: `PAGE_EXIT` for the page being
+// left (with time on page) then `PAGE_ENTRY` for the new one. Keyed on
 // pathname only — query changes (e.g. switching chat sessions) are feature
 // events, not page views. Works with the mobile keep-alive tabs because it
 // watches location, not component mount/unmount.
 //
-// A hidden tab / pagehide also emits a single `page_exit` (exit_type
+// A hidden tab / pagehide also emits a single `PAGE_EXIT` (exit_type
 // "hidden"); coming back resets the timer without a new entry event.
 
 import { useEffect, useRef } from "react";

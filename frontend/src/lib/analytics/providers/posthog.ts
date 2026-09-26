@@ -3,9 +3,9 @@
 // PostHog's distinct id, which makes `identify(user_id)` merge the pre-login
 // trail into the person.
 //
-// Mapping: page_entry → `$pageview`, page_exit → `$pageleave` (so Web
+// Mapping: PAGE_ENTRY → `$pageview`, PAGE_EXIT → `$pageleave` (so Web
 // Analytics and session replay keep working with autocapture pageviews off);
-// everything else is captured under its own snake_case name.
+// everything else is captured under its own UPPER_SNAKE_CASE name.
 
 import type { PostHog } from "posthog-js";
 import type { AnalyticsConfig, TrackPayload, UserTraits } from "../types";

@@ -216,7 +216,7 @@ export class AnalyticsService {
       logWarn(`${event}: dropped disallowed prop(s) ${dropped.join(", ")}`);
     }
 
-    // Session lifecycle first so `session_ended`/`session_started` precede
+    // Session lifecycle first so `SESSION_ENDED`/`SESSION_STARTED` precede
     // the event that woke the session up.
     for (const ev of this.session!.ensure()) this.emitSessionEvent(ev);
 

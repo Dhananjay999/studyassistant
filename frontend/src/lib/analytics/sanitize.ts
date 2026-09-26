@@ -57,9 +57,9 @@ export const RESERVED_KEYS: ReadonlySet<string> = new Set([
 // Core events legitimately set a few of these (page_path on page_entry,
 // entry_page/referrer_domain on session_started). Whitelist them per event.
 const CORE_KEY_EXCEPTIONS: Record<string, ReadonlySet<string>> = {
-  page_entry: new Set(["page_path", "page_name"]),
-  page_exit: new Set(["page_path", "page_name"]),
-  session_started: new Set([
+  PAGE_ENTRY: new Set(["page_path", "page_name"]),
+  PAGE_EXIT: new Set(["page_path", "page_name"]),
+  SESSION_STARTED: new Set([
     "referrer_domain",
     "utm_source",
     "utm_medium",
@@ -163,5 +163,5 @@ export function sanitizeProps(
   return { props, dropped };
 }
 
-/** Event names must be short, lowercase snake_case (PostHog/GA compatible). */
-export const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_]{0,39}$/;
+/** Event names must be short UPPER_SNAKE_CASE (≤ 40 chars). */
+export const EVENT_NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,39}$/;

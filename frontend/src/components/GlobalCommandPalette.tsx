@@ -133,7 +133,7 @@ export function GlobalCommandPalette({
   const anything =
     hasResults || matchedBookmarks.length > 0 || matchedFolders.length > 0;
 
-  // One `search_performed` per settled query (debounced + results loaded).
+  // One `SEARCH_PERFORMED` per settled query (debounced + results loaded).
   const lastTrackedRef = useRef("");
   useEffect(() => {
     if (!searching || isFetching || !results) return;

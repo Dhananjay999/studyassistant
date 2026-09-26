@@ -1,5 +1,5 @@
 // Delegated click tracking. One capture-phase listener on `document` fires a
-// `click` event for any element (or ancestor) carrying `data-analytics-id`.
+// `CLICK` event for any element (or ancestor) carrying `data-analytics-id`.
 // Nothing without the attribute is tracked, so arbitrary DOM text never
 // leaks. Use `analyticsAttrs()` from index.ts to add the attributes in JSX.
 

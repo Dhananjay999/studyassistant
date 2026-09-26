@@ -21,7 +21,7 @@ truth is [`events.ts`](./events.ts).
 
 ```
 track(event, props)
-  → name validated (lowercase snake_case, ≤ 40 chars)
+  → name validated (UPPER_SNAKE_CASE, ≤ 40 chars)
   → props sanitized (sanitize.ts)
   → session ensured (session.ts) — may emit session_ended / session_started first
   → enriched: identity, session, page, device, campaign, app context
@@ -47,7 +47,7 @@ adapter + one line in the registry + its env var in `config.ts`.
   none is stored, after 30 min of inactivity, or after 24 h. `session_number`
   increments per session on the browser profile. Activity is bumped by every
   tracked event and by throttled pointer/key/scroll listeners; storage writes
-  are throttled to 5 s and flushed on `pagehide`/hidden. `session_ended` is
+  are throttled to 5 s and flushed on `pagehide`/hidden. `SESSION_ENDED` is
   emitted lazily by the next page load/tab that finds the previous session
   expired (with duration, event count and last page); logout ends it
   immediately with `reason: "logout"`. Tabs share the session via the
@@ -57,9 +57,9 @@ adapter + one line in the registry + its env var in `config.ts`.
 
 ## Page lifecycle
 
-`useAnalyticsRouteTracker` (mounted in `App.tsx`) emits `page_exit` for the
-page being left (`time_on_page_s`) and `page_entry` for the new one, keyed on
-pathname only. A hidden tab / `pagehide` emits one `page_exit` with
+`useAnalyticsRouteTracker` (mounted in `App.tsx`) emits `PAGE_EXIT` for the
+page being left (`time_on_page_s`) and `PAGE_ENTRY` for the new one, keyed on
+pathname only. A hidden tab / `pagehide` emits one `PAGE_EXIT` with
 `exit_type: "hidden"`; returning resets the timer without a new entry. The
 PostHog adapter maps these to `$pageview` / `$pageleave` so Web Analytics and
 replay keep working with PostHog's automatic pageviews disabled.
@@ -81,7 +81,7 @@ Keep it in sync with `App.tsx` routes.
 - Event props can never overwrite context keys (`session_id`, `page_path`,
   `utm_*`, …).
 - Query strings are not sent; only `sessionId/quizId/setId/fileId/auth_error`
-  are copied onto `page_entry` as `qp_*`.
+  are copied onto `PAGE_ENTRY` as `qp_*`.
 - Error events carry `error_kind` (`offline | high_demand | generic`, from
   `lib/errorMessage.ts`), never the raw message.
 
@@ -112,7 +112,7 @@ swallowed (and logged in debug). posthog-js flushes its batch with
 
 ## Adding an event
 
-1. Add the enum member to `events.ts` (wire name `<domain>_<object>_<past tense>`).
+1. Add the enum member to `events.ts` (wire name = member name, `<DOMAIN>_<OBJECT>_<PAST_TENSE>`).
 2. Add its props type to `EventPropsMap` (lengths/counts/ids only).
 3. Call `analytics.track(AnalyticsEvent.X, {...})` at the hook point.
 4. Add a row to `EVENTS.md` in the same PR.

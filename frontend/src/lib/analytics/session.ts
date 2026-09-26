@@ -7,7 +7,7 @@
 //   • `session_number` increments per new session on this browser profile.
 //   • Activity is bumped on every tracked event and by a throttled listener on
 //     user interaction; storage writes are throttled to 5 s.
-//   • `session_ended` is emitted lazily — by whichever page load/tab next
+//   • `SESSION_ENDED` is emitted lazily — by whichever page load/tab next
 //     starts a session and finds the previous one expired — with the old
 //     session's duration, event count and last page. No timers, nothing on
 //     unload. Logout ends the session immediately with `reason: "logout"`.
