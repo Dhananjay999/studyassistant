@@ -6,6 +6,7 @@ These are the reusable pieces every capability template pulls in through a
 * ``{SYSTEM_PROMPT}`` — Aeva's identity and behavioural contract.
 * ``{TEACHING}`` — the tutoring protocol (answer tools only, never generators).
 * ``{USER_PROFILE}`` — the personalization segment (empty unless onboarded).
+* ``{PLANNER_NOTE}`` — the planner's restatement, beside the full message.
 * ``{ANSWER_META}`` — the hidden follow-up metadata trailer.
 * ``{QUIZ_RESULTS}`` — the shared quiz-result context (see ``quiz_common``).
 
@@ -42,6 +43,27 @@ def user_profile_segment(personalization: str | None) -> str:
     if not block:
         return ""
     return f"\n\n{block}"
+
+
+def planner_note_segment(message: str, query: str | None) -> str:
+    """Resolve the ``{PLANNER_NOTE}`` placeholder for an answer template.
+
+    The planner's ``query`` is a short standalone restatement of the request.
+    It used to REPLACE the student's message, so a pasted question list
+    reached the model as "organize the question list" with no list. The
+    message now always travels verbatim and the restatement rides beside it
+    as a note. Returns ``""`` when the planner added nothing (no query, or
+    the message itself), so those turns render byte-for-byte as before.
+    """
+    note = (query or "").strip()
+    if not note or note == message.strip():
+        return ""
+    return (
+        "\nStandalone restatement of the request (use it to resolve "
+        'references such as "it" or "this" and as the search query; the '
+        "student's message above is the complete request and any material "
+        f"in it is present):\n{note}\n"
+    )
 
 
 def current_date() -> str:

@@ -27,13 +27,13 @@ Today's date: {CURRENT_DATE}. If the question hinges on current products, prices
 
 Student question:
 {USER_MESSAGE}
-{ANSWER_META}""",
+{PLANNER_NOTE}{ANSWER_META}""",
     defaults={
         "SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK,
         "TEACHING": TEACHING_BLOCK,
         "ANSWER_META": ANSWER_META_BLOCK,
     },
-    optional=("USER_PROFILE",),
+    optional=("USER_PROFILE", "PLANNER_NOTE"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
 )

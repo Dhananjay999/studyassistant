@@ -68,11 +68,13 @@ The prompt is a `ResponsiveModal`, so it also emits the generic `AUTH_PROMPT_MOD
 | ★ `LANDING_CTA_CLICKED` | Google CTA pressed | `location: hero\|navbar\|navbar_mobile\|cta_band\|features\|about\|app_welcome\|share\|auth_prompt` | `landing/GoogleButton.tsx`, `pages/AppWelcomePage.tsx`, `auth/AuthPrompt.tsx` |
 | `LANDING_FAQ_OPENED` | FAQ accordion item opened | `faq_index` | `landing/Faq.tsx` |
 | ★ `LOGIN_STARTED` | Popup opened or redirect started | `method: popup\|redirect` | `contexts/AuthContext.tsx signInWithGoogle` |
-| `LOGIN_ABANDONED` | Popup closed without tokens | — | same (popup poll) |
-| `LOGIN_FAILED` | Callback had no tokens / session failed | `reason: missing_token\|session` | `pages/AuthCallback.tsx` |
+| `LOGIN_ABANDONED` | Popup closed without tokens or a reported failure (the sign-in issue dialog then opens) | `elapsed_ms` | same (popup poll) |
+| `LOGIN_FAILED` | Sign-in ended in an error: the backend callback failed, Google denied access, the callback had no tokens, or the session could not load | `reason: missing_token\|session\|missing_code\|exchange_failed\|access_denied\|provider_error\|unknown`, `method: popup\|redirect` | popup: `AuthContext.tsx signInWithGoogle` (reported by the popup over `postMessage`); redirect: `pages/AuthCallback.tsx` |
 | ★ `LOGIN_SUCCEEDED` | Tokens received and profile loaded | `method`, `is_new_user` | `AuthContext.loadUser("login")` |
 | `LOGOUT_COMPLETED` | User confirmed logout | `source: header\|settings_modal\|settings_mobile\|settings_account\|profile_page` | `hooks/useConfirmLogout.ts` |
 | `SESSION_INVALIDATED` | 401 / failed refresh forced a logout | — | `AuthContext.onSessionInvalid` |
+
+After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/SigningInModal.tsx`) opens and emits `SIGN_IN_ISSUE_DIALOG_OPENED` / `SIGN_IN_ISSUE_DIALOG_CLOSED`; its buttons emit `SIGN_IN_TRY_AGAIN_CLICK` (new popup attempt) and `SIGN_IN_IN_THIS_TAB_CLICK` (full-page redirect), each followed by a fresh `LOGIN_STARTED`.
 
 `identify(user)` runs in `AuthContext.loadUser` (login, boot restore, refresh);
 `reset()` runs first thing in `hardLogout`.

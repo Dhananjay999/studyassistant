@@ -496,7 +496,12 @@ export interface EventPropsMap {
     /** How long the sign-in popup stayed open before being closed. */
     elapsed_ms: number;
   };
-  [AnalyticsEvent.LOGIN_FAILED]: { reason: string };
+  [AnalyticsEvent.LOGIN_FAILED]: {
+    /** missing_token | session | missing_code | exchange_failed |
+     * access_denied | provider_error | unknown */
+    reason: string;
+    method?: LoginMethod;
+  };
   [AnalyticsEvent.LOGIN_SUCCEEDED]: { method?: LoginMethod; is_new_user: boolean };
   [AnalyticsEvent.LOGOUT_COMPLETED]: { source: string };
   [AnalyticsEvent.SESSION_INVALIDATED]: Empty;

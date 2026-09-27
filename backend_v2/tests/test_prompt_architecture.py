@@ -23,9 +23,12 @@ from aeva.learning_profile.schema.learning_profile_schema import (
 )
 from aeva.llm import prompts
 from aeva.llm.prompts.response_meta import META_SENTINEL
-from aeva.mcp.base import RESPONSE_NORMAL
+from aeva.mcp.base import RESPONSE_NORMAL, ToolContext
+from aeva.mcp.tools.general import GeneralAnswerTool
+from aeva.mcp.tools.web_search import WebSearchTool
 from aeva.orchestration.assistant_orchestrator import (
     AssistantOrchestrator,
+    _is_pasted_material,
     _is_small_talk,
     _needs_fresh_info,
     _needs_web_upgrade,
@@ -279,6 +282,85 @@ class TestWebSearchRouting:
             flags.is_enabled.return_value = True
             out = orch._refine_plan(plan, ctx, "compare mitosis vs meiosis", [])
         assert out["steps"][0]["tool"] == "general"
+
+
+PASTED_LIST = (
+    "Here are the ATC important questions for IA preparation.\n\n"
+    "2 MARK QUESTIONS\n"
+    "1. Define Air Traffic Control (ATC).\n"
+    "2. In which year was ICAO established?\n"
+    "3. What event in 1903 marked the beginning of the aviation era?\n"
+    "4. Which ICAO document lays down the separation standards?\n\n"
+    "14 MARK QUESTIONS\n"
+    "1. Discuss the Automation phase (1981-2001) in the history of ATC.\n"
+    "2. Discuss NextGen to Digital Skies, from 2001 to the present (2026).\n"
+    "Please prepare the questions under all categories, the paper may "
+    "test the same concept using a different question wording.\n"
+)
+
+
+def _tool_ctx(message: str) -> ToolContext:
+    return ToolContext(
+        user_id="u",
+        session_id="s",
+        message=message,
+        enriched_message=message,
+        media_ids=None,
+    )
+
+
+class TestPastedMaterial:
+    def test_pasted_list_is_detected(self):
+        assert _needs_fresh_info(PASTED_LIST)
+        assert _is_pasted_material(PASTED_LIST)
+        assert not _needs_web_upgrade(PASTED_LIST)
+
+    def test_short_or_search_messages_are_not_pasted(self):
+        assert not _is_pasted_material("what is the JEE 2026 exam date?")
+        assert not _is_pasted_material(PASTED_LIST + "\nsearch the web")
+
+    def test_refine_plan_keeps_pasted_list_on_general(self):
+        orch = AssistantOrchestrator(
+            llm=MagicMock(), registry=MagicMock(), supabase=MagicMock()
+        )
+        ctx = AssistantContext(user_id="u", session_id="s", message="m")
+        plan = {
+            "action": "run_tool",
+            "steps": [{"tool": "general", "params": {"query": "x"}}],
+        }
+        with patch(
+            "aeva.orchestration.assistant_orchestrator.feature_flag_service"
+        ) as flags:
+            flags.is_enabled.return_value = True
+            out = orch._refine_plan(plan, ctx, PASTED_LIST, [])
+        assert out["steps"][0]["tool"] == "general"
+
+    def test_planner_note_is_empty_without_a_restatement(self):
+        assert prompts.planner_note_segment("hello", None) == ""
+        assert prompts.planner_note_segment("hello", " hello ") == ""
+        assert "organise" in prompts.planner_note_segment("hello", "organise")
+
+    def test_tools_send_the_full_message(self):
+        params = {"query": "organise ATC question list"}
+        ctx = _tool_ctx(PASTED_LIST)
+        general = GeneralAnswerTool._render(ctx, params).user_message
+        web, _query, _intent = WebSearchTool._render(ctx, params)
+        for text in (general, web.user_message):
+            assert "In which year was ICAO established?" in text
+            assert "organise ATC question list" in text
+
+    def test_same_query_renders_unchanged(self):
+        ctx = _tool_ctx("what is osmosis?")
+        with_query = GeneralAnswerTool._render(
+            ctx, {"query": "what is osmosis?"}
+        )
+        without = GeneralAnswerTool._render(ctx, {})
+        assert with_query.user_message == without.user_message
+
+    def test_answer_rules_cover_pasted_material_and_audio(self):
+        system = _render_general().system_prompt
+        assert "never ask the student to paste or upload it again" in system
+        assert "You cannot produce audio, video, or files" in system
 
 
 class TestWebSearchTemplate:

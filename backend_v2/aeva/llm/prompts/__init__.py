@@ -11,7 +11,11 @@ Names are re-exported here so callers can use ``from aeva.llm import prompts``
 and access ``prompts.WEB_SEARCH_TEMPLATE``, ``prompts.PLAN_TURN_SCHEMA``, etc.
 """
 
-from aeva.llm.prompts.blocks import current_date, user_profile_segment
+from aeva.llm.prompts.blocks import (
+    current_date,
+    planner_note_segment,
+    user_profile_segment,
+)
 from aeva.llm.prompts.builder import (
     PromptBuilder,
     PromptError,
@@ -142,6 +146,7 @@ __all__ = [
     "guess_search_intent",
     "no_context_message",
     "pick_skill",
+    "planner_note_segment",
     "search_mode_block",
     "skill_ids",
     "skills_for_planner",

@@ -26,6 +26,12 @@ import type { User } from "@/types";
 type LoadReason = "boot" | "login" | "refresh";
 type LoginMethod = "popup" | "redirect";
 
+export interface SignInIssue {
+  /** `abandoned`: the popup closed before finishing; `failed`: an error. */
+  kind: "abandoned" | "failed";
+  reason?: string;
+}
+
 interface AuthContextValue {
   user: User | null;
   token: string | null;
@@ -36,7 +42,15 @@ interface AuthContextValue {
   isDebugUser: boolean;
   loading: boolean;
   signingIn: boolean;
+  /** Why the last sign-in attempt ended without a session (shown by
+   * `SigningInModal`); null once dismissed or when a new attempt starts. */
+  signInIssue: SignInIssue | null;
   signInWithGoogle: () => void;
+  /** Same sign-in as a full-page redirect — the way out when the popup
+   * keeps failing. */
+  signInWithRedirect: () => void;
+  reportSignInIssue: (issue: SignInIssue) => void;
+  dismissSignInIssue: () => void;
   setSession: (
     accessToken: string,
     refreshToken: string,
@@ -102,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   });
   const [signingIn, setSigningIn] = useState(false);
+  const [signInIssue, setSignInIssue] = useState<SignInIssue | null>(null);
   const tokenRef = useRef<string | null>(null);
   const refreshTimer = useRef<number>();
   // How the in-flight login was started; null after a full-page redirect
@@ -292,7 +307,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [persist, loadUser],
   );
 
+  const reportSignInIssue = useCallback(
+    (issue: SignInIssue) => setSignInIssue(issue),
+    [],
+  );
+  const dismissSignInIssue = useCallback(() => setSignInIssue(null), []);
+
+  const signInWithRedirect = useCallback(() => {
+    setSignInIssue(null);
+    noteLandingLogin("started");
+    analytics.track(AnalyticsEvent.LOGIN_STARTED, { method: "redirect" });
+    analytics.flush();
+    window.location.href = `${API_BASE_URL}${ENDPOINTS.AUTH_LOGIN_GOOGLE}`;
+  }, []);
+
   const signInWithGoogle = useCallback(() => {
+    setSignInIssue(null);
     const url = `${API_BASE_URL}${ENDPOINTS.AUTH_LOGIN_GOOGLE}`;
     const w = 480;
     const h = 660;
@@ -306,10 +336,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Popup blocked (or mobile) — fall back to a full-page redirect.
     if (!popup) {
-      noteLandingLogin("started");
-      analytics.track(AnalyticsEvent.LOGIN_STARTED, { method: "redirect" });
-      analytics.flush();
-      window.location.href = url;
+      signInWithRedirect();
       return;
     }
 
@@ -329,10 +356,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         /* ignore */
       }
-      setSession(d.access_token, d.refresh_token, d.expires_in).finally(() =>
-        setSigningIn(false),
-      );
+      // The callback page reported a failure instead of tokens.
+      if (typeof d.error === "string") {
+        failLogin(d.error);
+        return;
+      }
+      setSession(d.access_token, d.refresh_token, d.expires_in)
+        .catch(() => failLogin("session"))
+        .finally(() => setSigningIn(false));
     };
+
+    function failLogin(reason: string) {
+      setSigningIn(false);
+      noteLandingLogin("failed");
+      analytics.track(AnalyticsEvent.LOGIN_FAILED, {
+        reason,
+        method: "popup",
+      });
+      loginMethodRef.current = null;
+      setSignInIssue({ kind: "failed", reason });
+    }
 
     const poll = window.setInterval(() => {
       if (popup.closed) {
@@ -345,6 +388,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           elapsed_ms: Math.round(performance.now() - loginStartedAtRef.current),
         });
         loginMethodRef.current = null;
+        // Say so: a silently vanishing dialog reads as "nothing happened".
+        setSignInIssue({ kind: "abandoned" });
       }
     }, 600);
 
@@ -354,7 +399,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     window.addEventListener("message", onMessage);
-  }, [setSession]);
+  }, [setSession, signInWithRedirect]);
 
   // Explicit sign-out: the same full teardown + page refresh as any other
   // session end. Persisted per-user niceties (pins, recents) deliberately
@@ -371,7 +416,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isDebugUser: !!user?.is_debug_user,
         loading,
         signingIn,
+        signInIssue,
         signInWithGoogle,
+        signInWithRedirect,
+        reportSignInIssue,
+        dismissSignInIssue,
         setSession,
         refreshUser,
         logout,

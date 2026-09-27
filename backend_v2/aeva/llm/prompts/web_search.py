@@ -107,13 +107,13 @@ When writing the answer:
 
 Student question:
 {USER_MESSAGE}
-{ANSWER_META}""",
+{PLANNER_NOTE}{ANSWER_META}""",
     defaults={
         "SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK,
         "TEACHING": TEACHING_BLOCK,
         "ANSWER_META": ANSWER_META_BLOCK,
     },
-    optional=("USER_PROFILE", "SEARCH_MODE"),
+    optional=("USER_PROFILE", "SEARCH_MODE", "PLANNER_NOTE"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
 )

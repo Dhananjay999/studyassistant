@@ -7,8 +7,23 @@ import { Seo } from "@/components/common/Seo";
 import { AUTH_MESSAGES } from "@/lib/loadingMessages";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
+// Failure reasons the backend callback can send. The value comes from the
+// URL, so anything else is reported as "unknown" rather than passed through.
+const BACKEND_REASONS = [
+  "missing_code",
+  "exchange_failed",
+  "access_denied",
+  "provider_error",
+];
+
+function readAuthError(): string | null {
+  const raw = new URLSearchParams(window.location.search).get("auth_error");
+  if (!raw) return null;
+  return BACKEND_REASONS.includes(raw) ? raw : "unknown";
+}
+
 export default function AuthCallback() {
-  const { setSession } = useAuth();
+  const { setSession, reportSignInIssue } = useAuth();
   const navigate = useNavigate();
   const handled = useRef(false);
 
@@ -20,42 +35,47 @@ export default function AuthCallback() {
     const accessToken = params.get("access_token");
     const refreshToken = params.get("refresh_token");
     const expiresIn = Number(params.get("expires_in") || "3600");
+    const hasTokens = !!accessToken && !!refreshToken;
+    const failure = readAuthError() ?? "missing_token";
 
-    // Popup flow: hand tokens to the opener and close this window.
+    // Popup flow: hand the tokens (or the failure reason) to the opener and
+    // close this window. The opener tracks the failure and tells the user.
     const inPopup = !!window.opener && window.opener !== window;
     if (inPopup) {
-      if (accessToken && refreshToken) {
-        window.opener.postMessage(
-          {
-            type: "studyassistant-auth",
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_in: expiresIn,
-          },
-          window.location.origin,
-        );
-      } else {
-        noteLandingLogin("failed");
-        analytics.track(AnalyticsEvent.LOGIN_FAILED, { reason: "missing_token" });
-        analytics.flush();
-      }
+      window.opener.postMessage(
+        hasTokens
+          ? {
+              type: "studyassistant-auth",
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              expires_in: expiresIn,
+            }
+          : { type: "studyassistant-auth", error: failure },
+        window.location.origin,
+      );
       window.close();
       return;
     }
 
     // Full-redirect fallback flow.
-    if (accessToken && refreshToken) {
+    const fail = (reason: string) => {
+      noteLandingLogin("failed");
+      analytics.track(AnalyticsEvent.LOGIN_FAILED, {
+        reason,
+        method: "redirect",
+      });
+      reportSignInIssue({ kind: "failed", reason });
+      navigate(`/?auth_error=${reason}`, { replace: true });
+    };
+
+    if (hasTokens) {
       setSession(accessToken, refreshToken, expiresIn)
         .then(() => navigate("/chat", { replace: true }))
-        .catch(() => {
-          analytics.track(AnalyticsEvent.LOGIN_FAILED, { reason: "session" });
-          navigate("/?auth_error=session", { replace: true });
-        });
+        .catch(() => fail("session"));
     } else {
-      analytics.track(AnalyticsEvent.LOGIN_FAILED, { reason: "missing_token" });
-      navigate("/?auth_error=missing_token", { replace: true });
+      fail(failure);
     }
-  }, [setSession, navigate]);
+  }, [setSession, reportSignInIssue, navigate]);
 
   return (
     <>

@@ -51,15 +51,24 @@ class GeneralAnswerTool(BaseTool):
         """A plain conversational answer."""
         return RESPONSE_NORMAL
 
-    def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
-        """Answer without web grounding."""
-        query = params.get("query") or ctx.enriched_message
-        rendered = prompts.PromptBuilder.build(
+    @staticmethod
+    def _render(
+        ctx: ToolContext, params: dict[str, Any]
+    ) -> prompts.RenderedPrompt:
+        """Render the prompt once: the full message plus the planner note."""
+        return prompts.PromptBuilder.build(
             prompts.GENERAL_ANSWER_TEMPLATE,
-            USER_MESSAGE=query,
+            USER_MESSAGE=ctx.enriched_message,
+            PLANNER_NOTE=prompts.planner_note_segment(
+                ctx.enriched_message, params.get("query")
+            ),
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
             CURRENT_DATE=prompts.current_date(),
         )
+
+    def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
+        """Answer without web grounding."""
+        rendered = self._render(ctx, params)
         answer = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL").generate(
             rendered.user_message,
             system_prompt=rendered.system_prompt,
@@ -78,13 +87,7 @@ class GeneralAnswerTool(BaseTool):
     ) -> Generator[str, None, dict[str, Any]]:
         """Stream the answer, returning answer + (empty) sources at the end."""
         llm = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL")
-        query = params.get("query") or ctx.enriched_message
-        rendered = prompts.PromptBuilder.build(
-            prompts.GENERAL_ANSWER_TEMPLATE,
-            USER_MESSAGE=query,
-            USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
-            CURRENT_DATE=prompts.current_date(),
-        )
+        rendered = self._render(ctx, params)
         answer = ""
         for chunk in llm.generate_stream(
             rendered.user_message,

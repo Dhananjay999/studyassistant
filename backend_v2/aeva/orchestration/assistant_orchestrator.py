@@ -117,13 +117,37 @@ def _needs_fresh_info(text: str) -> bool:
     return bool(_FRESH_INFO_RE.search(text))
 
 
+# A long message made of list items is pasted study material (an exam
+# question list, notes), not a question about the outside world. Its years
+# and words like "schedule" are content, so they must not trigger a search.
+_LIST_ITEM_RE = re.compile(r"^\s*(?:\d{1,3}[.)]|[-*•])\s+\S", re.MULTILINE)
+_EXPLICIT_SEARCH_RE = re.compile(
+    r"\bsearch (?:the web|online|for)\b|\bgoogle it\b|\blook (?:it|this) up\b",
+    re.IGNORECASE,
+)
+_PASTED_MIN_CHARS = 400
+_PASTED_MIN_ITEMS = 4
+
+
+def _is_pasted_material(text: str) -> bool:
+    """Report whether a message is pasted study material to work on."""
+    return (
+        len(text) >= _PASTED_MIN_CHARS
+        and len(_LIST_ITEM_RE.findall(text)) >= _PASTED_MIN_ITEMS
+        and not _EXPLICIT_SEARCH_RE.search(text)
+    )
+
+
 def _needs_web_upgrade(text: str) -> bool:
     """Report whether a `general` plan should be promoted to `web_search`.
 
     Catches product/choice questions ("suggest the best iPhone 17 model",
     "top colleges for CSE", "Pixel 9 vs iPhone 16") that the planner tends
-    to answer from memory; concept questions never match.
+    to answer from memory; concept questions and pasted study material
+    never match.
     """
+    if _is_pasted_material(text):
+        return False
     return bool(_PRODUCT_INTENT_RE.search(text)) or _needs_fresh_info(text)
 
 
@@ -1691,8 +1715,10 @@ class AssistantOrchestrator:
         # Only reach for the web when the message clearly needs fresh, external
         # facts; otherwise Aeva answers from its own knowledge (no needless
         # search on greetings, identity questions, or concept explanations).
-        if _needs_fresh_info(text) and feature_flag_service.is_enabled(
-            "web_search"
+        if (
+            _needs_fresh_info(text)
+            and not _is_pasted_material(message)
+            and feature_flag_service.is_enabled("web_search")
         ):
             return AssistantOrchestrator._single_step(
                 "web_search",

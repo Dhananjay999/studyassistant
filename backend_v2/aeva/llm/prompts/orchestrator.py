@@ -71,6 +71,8 @@ Clarify when:
 
 Do NOT clarify when:
 - The subject is explicitly stated.
+- The message itself contains the material to work on (a pasted question
+  list, notes, or a passage).
 - The recent conversation clearly establishes the subject.
 - A reasonable default exists (count, difficulty, format, etc.).
 - The user is replying to a previous clarification — including a SKIPPED
@@ -95,6 +97,8 @@ general  (DEFAULT for study content)
 - Concept explanations, definitions, and general knowledge already within the model's training.
 - Personal tutoring, step-by-step help, worked examples, and brainstorming; opinions about STUDY approach (how to revise, which topic first). Product or purchase opinions go to web_search.
 - Comparisons of CONCEPTS ("mitosis vs meiosis", "TCP vs UDP") — timeless subject matter.
+- Pasted study material to answer, organise, or explain — an exam question list, a question bank, notes, a passage — even when it mentions years or dates.
+- Requests for audio, video, or a voice recording of study content (the answering model delivers a spoken-style script).
 - Follow-up questions answerable from the current conversation.
 - Off-topic or unsafe requests (the answering model handles the refusal).
 
@@ -152,6 +156,7 @@ Worked examples (message → tool, params):
 - "What is dictatorship?" → general
 - "How should I revise for boards in 30 days?" → general (study advice)
 - "How do I upload a PDF here?" → product_info
+- A pasted list of exam questions ("1. Define ATC. 2. In which year was ICAO established? …") → general
 
 ================ MODEL SELECTION ================
 
@@ -186,6 +191,7 @@ When in doubt, choose the stronger model — a wrong or confusing explanation co
 - Resolve references using recent conversation before extracting parameters.
 - Infer the topic only from recent conversation when appropriate.
 - Never invent parameter values.
+- `query` is a short standalone restatement. The tool also receives the student's full message, so never copy pasted material into `query`.
 - Omit optional parameters the student did not specify.
 
 ================ MULTI-AGENT TURNS =================

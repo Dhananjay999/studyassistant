@@ -32,10 +32,11 @@ class WebSearchTool(BaseTool):
             description=(
                 "Search the web for external or up-to-date information: "
                 "news and events, live prices/scores, releases, current "
-                "dates/schedules, and any real-world product, service, "
-                "college or exam question — recommendations ('best X'), "
+                "dates/schedules, and questions ABOUT a real-world product, "
+                "service, college or exam — recommendations ('best X'), "
                 "comparisons ('X vs Y'), specs, reviews, prices, rankings. "
-                "Timeless subject matter belongs to `general`."
+                "Timeless subject matter and pasted exam questions to "
+                "answer belong to `general`."
             ),
             parameters_schema=prompts.WEB_SEARCH_PARAMS,
         )
@@ -49,14 +50,21 @@ class WebSearchTool(BaseTool):
     def _render(
         ctx: ToolContext, params: dict[str, Any]
     ) -> tuple[prompts.RenderedPrompt, str, str]:
-        """Resolve the query + intent and render the prompt once."""
+        """Resolve the query + intent and render the prompt once.
+
+        The student's message is always sent in full; the planner's
+        ``query`` only rides along as the search restatement.
+        """
         query = params.get("query") or ctx.enriched_message
         intent = params.get("search_intent")
         if intent not in prompts.SEARCH_INTENTS:
             intent = prompts.guess_search_intent(query)
         rendered = prompts.PromptBuilder.build(
             prompts.WEB_SEARCH_TEMPLATE,
-            USER_MESSAGE=query,
+            USER_MESSAGE=ctx.enriched_message,
+            PLANNER_NOTE=prompts.planner_note_segment(
+                ctx.enriched_message, params.get("query")
+            ),
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
             SEARCH_MODE=prompts.search_mode_block(intent),
             CURRENT_DATE=prompts.current_date(),

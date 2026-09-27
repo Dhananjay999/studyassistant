@@ -96,15 +96,28 @@ def auth_callback() -> Response:
     code = request.args.get("code")
     verifier = request.cookies.get(PKCE_COOKIE)
 
+    # Failures go to the frontend callback page (not the landing page) so a
+    # sign-in popup can report the reason to its opener and close itself.
+    failure = f"{frontend}/auth/callback?auth_error="
+    provider_error = request.args.get("error")
+
+    if provider_error:
+        reason = (
+            "access_denied"
+            if provider_error == "access_denied"
+            else "provider_error"
+        )
+        return make_response(redirect(f"{failure}{reason}"))
+
     if not code or not verifier:
-        return redirect(f"{frontend}/?auth_error=missing_code")
+        return make_response(redirect(f"{failure}missing_code"))
 
     supabase = SupabaseService()
     try:
         session = supabase.exchange_code(code, verifier)
     except Exception:
         logger.exception("OAuth code exchange failed")
-        return redirect(f"{frontend}/?auth_error=exchange_failed")
+        return make_response(redirect(f"{failure}exchange_failed"))
 
     access_token = session.get("access_token", "")
     refresh_token = session.get("refresh_token", "")
