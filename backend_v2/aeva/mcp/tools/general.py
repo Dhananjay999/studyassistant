@@ -58,6 +58,7 @@ class GeneralAnswerTool(BaseTool):
             prompts.GENERAL_ANSWER_TEMPLATE,
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+            CURRENT_DATE=prompts.current_date(),
         )
         answer = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL").generate(
             rendered.user_message,
@@ -82,6 +83,7 @@ class GeneralAnswerTool(BaseTool):
             prompts.GENERAL_ANSWER_TEMPLATE,
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+            CURRENT_DATE=prompts.current_date(),
         )
         answer = ""
         for chunk in llm.generate_stream(

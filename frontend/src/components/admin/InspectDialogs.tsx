@@ -541,11 +541,15 @@ export function ProfileEditDialog({
           Email and identity fields aren't editable. Every save is recorded
           in the audit log.
         </p>
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" onClick={onClose}>
+        <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+          <Button variant="ghost" className="h-11 sm:h-10" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={edit.isPending} className="gap-1.5">
+          <Button
+            onClick={save}
+            disabled={edit.isPending}
+            className="h-11 gap-1.5 sm:h-10"
+          >
             {edit.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Save Changes
           </Button>

@@ -14,6 +14,8 @@ The canonical text still lives in its focused module (``system``,
 shared blocks so templates can compose them.
 """
 
+from datetime import UTC, datetime
+
 from aeva.llm.prompts.response_meta import ANSWER_META_INSTRUCTION
 from aeva.llm.prompts.system import SYSTEM_PROMPT
 from aeva.llm.prompts.teaching import TEACHING_PROTOCOL
@@ -40,3 +42,13 @@ def user_profile_segment(personalization: str | None) -> str:
     if not block:
         return ""
     return f"\n\n{block}"
+
+
+def current_date() -> str:
+    """Resolve ``{CURRENT_DATE}`` (ISO date, UTC) for date-aware templates.
+
+    The planner and the answer tools use it to judge freshness ("latest",
+    a year in the question) against the real calendar instead of the
+    model's training cut-off.
+    """
+    return datetime.now(tz=UTC).date().isoformat()

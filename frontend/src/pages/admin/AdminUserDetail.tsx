@@ -185,12 +185,12 @@ export function AdminUserDetail({
               </span>
             </div>
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:items-end">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5"
+                className="h-11 gap-1.5 sm:h-9"
                 onClick={() => setEditOpen(true)}
               >
                 <Pencil className="h-3.5 w-3.5" />
@@ -199,16 +199,18 @@ export function AdminUserDetail({
               <Button
                 variant="destructive"
                 size="sm"
-                className="gap-1.5"
+                className="h-11 gap-1.5 sm:h-9"
                 onClick={() => setPending({ type: "deleteUser" })}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Delete user
               </Button>
             </div>
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              <Bug className="h-3.5 w-3.5" />
-              Debug mode
+            <label className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-xs text-muted-foreground sm:min-h-0 sm:w-auto sm:justify-start">
+              <span className="flex items-center gap-2">
+                <Bug className="h-3.5 w-3.5" />
+                Debug mode
+              </span>
               <Switch
                 checked={!!profile.is_debug_user}
                 disabled={setDebug.isPending}
@@ -349,7 +351,9 @@ export function AdminUserDetail({
 
       {/* Content tabs */}
       <Tabs defaultValue="sessions">
-        <TabsList className="flex-wrap">
+        {/* Six tabs with counts don't fit a phone: scroll them sideways
+           (snap per tab) instead of wrapping past the list's fixed height. */}
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto scrollbar-hide snap-x sm:w-auto [&>button]:shrink-0 [&>button]:snap-start">
           <TabsTrigger value="sessions">
             Chats ({data.sessions.length})
           </TabsTrigger>
@@ -453,12 +457,12 @@ export function AdminUserDetail({
                     else if (e.type === "media_uploaded")
                       setOpenMedia(e.ref);
                   }}
-                  className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+                  className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent active:bg-accent sm:min-h-0 sm:flex-row sm:items-baseline sm:justify-start sm:gap-3"
                 >
-                  <span className="w-32 shrink-0 font-mono text-[11px] text-muted-foreground">
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground sm:w-32">
                     {formatDateTime(e.at)}
                   </span>
-                  <span className="min-w-0 truncate">{e.label}</span>
+                  <span className="min-w-0 max-w-full truncate">{e.label}</span>
                 </button>
               ))}
             </div>
@@ -473,11 +477,11 @@ export function AdminUserDetail({
             Danger zone
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+        <CardContent className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <Button
             variant="outline"
             size="sm"
-            className="gap-2"
+            className="col-span-2 h-10 gap-2 sm:h-9"
             onClick={() => setPending({ type: "reset" })}
           >
             <RotateCcw className="h-4 w-4" />
@@ -490,7 +494,7 @@ export function AdminUserDetail({
               key={r}
               variant="outline"
               size="sm"
-              className="gap-2 text-destructive hover:text-destructive"
+              className="h-10 gap-2 text-destructive hover:text-destructive sm:h-9"
               onClick={() => setPending({ type: "clear", resource: r })}
             >
               <Trash2 className="h-4 w-4" />
@@ -610,7 +614,11 @@ function ItemList({ items, empty }: { items: ListItem[]; empty: string }) {
     );
   }
   return (
-    <div className="divide-y rounded-lg border bg-background">
+    <div
+      className="divide-y rounded-lg border bg-background"
+      data-analytics-private
+      data-analytics-section="admin_user_content"
+    >
       {items.map((it) => {
         const Icon = it.icon;
         return (
@@ -619,7 +627,7 @@ function ItemList({ items, empty }: { items: ListItem[]; empty: string }) {
             type="button"
             disabled={!it.onClick}
             onClick={it.onClick}
-            className="flex w-full items-center gap-3 px-4 py-3 text-left enabled:hover:bg-accent/50 disabled:cursor-default"
+            className="flex min-h-12 w-full items-center gap-3 px-4 py-3 text-left enabled:hover:bg-accent/50 enabled:active:bg-accent/60 disabled:cursor-default"
           >
             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
@@ -640,11 +648,12 @@ function DetailSkeleton({ onBack }: { onBack: () => void }) {
     <div className="space-y-5">
       <BackButton onBack={onBack} />
       <Skeleton className="h-28 w-full" />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-16 w-full" />
         ))}
       </div>
+      <Skeleton className="h-11 w-full" />
       <Skeleton className="h-40 w-full" />
     </div>
   );

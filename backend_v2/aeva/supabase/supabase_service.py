@@ -3,7 +3,7 @@
 import logging
 import threading
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import jwt
@@ -479,9 +479,13 @@ class SupabaseService:
     # also carries search_vector, parser artifact paths, and job ids that
     # inflate the JSON — an unbounded list once blew past the serverless
     # response limit (413 FUNCTION_PAYLOAD_TOO_LARGE) in production.
+    # ``chunk_count`` is part of the readiness contract (``ready`` AND
+    # ``chunk_count > 0`` = retrievable), so it must ship here too — without
+    # it the media tool treats every listed document as unindexed.
     _MEDIA_LIST_COLUMNS = (
         "id,user_id,session_id,space_id,file_name,mime_type,storage_path,"
-        "size_bytes,created_at,processing_status,processing_error,page_count"
+        "size_bytes,created_at,processing_status,processing_error,page_count,"
+        "chunk_count"
     )
 
     def list_media(
@@ -567,6 +571,10 @@ class SupabaseService:
         logger.info("DB insert media_pages | %d rows", len(rows))
         self.client.table("media_pages").insert(rows).execute()
 
+    # Columns added by migration 023; stripped on retry so uploads keep
+    # working on a database where the migration has not been applied yet.
+    _CHUNK_OPTIONAL_COLUMNS = ("context", "embedding_version")
+
     def insert_media_chunks(self, rows: list[dict[str, Any]]) -> None:
         """Bulk-insert chunk rows, serializing embeddings for pgvector."""
         if not rows:
@@ -576,7 +584,28 @@ class SupabaseService:
             {**row, "embedding": _vec_to_str(row["embedding"])}
             for row in rows
         ]
-        self.client.table("media_chunks").insert(payload).execute()
+        try:
+            self.client.table("media_chunks").insert(payload).execute()
+        except Exception:
+            if not any(
+                col in row for row in payload
+                for col in self._CHUNK_OPTIONAL_COLUMNS
+            ):
+                raise
+            logger.warning(
+                "media_chunks insert failed; retrying without the migration "
+                "023 columns (apply 023_rag_hybrid.sql)",
+                exc_info=True,
+            )
+            slim = [
+                {
+                    k: v
+                    for k, v in row.items()
+                    if k not in self._CHUNK_OPTIONAL_COLUMNS
+                }
+                for row in payload
+            ]
+            self.client.table("media_chunks").insert(slim).execute()
 
     def delete_media_chunks(self, media_id: str, user_id: str) -> None:
         """Drop a document's chunks and pages (for reprocess/cleanup)."""
@@ -613,6 +642,99 @@ class SupabaseService:
         rows = result.data or []
         logger.info("DB match_chunks ← %d chunks", len(rows))
         return rows
+
+    def search_chunks_hybrid(
+        self,
+        query_vector: list[float],
+        query_text: str,
+        user_id: str,
+        media_ids: list[str] | None = None,
+        *,
+        top_k: int = 8,
+        vector_candidates: int = 24,
+        fts_candidates: int = 24,
+        rrf_k: int = 60,
+        exact_scan_max: int = 5000,
+        ef_search: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Vector + keyword search fused in SQL (``search_media_chunks``).
+
+        Requires migration 023; callers fall back to ``match_chunks`` when
+        the RPC is missing. ``query_text`` is a ``websearch_to_tsquery``
+        string (blank disables the keyword leg).
+        """
+        logger.info(
+            "DB search_chunks_hybrid | top_k=%d | media_ids=%s | fts=%s",
+            top_k,
+            len(media_ids) if media_ids else "all",
+            bool(query_text),
+        )
+        result = self.client.rpc(
+            "search_media_chunks",
+            {
+                "query_embedding": _vec_to_str(query_vector),
+                "p_user_id": user_id,
+                "p_media_ids": media_ids or None,
+                "p_query": query_text or None,
+                "match_count": top_k,
+                "p_vector_candidates": vector_candidates,
+                "p_fts_candidates": fts_candidates,
+                "p_rrf_k": rrf_k,
+                "p_exact_scan_max": exact_scan_max,
+                "p_ef_search": ef_search,
+            },
+        ).execute()
+        rows = cast("list[dict[str, Any]]", result.data or [])
+        logger.info("DB search_chunks_hybrid ← %d chunks", len(rows))
+        return rows
+
+    def fetch_adjacent_chunks(
+        self,
+        user_id: str,
+        anchors: list[tuple[str, int]],
+        window: int = 1,
+    ) -> list[dict[str, Any]]:
+        """Chunks at ``chunk_index ± window`` around each (media, index)."""
+        wanted: dict[str, set[int]] = {}
+        for media_id, index in anchors:
+            for delta in range(1, window + 1):
+                wanted.setdefault(media_id, set()).update(
+                    {index - delta, index + delta}
+                )
+        rows: list[dict[str, Any]] = []
+        for media_id, indexes in wanted.items():
+            valid = sorted(i for i in indexes if i >= 0)
+            if not valid:
+                continue
+            result = (
+                self.client.table("media_chunks")
+                .select("id,media_id,chunk_index,content,page_number,section")
+                .eq("user_id", user_id)
+                .eq("media_id", media_id)
+                .in_("chunk_index", valid)
+                .execute()
+            )
+            rows.extend(cast("list[dict[str, Any]]", result.data or []))
+        return rows
+
+    def list_chunk_sections(
+        self,
+        user_id: str,
+        media_ids: list[str] | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Section/page outline of a user's chunks (document order)."""
+        query = (
+            self.client.table("media_chunks")
+            .select("media_id,chunk_index,page_number,section")
+            .eq("user_id", user_id)
+        )
+        if media_ids:
+            query = query.in_("media_id", media_ids)
+        result = (
+            query.order("media_id").order("chunk_index").limit(limit).execute()
+        )
+        return cast("list[dict[str, Any]]", result.data or [])
 
     # --- Storage ---
 

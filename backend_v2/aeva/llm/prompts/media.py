@@ -9,7 +9,8 @@ specific document and page.
 conversation marker, retrieved excerpts, citation rules, user message, and the
 metadata trailer. ``{DOCUMENT_CONTEXT}`` carries the numbered excerpt block
 (``"(none)"`` on the direct-attachment fallback path, where the files travel
-as provider binary parts instead).
+as provider binary parts instead). ``{ATTACHED_FILES}`` is optional: it names
+files sent whole (images, not-yet-indexed docs) next to the excerpts.
 """
 
 from aeva.llm.prompts.blocks import (
@@ -27,20 +28,18 @@ Answer the student's question as Aeva using the retrieved excerpts.
 
 Retrieved Excerpts:
 {DOCUMENT_CONTEXT}
-
+{ATTACHED_FILES}
 Student Question:
 {USER_MESSAGE}
 
 Rules:
-- Base your answer on the retrieved excerpts.
-- Cite every statement supported by the excerpts immediately after it using:
+- The excerpts are fragments of the student's files, not the whole files. If a term or fact appears in ANY excerpt, use it — never say the material "doesn't mention" something an excerpt contains.
+- Answer every part of the question the excerpts support, citing each statement immediately after it using:
   [cite:<document name>#<page number>]
-- Copy the document name and page exactly as shown in the excerpt label.
-- If no page is available, use:
-  [cite:<document name>]
-- Never use numeric citations like [1].
-- Prefer information from the uploaded material over general knowledge.
-- If the excerpts do not answer the question, clearly say so, then provide general knowledge separately without citations.
+- Copy the document name and page exactly as shown in the excerpt label; use [cite:<document name>] when no page is shown. Never use numeric citations like [1], and never cite a document that is not in the excerpts.
+- Files listed as attached in full are complete documents: read them directly and cite them by their name.
+- If part of the question is NOT covered by the excerpts, say in one line exactly what the materials do not cover, and only then add general knowledge under a short "Beyond your materials" line, without citations.
+- Prefer the material's own terminology, numbers, and definitions over general knowledge.
 - Be concise, accurate, and specific to the uploaded material.
 {ANSWER_META}""",
     defaults={
@@ -48,11 +47,56 @@ Rules:
         "TEACHING": TEACHING_BLOCK,
         "ANSWER_META": ANSWER_META_BLOCK,
     },
-    optional=("USER_PROFILE",),
+    optional=("USER_PROFILE", "ATTACHED_FILES"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
     uses_attachments=True,
 )
+
+
+def attached_files_block(labels: list[str]) -> str:
+    """Resolve ``{ATTACHED_FILES}`` for files sent whole alongside excerpts.
+
+    Images (never chunked) and documents that are not indexed yet travel as
+    binary parts in the same call. Naming them here tells the model those
+    files are the complete material — not excerpts — so it reads them fully.
+    Empty when nothing is attached, keeping excerpt-only prompts unchanged.
+    """
+    if not labels:
+        return ""
+    listed = "\n".join(f"- {label}" for label in labels)
+    return (
+        "\nAlso attached in full (read these files directly — they are "
+        f"not excerpts):\n{listed}\n"
+    )
+
+
+PROCESSING_MESSAGE = (
+    "Your file is still being processed — give it a moment and ask again, "
+    "or ask a general question meanwhile."
+)
+
+def no_context_message(
+    query: str, file_names: list[str], sections: list[str]
+) -> str:
+    """Friendly "nothing matched" reply that says what the files DO cover.
+
+    Names the files that were searched and lists a few of their section
+    titles so the student can re-aim the question (or ask for general
+    knowledge instead) rather than hitting a dead end.
+    """
+    files = ", ".join(f"**{name}**" for name in file_names) or "your files"
+    asked = query.strip().rstrip("?")
+    text = f"I looked through {files} but couldn't find anything about"
+    text += f" \u201c{asked}\u201d." if asked else " that."
+    if sections:
+        text += " They cover: " + " \u00b7 ".join(sections) + "."
+    text += (
+        " Try rephrasing with the words your notes use, or ask me to answer "
+        "from general knowledge instead."
+    )
+    return text
+
 
 NO_CONTEXT_MESSAGE = (
     "I couldn't find information about that in your uploaded study materials. "

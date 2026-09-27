@@ -73,10 +73,15 @@ class LLMProvider(ABC):
         raise NotImplementedError(msg)
 
     def generate_image(
-        self, prompt: str
+        self,
+        prompt: str,
+        *,
+        aspect: str = "square",
     ) -> tuple[bytes, str, str]:
         """Generate one image: ``(image_bytes, mime_type, caption_text)``.
 
+        ``aspect`` is ``"square"``, ``"landscape"`` or ``"portrait"``; each
+        provider maps it to its own size/ratio parameter (or ignores it).
         ``caption_text`` is any accompanying text the model produced (may be
         empty). Only image-capable providers implement this; the default
         refuses so a misconfigured image provider fails loudly.

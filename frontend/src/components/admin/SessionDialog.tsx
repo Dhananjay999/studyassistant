@@ -262,7 +262,7 @@ export function SessionDialog({
     >
       <ResponsiveModalContent className="max-h-[85vh] sm:max-w-3xl">
         <ResponsiveModalHeader>
-          <div className="flex items-center justify-between gap-3 pr-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:pr-6">
             <ResponsiveModalTitle className="truncate">
               {data?.session.title || "Conversation"}
             </ResponsiveModalTitle>
@@ -270,8 +270,9 @@ export function SessionDialog({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 gap-1.5 text-xs"
+                className="h-9 gap-1.5 text-xs sm:h-7"
                 disabled={!data}
+                data-analytics-name="Copy full chat"
                 onClick={() => copy("chat")}
               >
                 {copied === "chat" ? (
@@ -279,13 +280,14 @@ export function SessionDialog({
                 ) : (
                   <Copy className="h-3 w-3" />
                 )}
-                Copy Full Chat
+                Copy<span className="hidden sm:inline"> Full Chat</span>
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 gap-1.5 text-xs text-muted-foreground"
+                className="h-9 gap-1.5 text-xs text-muted-foreground sm:h-7"
                 disabled={!data}
+                data-analytics-name="Copy raw session"
                 onClick={() => copy("raw")}
               >
                 <Braces className="h-3 w-3" />

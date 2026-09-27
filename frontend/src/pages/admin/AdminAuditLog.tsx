@@ -3,17 +3,13 @@
 
 import { ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ResponsiveTable,
+  type ResponsiveColumn,
+} from "@/components/admin/ResponsiveTable";
 import { useAdminAuditLog } from "@/hooks/adminApi";
 import { formatDateTime } from "@/lib/adminFormat";
+import type { AdminAuditEntry } from "@/types/admin";
 
 const ACTION_TONE: Record<string, string> = {
   "user.delete": "bg-red-500/15 text-red-600 dark:text-red-400",
@@ -21,6 +17,54 @@ const ACTION_TONE: Record<string, string> = {
   "resource.clear": "bg-amber-500/15 text-amber-600 dark:text-amber-400",
   "resource.delete": "bg-amber-500/15 text-amber-600 dark:text-amber-400",
 };
+
+const resourceText = (e: AdminAuditEntry) =>
+  e.resource ||
+  (Object.keys(e.detail ?? {}).length ? JSON.stringify(e.detail) : "—");
+
+const COLUMNS: ResponsiveColumn<AdminAuditEntry>[] = [
+  {
+    key: "time",
+    header: "Time",
+    className: "whitespace-nowrap font-mono text-xs text-muted-foreground",
+    cell: (e) => formatDateTime(e.created_at),
+  },
+  {
+    key: "admin",
+    header: "Admin",
+    role: "secondary",
+    className: "text-sm",
+    cell: (e) => e.admin_username,
+  },
+  {
+    key: "action",
+    header: "Action",
+    role: "primary",
+    cell: (e) => (
+      <Badge variant="secondary" className={ACTION_TONE[e.action] ?? ""}>
+        {e.action}
+      </Badge>
+    ),
+  },
+  {
+    key: "user",
+    header: "User",
+    className: "font-mono text-xs text-muted-foreground",
+    cell: (e) => (e.user_id ? `${e.user_id.slice(0, 8)}…` : "—"),
+  },
+  {
+    key: "resource",
+    header: "Resource",
+    className: "max-w-[220px] truncate text-xs text-muted-foreground",
+    cell: resourceText,
+    // Cards have the width to show the detail instead of truncating it.
+    mobileCell: (e) => (
+      <span className="line-clamp-2 break-all font-normal text-muted-foreground">
+        {resourceText(e)}
+      </span>
+    ),
+  },
+];
 
 export function AdminAuditLog() {
   const { data, isLoading, isError, error } = useAdminAuditLog();
@@ -42,61 +86,20 @@ export function AdminAuditLog() {
         changes — is recorded here automatically and cannot be modified.
       </p>
 
-      {isLoading ? (
-        <div className="space-y-2">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
-        </div>
-      ) : isError ? (
+      {isError ? (
         <p className="text-sm text-destructive">
           {error instanceof Error ? error.message : "Failed to load."}
         </p>
-      ) : entries.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          No audited actions yet.
-        </p>
       ) : (
-        <div className="rounded-xl border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Admin</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Resource</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                    {formatDateTime(e.created_at)}
-                  </TableCell>
-                  <TableCell className="text-sm">{e.admin_username}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="secondary"
-                      className={ACTION_TONE[e.action] ?? ""}
-                    >
-                      {e.action}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {e.user_id ? `${e.user_id.slice(0, 8)}…` : "—"}
-                  </TableCell>
-                  <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
-                    {e.resource ||
-                      (Object.keys(e.detail ?? {}).length
-                        ? JSON.stringify(e.detail)
-                        : "—")}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <ResponsiveTable
+          columns={COLUMNS}
+          rows={entries}
+          rowKey={(e) => e.id}
+          loading={isLoading}
+          skeletonRows={4}
+          empty="No audited actions yet."
+          analyticsSection="admin_audit_log"
+        />
       )}
     </div>
   );

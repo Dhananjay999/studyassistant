@@ -15,6 +15,7 @@ import {
   GraduationCap,
   MessageSquarePlus,
   Square,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,8 +73,15 @@ import {
   useQuizzes,
   useSessions,
 } from "@/hooks/api";
-import { getMessages, getQuiz, uploadFileWithProgress } from "@/lib/api";
+import {
+  attachMedia,
+  getMessages,
+  getQuiz,
+  uploadFileWithProgress,
+} from "@/lib/api";
+import { normalizeAgents } from "@/lib/agents";
 import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
+import { isTeamTurn, mapAssistantContent } from "@/lib/messageMeta";
 import {
   analytics,
   AnalyticsEvent,
@@ -82,21 +90,26 @@ import {
 } from "@/lib/analytics";
 import { compressFiles } from "@/utils/compress";
 import type {
+  AgentInfo,
   Bookmark as BookmarkData,
   ChatSeed,
   ClarificationAnswer,
-  FlashcardContent,
   MediaItem,
   Message,
   PendingClarification,
   PendingQuizSetup,
   ProcessingStage,
+  ProcessingStatus,
   QuizContent,
   QuizOptions,
   QuizSetupDraft,
   UploadProgress,
 } from "@/types";
-import { isMediaReady, PROCESSING_STAGES } from "@/types";
+import {
+  isMediaProcessing,
+  isMediaSelectable,
+  PROCESSING_STAGES,
+} from "@/types";
 import { cn } from "@/lib/utils";
 
 const PDFViewer = lazy(() => import("@/components/PDFViewer"));
@@ -114,6 +127,17 @@ export default function ChatPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
+  // Stamp the session onto cached media rows once they are attached
+  // server-side (drives the "This chat" badge without a refetch).
+  const setMediaSession = useCallback(
+    (mediaIds: string[], sessionId: string) =>
+      qc.setQueryData<MediaItem[]>(qk.media, (prev) =>
+        prev?.map((m) =>
+          mediaIds.includes(m.id) ? { ...m, session_id: sessionId } : m,
+        ),
+      ),
+    [qc],
+  );
 
   // Optional personalization onboarding: shown once for users who have not yet
   // completed or skipped it. Dismissed locally so it never reappears mid-session.
@@ -151,6 +175,11 @@ export default function ChatPage() {
   const activeId =
     stickyId && sessions.some((s) => s.id === stickyId) ? stickyId : null;
   const activeSession = sessions.find((s) => s.id === activeId) ?? null;
+  // Latest session id for callbacks that outlive a render (upload/processing
+  // handlers): a file that finishes indexing after the chat was lazily
+  // created must still be attached to it.
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [pendingClar, setPendingClar] = useState<PendingClarification | null>(
@@ -202,6 +231,10 @@ export default function ChatPage() {
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
+  const mediaRef = useRef(media);
+  mediaRef.current = media;
+  const uploadsRef = useRef(uploads);
+  uploadsRef.current = uploads;
   // While an upload batch is in flight the media panel is auto-opened to show
   // live progress, then auto-closed once every file finishes cleanly. The ref
   // gates the close so it only fires after a batch we opened for.
@@ -419,6 +452,20 @@ export default function ChatPage() {
     ) => {
       if (streaming) return;
 
+      // A selected file that is still indexing can't be searched yet — wait
+      // for it instead of answering from memory and reporting "nothing found".
+      const pendingFile = Array.from(selected)
+        .map((id) => mediaRef.current.find((m) => m.id === id))
+        .find((m): m is MediaItem => !!m && isMediaProcessing(m));
+      if (pendingFile) {
+        analytics.track(AnalyticsEvent.CHAT_SEND_BLOCKED, {
+          reason: "media_processing",
+          media_count: selected.size,
+        });
+        toast.info(`Waiting for ${pendingFile.file_name} to finish indexing…`);
+        return;
+      }
+
       const sentAt = performance.now();
       sendStartedAtRef.current = sentAt;
       let firstChunkAt: number | null = null;
@@ -515,8 +562,19 @@ export default function ChatPage() {
           const spaceId =
             new URLSearchParams(window.location.search).get("spaceId") ??
             undefined;
-          const s = await createSession.mutateAsync({ spaceId });
+          // Attach every file already in play (selected, or uploaded while
+          // there was no session yet) so session-scoped lookups find them.
+          const uploadedIds = uploadsRef.current
+            .map((u) => u.mediaId)
+            .filter((id): id is string => !!id);
+          const mediaIds = Array.from(new Set([...selected, ...uploadedIds]));
+          const s = await createSession.mutateAsync({
+            spaceId,
+            mediaIds: mediaIds.length ? mediaIds : undefined,
+          });
           sid = s.id;
+          activeIdRef.current = sid;
+          if (mediaIds.length) setMediaSession(mediaIds, sid);
           analytics.track(AnalyticsEvent.CHAT_SESSION_CREATED, {
             chat_session_id: sid,
             space_id: spaceId ?? null,
@@ -540,6 +598,9 @@ export default function ChatPage() {
         }
       }
 
+      // Agent roster of this turn (one agent on ordinary turns).
+      let team: AgentInfo[] = [];
+
       start(
         {
           message: outgoing,
@@ -556,24 +617,75 @@ export default function ChatPage() {
             if (firstChunkAt === null) firstChunkAt = performance.now();
             upsertStreaming(delta);
           },
+          onAgentsPlanned: (raw) => {
+            // The roster arrives before any token. A single agent keeps the
+            // ordinary loader; a team gets the workboard on the message.
+            team = normalizeAgents(raw);
+            if (team.length < 2) return;
+            const roster = team;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamId
+                  ? { ...m, meta: { ...m.meta, agents: roster } }
+                  : m,
+              ),
+            );
+          },
+          onAgentStatus: (update) => {
+            const agent = team.find((a) => a.id === update.id);
+            if (!agent || team.length < 2) return;
+            const status = update.status as AgentInfo["status"];
+            const settled = status === "done" || status === "failed";
+            if (
+              settled &&
+              agent.status !== status &&
+              agent.kind === "generator"
+            ) {
+              analytics.track(AnalyticsEvent.CHAT_AGENT_COMPLETED, {
+                chat_session_id: sid,
+                tool: agent.tool,
+                status,
+                ms: update.ms ?? 0,
+                input: agent.input,
+                agent_total: team.length,
+              });
+            }
+            team = team.map((a) =>
+              a.id === update.id
+                ? {
+                    ...a,
+                    status,
+                    ms: update.ms ?? a.ms,
+                    note: settled && status === "failed" ? undefined : update.note ?? a.note,
+                    error: update.error ?? a.error,
+                    startedAt:
+                      status === "running" ? (a.startedAt ?? Date.now()) : a.startedAt,
+                  }
+                : a,
+            );
+            const roster = team;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamId
+                  ? { ...m, meta: { ...m.meta, agents: roster } }
+                  : m,
+              ),
+            );
+          },
           onToolSelected: (tool) => {
             analytics.track(AnalyticsEvent.CHAT_TOOL_SELECTED, {
               chat_session_id: sid,
               tool,
+              agent_total: Math.max(team.length, 1),
             });
             setThinkingHint(TOOL_TO_HINT[tool] ?? "thinking");
           },
           onComplete: (full, meta) => {
             const content = (meta.content ?? {}) as Record<string, unknown>;
             const toolUsed = meta.tool_used as Message["meta"]["tool_used"];
-            const quiz =
-              toolUsed === "quiz_generator"
-                ? (content as unknown as QuizContent)
-                : undefined;
-            const flashcards =
-              toolUsed === "flashcard_generator"
-                ? (content as unknown as FlashcardContent)
-                : undefined;
+            const mapped = mapAssistantContent(content, toolUsed);
+            const { quiz, flashcards } = mapped;
+            const teamTurn = isTeamTurn(mapped);
             analytics.track(AnalyticsEvent.CHAT_RESPONSE_COMPLETED, {
               chat_session_id: sid,
               tool_used: toolUsed,
@@ -595,33 +707,30 @@ export default function ChatPage() {
               followup_count: Array.isArray(content.suggested_followups)
                 ? content.suggested_followups.length
                 : 0,
+              tools_used: mapped.tools_used,
+              agent_count: mapped.agents?.length ?? 1,
+              parallel: !!mapped.parallel,
+              failed_agents:
+                mapped.agents?.filter((a) => a.status === "failed").length ??
+                0,
+              image_style:
+                typeof content.style === "string" ? content.style : undefined,
             });
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamId
                   ? {
                       ...m,
-                      content: full || m.content,
+                      // Everything is streamed, but a dropped frame must
+                      // not lose text the final result carries.
+                      content:
+                        full ||
+                        (typeof content.answer === "string"
+                          ? content.answer
+                          : "") ||
+                        m.content,
                       streaming: false,
-                      meta: {
-                        tool_used: toolUsed,
-                        sources:
-                          (content.sources as Message["meta"]["sources"]) || [],
-                        // Present only for Developer Mode users.
-                        model: content.model as string | undefined,
-                        debug: content.debug as Message["meta"]["debug"],
-                        images: content.images as Message["meta"]["images"],
-                        quiz,
-                        flashcards,
-                        available_actions: content.available_actions as
-                          | string[]
-                          | undefined,
-                        suggested_followups:
-                          content.suggested_followups as Message["meta"]["suggested_followups"],
-                        response_type: content.response_type as
-                          | string
-                          | undefined,
-                      },
+                      meta: mapped,
                     }
                   : m,
               ),
@@ -635,8 +744,10 @@ export default function ChatPage() {
             if ((content.images as unknown[] | undefined)?.length) {
               qc.invalidateQueries({ queryKey: qk.media });
             }
-            // Auto-open the study panel right after a set is generated.
-            if (flashcards?.set_id) {
+            // Auto-open the study panel right after a set is generated —
+            // but not on a team turn, where the set is one result of several
+            // and opening it would hide the answer and the other cards.
+            if (flashcards?.set_id && !teamTurn) {
               setActiveFlashcards(flashcards.set_id);
               setFlashcardsOpen(true);
             }
@@ -674,6 +785,8 @@ export default function ChatPage() {
                 (data.difficulty as PendingQuizSetup["difficulty"]) ?? null,
               examConfig:
                 (data.exam_config as PendingQuizSetup["examConfig"]) ?? null,
+              useMedia:
+                typeof data.use_media === "boolean" ? data.use_media : null,
             });
           },
           onError: (msg) => {
@@ -717,7 +830,15 @@ export default function ChatPage() {
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeId, selected, streaming, start, createSession, setSearchParams],
+    [
+      activeId,
+      selected,
+      streaming,
+      start,
+      createSession,
+      setSearchParams,
+      setMediaSession,
+    ],
   );
 
   /* --- resume-from-bookmark: seed a fresh session with saved content --- */
@@ -822,6 +943,42 @@ export default function ChatPage() {
     });
   };
 
+  // "Retry" on a failed agent card: re-run just that agent. Quiz and
+  // flashcards use the same forced paths as their buttons (grounded in the
+  // answer when the agent was built from it); the image is asked for again.
+  const handleRetryAgent = (messageId: string, agent: AgentInfo) => {
+    const index = messages.findIndex((m) => m.id === messageId);
+    if (index === -1) return;
+    const prompt =
+      [...messages.slice(0, index)].reverse().find((m) => m.role === "user")
+        ?.content ?? "";
+    const answer = agent.input === "answer" ? messages[index].content : "";
+    analytics.track(AnalyticsEvent.CHAT_AGENT_RETRIED, {
+      chat_session_id: activeId,
+      tool: agent.tool,
+    });
+    if (agent.tool === "quiz_generator") {
+      send(prompt || "Create a quiz", {
+        quizOptions: { topic: prompt || undefined },
+        sourceContent: answer || undefined,
+        displayText: "Retry the quiz",
+        source: "action",
+      });
+    } else if (agent.tool === "flashcard_generator") {
+      send(prompt || "Create flashcards", {
+        flashcardOptions: {},
+        sourceContent: answer || undefined,
+        displayText: "Retry the flashcards",
+        source: "action",
+      });
+    } else {
+      send(`Create only the image for: ${prompt}`, {
+        displayText: "Retry the image",
+        source: "action",
+      });
+    }
+  };
+
   const openQuiz = (quiz: QuizContent) => {
     setActiveQuiz(quiz);
     setQuizOpen(true);
@@ -872,7 +1029,7 @@ export default function ChatPage() {
       prev.some((m) => m.id === item.id) ? prev : [item, ...prev],
     );
 
-  const setMediaStatus = (mediaId: string, status: ProcessingStage) =>
+  const setMediaStatus = (mediaId: string, status: ProcessingStatus) =>
     qc.setQueryData<MediaItem[]>(qk.media, (prev) =>
       prev?.map((m) =>
         m.id === mediaId ? { ...m, processing_status: status } : m,
@@ -914,19 +1071,38 @@ export default function ChatPage() {
         setMediaStatus(mediaId, "ready");
         // The freshly indexed file becomes active context automatically.
         setSelected((prev) => new Set(prev).add(mediaId));
+        // Uploaded before the chat existed? Link it to the session created
+        // since, so server-side session lookups can find it. Best-effort:
+        // explicit media ids on each message work regardless.
+        const sid = activeIdRef.current;
+        const item = mediaRef.current.find((m) => m.id === mediaId);
+        if (sid && item && !item.session_id) {
+          void attachMedia(sid, [mediaId])
+            .then(() => setMediaSession([mediaId], sid))
+            .catch(() => {
+              /* non-critical */
+            });
+        }
         dropUpload(rowId, 900);
       },
-      onError: (msg, recoverable) => {
+      onError: (msg, recoverable, _via, kept) => {
         analytics.track(AnalyticsEvent.MEDIA_PROCESSING_FAILED, {
           media_id: mediaId,
           stage_last: lastStage,
           recoverable,
+          kept,
           processing_ms: elapsed(),
         });
-        patchUpload(rowId, { status: "error", message: msg, recoverable });
-        // A recoverable run keeps its record (resume); an unrecoverable one was
-        // scrubbed by the backend, so drop it from the cache too.
+        patchUpload(rowId, {
+          status: "error",
+          message: msg,
+          recoverable,
+          kept,
+        });
+        // The backend keeps failed uploads (retry in place, or answer from
+        // the raw file); only a scrubbed legacy record leaves the cache.
         if (recoverable) setMediaStatus(mediaId, "error");
+        else if (kept) setMediaStatus(mediaId, "failed");
         else removeMediaCache(mediaId);
       },
     });
@@ -1013,12 +1189,14 @@ export default function ChatPage() {
   const handleRetryUpload = (rowId: string) => {
     const row = uploads.find((u) => u.id === rowId);
     if (!row) return;
+    const inPlace = !!row.mediaId && (row.recoverable || row.kept);
     analytics.track(AnalyticsEvent.MEDIA_UPLOAD_RETRIED, {
       upload_id: rowId,
-      mode: row.recoverable && row.mediaId ? "resume" : "reupload",
+      mode: inPlace ? "resume" : "reupload",
     });
-    if (row.recoverable && row.mediaId) {
-      // Resume the still-present run rather than re-uploading.
+    if (inPlace && row.mediaId) {
+      // The record is still there: resume (slow parse) or re-index (failed
+      // parse — the backend submits a fresh job) rather than re-uploading.
       patchUpload(rowId, {
         status: "processing",
         stage: "pending",
@@ -1032,6 +1210,31 @@ export default function ChatPage() {
     } else {
       dropUpload(rowId);
     }
+  };
+
+  // Sidebar "Retry" on a file that failed to index earlier: re-run the
+  // pipeline in place with a live progress card, exactly like a fresh upload.
+  const handleReprocess = (mediaId: string) => {
+    const item = mediaRef.current.find((m) => m.id === mediaId);
+    if (!item) return;
+    const rowId = uid();
+    analytics.track(AnalyticsEvent.MEDIA_UPLOAD_RETRIED, {
+      upload_id: rowId,
+      mode: "resume",
+    });
+    setUploads((prev) => [
+      {
+        id: rowId,
+        mediaId,
+        name: item.file_name,
+        progress: PROCESSING_STAGES.pending.pct,
+        status: "processing",
+        stage: "pending",
+      },
+      ...prev,
+    ]);
+    setMediaStatus(mediaId, "pending");
+    void runProcessing(rowId, mediaId);
   };
 
   const handleDismissUpload = (rowId: string) => {
@@ -1120,7 +1323,7 @@ export default function ChatPage() {
   const toggleMedia = (id: string) => {
     const wasSelected = selected.has(id);
     const item = media.find((m) => m.id === id);
-    const refused = !wasSelected && !!item && !isMediaReady(item);
+    const refused = !wasSelected && !!item && !isMediaSelectable(item);
     analytics.track(AnalyticsEvent.MEDIA_CONTEXT_TOGGLED, {
       media_id: id,
       selected: !wasSelected && !refused,
@@ -1137,9 +1340,10 @@ export default function ChatPage() {
         next.delete(id);
         return next;
       }
-      // A file is only usable as context once it has finished indexing.
+      // A file is usable as context once indexing has finished (a failed
+      // index is fine — the backend answers from the raw file).
       const item = media.find((m) => m.id === id);
-      if (item && !isMediaReady(item)) {
+      if (item && !isMediaSelectable(item)) {
         toast.error("This file is still being processed");
         return prev;
       }
@@ -1232,6 +1436,7 @@ export default function ChatPage() {
       onDelete={(id) => deleteMedia.mutateAsync(id)}
       onUpload={handleUpload}
       onRetryUpload={handleRetryUpload}
+      onReprocess={handleReprocess}
       onDismissUpload={handleDismissUpload}
       onOpenQuiz={(id) => {
         setToolsOpen(false);
@@ -1282,6 +1487,7 @@ export default function ChatPage() {
                   mediaAvailable={selected.size > 0}
                   quizBusy={streaming}
                   thinkingHint={thinkingHint}
+                  onRetryAgent={handleRetryAgent}
                   onSaveNote={async (messageId, content, topic) => {
                     try {
                       const note = await createNote.mutateAsync({
@@ -1354,6 +1560,7 @@ export default function ChatPage() {
                 initialTypes={pendingQuiz.questionTypes}
                 initialDifficulty={pendingQuiz.difficulty}
                 initialExamConfig={pendingQuiz.examConfig}
+                initialUseMedia={pendingQuiz.useMedia}
                 draft={quizDraftRef.current}
                 onDraftChange={handleQuizDraftChange}
                 mediaAvailable={pendingQuiz.mediaAvailable}
@@ -1427,6 +1634,17 @@ export default function ChatPage() {
                   <Square className="h-3 w-3 fill-current" />
                   Stop generating
                 </button>
+              </div>
+            )}
+
+            {uploads.some(
+              (u) => u.status === "uploading" || u.status === "processing",
+            ) && (
+              <div className="mx-auto mb-1 flex w-full max-w-4xl px-4">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/90 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur">
+                  <Loader2 className="h-3 w-3 animate-spin text-brand-1" />
+                  Indexing your file… it will be used as soon as it's ready.
+                </span>
               </div>
             )}
 

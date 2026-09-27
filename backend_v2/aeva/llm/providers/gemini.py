@@ -2,20 +2,31 @@
 
 import io
 import json
+import logging
 import math
-from collections.abc import Generator
+import time
+from collections.abc import Callable, Generator
+from functools import partial
 from typing import Any
 
 from flask import current_app
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from aeva.llm import prompts
 from aeva.llm.providers.base import LLMProvider
 
+logger = logging.getLogger(__name__)
+
 # Gemini caps the number of texts accepted per embed_content call; batch under
 # it so a large document's chunks embed across several requests.
 _EMBED_BATCH_SIZE = 100
+# Indexing a document is dozens of embed calls; a single 429/5xx blip must
+# not fail the whole upload. Backoff per retry, in seconds.
+_EMBED_BACKOFF_S = (0.5, 1.0, 2.0)
+_RETRYABLE_CODES = frozenset({429, 500, 502, 503, 504})
+_ASPECT_RATIOS = {"square": "1:1", "landscape": "16:9", "portrait": "9:16"}
 
 
 def _l2_normalize(values: list[float]) -> list[float]:
@@ -35,6 +46,24 @@ def _batched(texts: list[str], size: int) -> Generator[list[str], None, None]:
     """Yield successive slices of ``texts`` of at most ``size`` items."""
     for start in range(0, len(texts), size):
         yield texts[start : start + size]
+
+
+def _with_embed_retry(call: Callable[[], Any]) -> Any:
+    """Run one embed batch, retrying transient API errors with backoff."""
+    for attempt, delay in enumerate(_EMBED_BACKOFF_S):
+        try:
+            return call()
+        except genai_errors.APIError as exc:
+            if getattr(exc, "code", None) not in _RETRYABLE_CODES:
+                raise
+            logger.warning(
+                "Gemini embed retry %d/%d after %s",
+                attempt + 1,
+                len(_EMBED_BACKOFF_S),
+                exc,
+            )
+            time.sleep(delay)
+    return call()
 
 
 class GeminiProvider(LLMProvider):
@@ -186,7 +215,23 @@ class GeminiProvider(LLMProvider):
             if chunk.text:
                 yield chunk.text
 
-    def generate_image(self, prompt: str) -> tuple[bytes, str, str]:
+    @staticmethod
+    def _image_config(aspect: str) -> types.GenerateContentConfig:
+        """Image generation config, with the aspect ratio when supported.
+
+        ``ImageConfig`` only exists in newer google-genai releases; on older
+        ones the aspect is ignored and the model's default ratio applies.
+        """
+        kwargs: dict[str, Any] = {"response_modalities": ["TEXT", "IMAGE"]}
+        image_config = getattr(types, "ImageConfig", None)
+        ratio = _ASPECT_RATIOS.get(aspect)
+        if image_config is not None and ratio:
+            kwargs["image_config"] = image_config(aspect_ratio=ratio)
+        return types.GenerateContentConfig(**kwargs)
+
+    def generate_image(
+        self, prompt: str, *, aspect: str = "square"
+    ) -> tuple[bytes, str, str]:
         """Generate one image with a Gemini image model.
 
         Requires an image-capable model on this provider instance (e.g.
@@ -196,9 +241,7 @@ class GeminiProvider(LLMProvider):
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=["TEXT", "IMAGE"],
-            ),
+            config=self._image_config(aspect),
         )
         image: bytes | None = None
         mime = "image/png"
@@ -215,6 +258,19 @@ class GeminiProvider(LLMProvider):
             raise ValueError(msg)
         return image, mime, "\n".join(caption_parts).strip()
 
+    def _embed_batch(
+        self, batch: list[str], task_type: str, output_dimensionality: int
+    ) -> Any:
+        """One embed_content call (wrapped by the retry helper)."""
+        return self.client.models.embed_content(
+            model=self.model,
+            contents=batch,  # type: ignore[arg-type]
+            config=types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=output_dimensionality,
+            ),
+        )
+
     def embed(
         self,
         texts: list[str],
@@ -229,13 +285,10 @@ class GeminiProvider(LLMProvider):
         """
         vectors: list[list[float]] = []
         for batch in _batched(texts, _EMBED_BATCH_SIZE):
-            response = self.client.models.embed_content(
-                model=self.model,
-                contents=batch,  # type: ignore[arg-type]
-                config=types.EmbedContentConfig(
-                    task_type=task_type,
-                    output_dimensionality=output_dimensionality,
-                ),
+            response = _with_embed_retry(
+                partial(
+                    self._embed_batch, batch, task_type, output_dimensionality
+                )
             )
             vectors.extend(
                 _l2_normalize(list(embedding.values or []))

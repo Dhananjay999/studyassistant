@@ -24,8 +24,10 @@ Difficulty: {DIFFICULTY}
 Question types: {QUESTION_TYPES}
 Recent context: {RECENT_CONTEXT}
 Additional instructions: {ADDITIONAL_INSTRUCTIONS}
-
+{SOURCE_CONTEXT}
 Use the attached study material if provided; otherwise generate the quiz from the topic. If the topic is vague, infer it from the recent context.
+
+When SOURCE CONTEXT is present (content Aeva produced earlier in this turn, or excerpts from the student's files), every question MUST be answerable from it: never test facts absent from it, prefer its terminology and numbers, and spread the questions across all of it rather than clustering on one part.
 
 Requirements:
 
@@ -57,7 +59,7 @@ Generate exactly the requested number of questions using only the requested ques
 Before returning, VERIFY each question: every `correct_answers` value exactly matches one of its `options`, and the count of correct answers obeys the type rule above (single_select and true_false have exactly one). Fix any violations before responding.
 """,
     defaults={"SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK},
-    optional=("USER_PROFILE",),
+    optional=("USER_PROFILE", "SOURCE_CONTEXT"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
     uses_attachments=True,

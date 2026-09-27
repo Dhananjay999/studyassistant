@@ -69,6 +69,9 @@ export enum AnalyticsEvent {
   CHAT_SESSION_DELETED = "CHAT_SESSION_DELETED",
   CHAT_SESSION_PINNED = "CHAT_SESSION_PINNED",
   CHAT_NEW_STARTED = "CHAT_NEW_STARTED",
+  CHAT_SEND_BLOCKED = "CHAT_SEND_BLOCKED",
+  CHAT_AGENT_COMPLETED = "CHAT_AGENT_COMPLETED",
+  CHAT_AGENT_RETRIED = "CHAT_AGENT_RETRIED",
 
   // ---- Media -------------------------------------------------------------
   MEDIA_UPLOAD_STARTED = "MEDIA_UPLOAD_STARTED",
@@ -376,6 +379,14 @@ export interface ChatResponseCompletedProps {
   has_quiz: boolean;
   has_flashcards: boolean;
   followup_count: number;
+  /** Every tool that ran (multi-agent turns list more than one). */
+  tools_used?: string[];
+  agent_count?: number;
+  /** Agents ran concurrently. */
+  parallel?: boolean;
+  failed_agents?: number;
+  /** Image skill used, when an image was generated. */
+  image_style?: string;
 }
 export interface MediaUploadStartedProps {
   upload_id: string;
@@ -536,6 +547,22 @@ export interface EventPropsMap {
   [AnalyticsEvent.CHAT_TOOL_SELECTED]: {
     chat_session_id: string | null;
     tool: string;
+    /** Agents planned for the turn (1 on ordinary turns). */
+    agent_total?: number;
+  };
+  /** One generator agent of a multi-agent turn finished (or failed). */
+  [AnalyticsEvent.CHAT_AGENT_COMPLETED]: {
+    chat_session_id: string | null;
+    tool: string;
+    status: "done" | "failed";
+    ms: number;
+    input: "message" | "answer";
+    agent_total: number;
+  };
+  /** "Retry" pressed on a failed agent card. */
+  [AnalyticsEvent.CHAT_AGENT_RETRIED]: {
+    chat_session_id: string | null;
+    tool: string;
   };
   [AnalyticsEvent.CHAT_RESPONSE_COMPLETED]: ChatResponseCompletedProps;
   [AnalyticsEvent.CHAT_RESPONSE_FAILED]: ErrorKindProps & {
@@ -599,6 +626,11 @@ export interface EventPropsMap {
     pinned: boolean;
   };
   [AnalyticsEvent.CHAT_NEW_STARTED]: { source: string };
+  /** A send was refused because a selected file is still indexing. */
+  [AnalyticsEvent.CHAT_SEND_BLOCKED]: {
+    reason: "media_processing";
+    media_count: number;
+  };
 
   [AnalyticsEvent.MEDIA_UPLOAD_STARTED]: MediaUploadStartedProps;
   [AnalyticsEvent.MEDIA_UPLOAD_COMPLETED]: {
@@ -623,6 +655,8 @@ export interface EventPropsMap {
     media_id: string;
     stage_last: string;
     recoverable: boolean;
+    /** The backend kept the row (retry in place) rather than scrubbing it. */
+    kept?: boolean;
     processing_ms: number;
   };
   [AnalyticsEvent.MEDIA_UPLOAD_RETRIED]: {

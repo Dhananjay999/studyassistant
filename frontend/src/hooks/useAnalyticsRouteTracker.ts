@@ -9,7 +9,7 @@
 
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigationType } from "react-router-dom";
-import { analytics, AnalyticsEvent, routeName } from "@/lib/analytics";
+import { analytics, AnalyticsEvent, publicPath, routeName } from "@/lib/analytics";
 import { pickSafeSearch } from "@/lib/analytics/routeName";
 
 interface PageVisit {
@@ -49,7 +49,7 @@ export function useAnalyticsRouteTracker(): void {
     if (prev && !prev.exited) exitVisit(prev, "navigation");
 
     const visit: PageVisit = {
-      path: pathname,
+      path: publicPath(pathname),
       name: routeName(pathname),
       enteredAt: performance.now(),
       exited: false,
@@ -65,7 +65,7 @@ export function useAnalyticsRouteTracker(): void {
     // Defer one tick so Helmet has applied the new document title.
     const t = window.setTimeout(() => {
       analytics.track(AnalyticsEvent.PAGE_ENTRY, {
-        page_path: pathname,
+        page_path: visit.path,
         page_name: visit.name,
         previous_path: prev?.path ?? null,
         entry_source,

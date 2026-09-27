@@ -449,10 +449,42 @@ export interface QuizOptions {
   exam_config?: ExamConfig;
 }
 
+/** Lifecycle of one agent in a multi-agent turn. */
+export type AgentStatus = "queued" | "running" | "done" | "failed";
+export type AgentKind = "answer" | "generator";
+
+/**
+ * One agent of a turn. A turn has at most one `answer` agent (it streams the
+ * text) and up to three `generator` agents (quiz, flashcards, image) that run
+ * in parallel when their `input` is the message, or after the answer when
+ * their `input` is the answer.
+ */
+export interface AgentInfo {
+  id: string;
+  tool: ToolUsed;
+  kind: AgentKind;
+  input: "message" | "answer";
+  purpose?: string;
+  status: AgentStatus;
+  /** Server-measured run time once finished. */
+  ms?: number;
+  /** Latest progress note ("Drafting 10 questions…"). */
+  note?: string;
+  error?: string;
+  /** Client clock (ms) when it started running — drives the live timer. */
+  startedAt?: number;
+}
+
 export interface MessageMeta {
   sources?: SourceInfo[];
   mode?: ChatMode;
   tool_used?: ToolUsed;
+  /** Every tool that ran this turn (`tool_used` is the primary one). */
+  tools_used?: ToolUsed[];
+  /** The agent roster of a multi-agent turn (absent on single-agent turns). */
+  agents?: AgentInfo[];
+  /** True when agents of this turn ran concurrently. */
+  parallel?: boolean;
   status?: "clarification_required" | "quiz_setup" | "completed";
   run_id?: string;
   clarification?: ClarificationData;
@@ -493,6 +525,42 @@ export interface ResponseDebugInfo {
   tool_ms?: number;
   total_ms?: number;
   streamed?: boolean;
+  /** Present on media (RAG) answers: what retrieval did for this turn. */
+  retrieval?: RetrievalDebugInfo;
+  [key: string]: unknown;
+}
+
+/** Retrieval diagnostics from the backend's RetrievalService (debug only). */
+export interface RetrievalDebugInfo {
+  mode?: "hybrid" | "vector" | "vector_fallback";
+  exact_scan?: boolean;
+  query_original?: string;
+  query_used?: string;
+  rewritten?: boolean;
+  is_followup?: boolean;
+  keywords?: string[];
+  paraphrases?: string[];
+  query_variants?: number;
+  fts_query?: string | null;
+  candidates?: number;
+  after_threshold?: number;
+  after_quota?: number;
+  kept?: number;
+  excerpts?: number;
+  neighbors_added?: number;
+  reranked?: boolean;
+  rerank_timeout?: boolean;
+  top_similarity?: number;
+  docs_searched?: number;
+  docs_hit?: number;
+  context_chars?: number;
+  citations_used?: number;
+  citations_dropped?: number;
+  embed_ms?: number;
+  search_ms?: number;
+  rewrite_ms?: number;
+  rerank_ms?: number;
+  total_ms?: number;
   [key: string]: unknown;
 }
 
@@ -502,6 +570,12 @@ export interface GeneratedImage {
   media_id: string;
   file_name?: string;
   url?: string;
+  /** Image skill used (flowchart, mind_map, line_art, …). */
+  style?: string;
+  /** Human label of that skill ("Flowchart"). */
+  style_label?: string;
+  /** Short caption, used as the image's alt text. */
+  alt?: string;
 }
 
 /** A failed turn, surfaced as a friendly in-thread error card. */
@@ -543,11 +617,28 @@ export interface MediaItem {
   processing_status?: ProcessingStatus;
   processing_error?: string | null;
   page_count?: number | null;
+  // Retrievable excerpts; 0 for images and unparseable docs (answered from
+  // the raw file instead).
+  chunk_count?: number | null;
 }
 
 /** A media item is usable as chat context only once it is indexed. */
 export function isMediaReady(m: MediaItem): boolean {
   return (m.processing_status ?? "ready") === "ready";
+}
+
+/** Still moving through the upload/index pipeline (not ready, not failed). */
+export function isMediaProcessing(m: MediaItem): boolean {
+  const status = m.processing_status ?? "ready";
+  return status !== "ready" && status !== "failed";
+}
+
+/**
+ * Selectable as chat context: indexed, or failed-but-kept — the backend keeps
+ * failed uploads and answers from the raw file, so they stay usable.
+ */
+export function isMediaSelectable(m: MediaItem): boolean {
+  return !isMediaProcessing(m);
 }
 
 // Backend-emitted processing stages, in pipeline order. "uploading" is a
@@ -616,6 +707,8 @@ export interface UploadProgress {
   file?: File;
   // For a failed run: true when it can be resumed, false when it must re-upload.
   recoverable?: boolean;
+  // The backend kept the failed record (retry re-runs indexing in place).
+  kept?: boolean;
 }
 
 export interface ClarificationAnswer {
@@ -656,6 +749,8 @@ export interface PendingQuizSetup {
   questionTypes?: QuestionType[] | null;
   difficulty?: Difficulty | null;
   examConfig?: ExamConfig | null;
+  /** Planner detected the quiz should be built from the selected files. */
+  useMedia?: boolean | null;
 }
 
 /** Snapshot of the quiz-setup form, kept while the popup is dismissed so

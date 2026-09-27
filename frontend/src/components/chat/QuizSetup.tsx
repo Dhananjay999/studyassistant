@@ -36,6 +36,7 @@ export function QuizSetup({
   initialTypes,
   initialDifficulty,
   initialExamConfig,
+  initialUseMedia,
   draft,
   onDraftChange,
   mediaAvailable,
@@ -50,6 +51,7 @@ export function QuizSetup({
   initialTypes?: QuestionType[] | null;
   initialDifficulty?: Difficulty | null;
   initialExamConfig?: ExamConfig | null;
+  initialUseMedia?: boolean | null;
   /** Form snapshot restored when the popup is reopened after a dismiss. */
   draft?: QuizSetupDraft | null;
   onDraftChange?: (draft: QuizSetupDraft) => void;
@@ -80,6 +82,7 @@ export function QuizSetup({
           initialTypes={initialTypes}
           initialDifficulty={initialDifficulty}
           initialExamConfig={initialExamConfig}
+          initialUseMedia={initialUseMedia}
           draft={draft}
           onDraftChange={onDraftChange}
           mediaAvailable={mediaAvailable}

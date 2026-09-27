@@ -10,7 +10,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -19,16 +18,71 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ResponsiveTable,
+  type ResponsiveColumn,
+} from "@/components/admin/ResponsiveTable";
 import { useAdminUsers } from "@/hooks/adminApi";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/adminFormat";
-import type { AdminUsersParams } from "@/types/admin";
+import type { AdminUserRow, AdminUsersParams } from "@/types/admin";
+
+const MUTED = "text-muted-foreground";
+
+const COLUMNS: ResponsiveColumn<AdminUserRow>[] = [
+  {
+    key: "name",
+    header: "Name",
+    role: "primary",
+    className: "font-medium",
+    cell: (u) => u.full_name || "—",
+  },
+  {
+    key: "email",
+    header: "Email",
+    role: "secondary",
+    className: MUTED,
+    cell: (u) => u.email || "—",
+  },
+  {
+    key: "provider",
+    header: "Provider",
+    cell: (u) => (
+      <Badge variant="secondary" className="capitalize">
+        {u.login_provider}
+      </Badge>
+    ),
+  },
+  {
+    key: "joined",
+    header: "Joined",
+    className: `whitespace-nowrap ${MUTED}`,
+    cell: (u) => formatDate(u.joined_at),
+  },
+  {
+    key: "active",
+    header: "Last active",
+    className: `whitespace-nowrap ${MUTED}`,
+    cell: (u) => formatDateTime(u.last_active),
+  },
+  { key: "chats", header: "Chats", align: "right", cell: (u) => u.total_chats },
+  {
+    key: "quizzes",
+    header: "Quizzes",
+    align: "right",
+    cell: (u) => u.total_quizzes,
+  },
+  {
+    key: "cards",
+    header: "Cards",
+    align: "right",
+    cell: (u) => u.total_flashcards,
+  },
+  {
+    key: "storage",
+    header: "Storage",
+    align: "right",
+    cell: (u) => formatBytes(u.storage_used),
+  },
+];
 
 const DEFAULT_PARAMS: AdminUsersParams = {
   q: "",
@@ -140,11 +194,13 @@ export function AdminUsers({
         </Select>
         <Button
           variant="outline"
+          aria-label="Toggle sort order"
+          data-analytics-name="Toggle sort order"
           onClick={() =>
             patch({ order: params.order === "desc" ? "asc" : "desc" })
           }
         >
-          {params.order === "desc" ? "Desc" : "Asc"}
+          {params.order === "desc" ? "Newest first" : "Oldest first"}
         </Button>
       </div>
 
@@ -154,84 +210,17 @@ export function AdminUsers({
         </p>
       )}
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Provider</TableHead>
-              <TableHead>Joined</TableHead>
-              <TableHead>Last active</TableHead>
-              <TableHead className="text-right">Chats</TableHead>
-              <TableHead className="text-right">Quizzes</TableHead>
-              <TableHead className="text-right">Cards</TableHead>
-              <TableHead className="text-right">Storage</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 8 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 9 }).map((__, j) => (
-                    <TableCell key={j}>
-                      <Skeleton className="h-4 w-full" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : users.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={9}
-                  className="py-10 text-center text-sm text-muted-foreground"
-                >
-                  No users found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              users.map((u) => (
-                <TableRow
-                  key={u.id}
-                  className="cursor-pointer"
-                  onClick={() => onSelectUser(u.id)}
-                >
-                  <TableCell className="font-medium">
-                    {u.full_name || "—"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {u.email || "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="capitalize">
-                      {u.login_provider}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatDate(u.joined_at)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatDateTime(u.last_active)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {u.total_chats}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {u.total_quizzes}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {u.total_flashcards}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-right tabular-nums">
-                    {formatBytes(u.storage_used)}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {/* Table on desktop, cards on phones/tablets */}
+      <ResponsiveTable
+        columns={COLUMNS}
+        rows={users}
+        rowKey={(u) => u.id}
+        onRowClick={(u) => onSelectUser(u.id)}
+        rowActionName="Open user"
+        loading={isLoading}
+        empty="No users found."
+        analyticsSection="admin_users_list"
+      />
 
       {/* Pagination */}
       <div className="flex items-center justify-between">
@@ -243,6 +232,7 @@ export function AdminUsers({
           <Button
             variant="outline"
             size="sm"
+            className="h-10 sm:h-9"
             disabled={params.page <= 1}
             onClick={() => patch({ page: params.page - 1 })}
           >
@@ -252,6 +242,7 @@ export function AdminUsers({
           <Button
             variant="outline"
             size="sm"
+            className="h-10 sm:h-9"
             disabled={params.page >= totalPages}
             onClick={() => patch({ page: params.page + 1 })}
           >

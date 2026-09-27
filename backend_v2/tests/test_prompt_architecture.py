@@ -10,7 +10,7 @@ Pure renders and imports — no LLM calls. Guards the P0 restructure:
 - Standing-language requests are detected; one-off language asks are not.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
@@ -25,18 +25,38 @@ from aeva.llm import prompts
 from aeva.llm.prompts.response_meta import META_SENTINEL
 from aeva.mcp.base import RESPONSE_NORMAL
 from aeva.orchestration.assistant_orchestrator import (
+    AssistantOrchestrator,
     _is_small_talk,
+    _needs_fresh_info,
+    _needs_web_upgrade,
     _standing_language_request,
 )
 from aeva.orchestration.model_candidates import models_for, resolve_model
+from aeva.orchestration.models import AssistantContext
 
 TEACHING_MARK = "Teaching protocol"
 NUDGE_MARK = "upload the pages"
 
 
+TODAY = "2026-09-27"
+
+
 def _render_general() -> prompts.RenderedPrompt:
     return prompts.PromptBuilder.build(
-        prompts.GENERAL_ANSWER_TEMPLATE, USER_MESSAGE="x", USER_PROFILE=""
+        prompts.GENERAL_ANSWER_TEMPLATE,
+        USER_MESSAGE="x",
+        USER_PROFILE="",
+        CURRENT_DATE=TODAY,
+    )
+
+
+def _render_web(intent: str | None = None) -> prompts.RenderedPrompt:
+    return prompts.PromptBuilder.build(
+        prompts.WEB_SEARCH_TEMPLATE,
+        USER_MESSAGE="x",
+        USER_PROFILE="",
+        SEARCH_MODE=prompts.search_mode_block(intent),
+        CURRENT_DATE=TODAY,
     )
 
 
@@ -67,10 +87,7 @@ class TestLeanSystemPrompt:
 class TestTeachingBlockPlacement:
     def test_present_on_answer_templates(self):
         assert TEACHING_MARK in _render_general().system_prompt
-        web = prompts.PromptBuilder.build(
-            prompts.WEB_SEARCH_TEMPLATE, USER_MESSAGE="x", USER_PROFILE=""
-        )
-        assert TEACHING_MARK in web.system_prompt
+        assert TEACHING_MARK in _render_web().system_prompt
         media = prompts.PromptBuilder.build(
             prompts.MEDIA_TEMPLATE,
             USER_MESSAGE="x",
@@ -102,10 +119,10 @@ class TestProductInfoWiring:
         assert TEACHING_MARK not in rendered.system_prompt
 
     def test_planner_enum_includes_product_info(self):
-        enum = prompts.PLAN_TURN_SCHEMA["properties"]["tool"]["properties"][
-            "name"
-        ]["enum"]
+        steps = prompts.PLAN_TURN_SCHEMA["properties"]["steps"]
+        enum = steps["items"]["properties"]["tool"]["enum"]
         assert "product_info" in enum
+        assert steps["maxItems"] == 4
 
     def test_registered_streaming_normal_tool(self):
         registry = build_tool_registry(
@@ -200,3 +217,93 @@ class TestLearningProfileSchema:
             "exam_target": "JEE",
         })
         assert gated == ""
+
+
+class TestWebSearchRouting:
+    def test_commerce_cues_are_fresh_info(self):
+        assert _needs_fresh_info("price of iphone 17")
+        assert _needs_fresh_info("is the pixel 9 worth buying")
+        assert _needs_fresh_info("google it: JEE 2026 syllabus")
+
+    def test_product_intent_upgrades(self):
+        assert _needs_web_upgrade("suggest the best iPhone 17 model")
+        assert _needs_web_upgrade("top engineering colleges in pune for cse")
+        assert _needs_web_upgrade("Pixel 9 vs iPhone 16, which is better?")
+
+    def test_academic_questions_stay_general(self):
+        assert not _needs_web_upgrade("compare mitosis vs meiosis")
+        assert not _needs_web_upgrade("what is dictatorship?")
+        assert not _needs_web_upgrade("best way to revise organic chemistry")
+
+    def test_guess_intent(self):
+        assert prompts.guess_search_intent("iPhone 17 vs 17 Pro") == "compare"
+        assert prompts.guess_search_intent("suggest the best laptop") == (
+            "recommend"
+        )
+        assert prompts.guess_search_intent("latest JEE news") == "news"
+        assert prompts.guess_search_intent("who is the CEO of ISRO") == (
+            "lookup"
+        )
+
+    def test_refine_plan_promotes_general_to_web(self):
+        orch = AssistantOrchestrator(
+            llm=MagicMock(), registry=MagicMock(), supabase=MagicMock()
+        )
+        ctx = AssistantContext(user_id="u", session_id="s", message="m")
+        plan = {
+            "action": "run_tool",
+            "steps": [{"tool": "general", "params": {"query": "x"}}],
+        }
+        msg = "suggest the best iPhone 17 model for a student"
+        with patch(
+            "aeva.orchestration.assistant_orchestrator.feature_flag_service"
+        ) as flags:
+            flags.is_enabled.return_value = True
+            out = orch._refine_plan(plan, ctx, msg, [])
+        assert out["steps"][0]["tool"] == "web_search"
+        assert out["steps"][0]["params"]["search_intent"] == "recommend"
+        assert out["_upgraded"] is True
+
+    def test_refine_plan_leaves_concepts_alone(self):
+        orch = AssistantOrchestrator(
+            llm=MagicMock(), registry=MagicMock(), supabase=MagicMock()
+        )
+        ctx = AssistantContext(user_id="u", session_id="s", message="m")
+        plan = {
+            "action": "run_tool",
+            "steps": [{"tool": "general", "params": {"query": "x"}}],
+        }
+        with patch(
+            "aeva.orchestration.assistant_orchestrator.feature_flag_service"
+        ) as flags:
+            flags.is_enabled.return_value = True
+            out = orch._refine_plan(plan, ctx, "compare mitosis vs meiosis", [])
+        assert out["steps"][0]["tool"] == "general"
+
+
+class TestWebSearchTemplate:
+    def test_every_intent_renders(self):
+        for intent in prompts.SEARCH_INTENTS:
+            rendered = _render_web(intent)
+            assert TODAY in rendered.user_message
+            assert META_SENTINEL in rendered.user_message
+
+    def test_compare_asks_for_a_table(self):
+        assert "comparison table" in _render_web("compare").user_message
+        assert "ONE clear pick" in _render_web("recommend").user_message
+
+    def test_params_carry_intent_enum(self):
+        enum = prompts.WEB_SEARCH_PARAMS["properties"]["search_intent"]["enum"]
+        assert enum == list(prompts.SEARCH_INTENTS)
+
+    def test_planner_has_examples_date_and_no_fence(self):
+        planner = prompts.PLAN_TURN_TEMPLATE.user
+        assert "search_intent" in planner
+        assert "iPhone 17" in planner
+        assert "{CURRENT_DATE}" in planner
+        assert "```" not in planner
+
+    def test_general_prompt_is_date_aware(self):
+        text = _render_general().user_message
+        assert TODAY in text
+        assert "never guess specs, prices, or dates" in text

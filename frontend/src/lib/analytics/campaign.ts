@@ -5,6 +5,7 @@
 // on the chat page ten minutes later.
 
 import type { CampaignContext, CampaignTouch } from "./types";
+import { publicPath } from "./routeName";
 import { STORAGE_KEYS, readJSON, writeJSON } from "./storage";
 import { safeReferrer } from "./context";
 
@@ -41,7 +42,7 @@ function currentTouch(): CampaignTouch | null {
     }
   }
   if (!hasUtm && !external) return null;
-  touch.landing_page = window.location.pathname;
+  touch.landing_page = publicPath(window.location.pathname);
   return touch;
 }
 
@@ -58,7 +59,7 @@ export function captureAttribution(): CampaignContext {
   if (!stored.first_touch) {
     stored.first_touch = touch ?? {
       at: new Date().toISOString(),
-      landing_page: window.location.pathname,
+      landing_page: publicPath(window.location.pathname),
     };
     changed = true;
   }

@@ -1,7 +1,7 @@
 """Base types for MCP tools."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -41,6 +41,60 @@ RESPONSE_WEB_SEARCH = "WEB_SEARCH"
 RESPONSE_FILE_ANALYSIS = "FILE_ANALYSIS"
 RESPONSE_ERROR = "ERROR"
 RESPONSE_NOT_RELEVANT = "NOT_RELEVANT"
+RESPONSE_IMAGE = "IMAGE"
+
+# Cap on prior-agent text handed to a dependent generator (chars).
+DEFAULT_PRIOR_CONTEXT_MAX_CHARS = 12000
+_MAX_PRIOR_SOURCES = 10
+
+
+@dataclass
+class PriorResult:
+    """What an earlier agent of the SAME turn produced, for a later one.
+
+    A dependent generator (quiz after a summary, flashcards after a web
+    comparison) grounds itself in this instead of the raw conversation.
+    """
+
+    tool: str
+    text: str
+    sources: list[dict[str, Any]] = field(default_factory=list)
+    artifacts: dict[str, Any] = field(default_factory=dict)
+
+
+def source_context_block(
+    prior: list[PriorResult],
+    *,
+    max_chars: int = DEFAULT_PRIOR_CONTEXT_MAX_CHARS,
+) -> str:
+    """Render prior agent output as the ``{SOURCE_CONTEXT}`` prompt block.
+
+    Empty when there is nothing to hand over, so single-agent turns render
+    byte-for-byte as before. Text is truncated to ``max_chars`` in total.
+    """
+    if not prior:
+        return ""
+    lines = [
+        "Content Aeva produced earlier in this turn — use it as the PRIMARY "
+        "material:"
+    ]
+    budget = max_chars
+    for item in prior:
+        text = (item.text or "").strip()
+        if not text:
+            continue
+        if len(text) > budget:
+            text = text[: max(budget, 0)].rstrip() + " […truncated]"
+        budget -= len(text)
+        lines.append(f"\n### From {item.tool}\n{text}")
+        for source in item.sources[:_MAX_PRIOR_SOURCES]:
+            title = source.get("title") or source.get("document_name") or ""
+            url = source.get("url") or ""
+            if title or url:
+                lines.append(f"- {title} — {url}".rstrip(" —"))
+        if budget <= 0:
+            break
+    return "\n".join(lines) + "\n"
 
 
 @dataclass
@@ -76,6 +130,16 @@ class ToolContext:
     # turn resolves through (e.g. ``"LLM_FAST_MODEL"`` for the fast-turn path).
     # ``None`` means "use the tool's own config key".
     config_key: str | None = None
+    # Output of earlier agents in this turn (empty on single-agent turns).
+    prior_results: list[PriorResult] = field(default_factory=list)
+    # Progress callback for the agent workboard ("Drafting questions…");
+    # ``None`` when nobody is listening — tools must treat it as optional.
+    report: Callable[[str], None] | None = None
+
+    def note(self, text: str) -> None:
+        """Report a progress note when a listener is attached."""
+        if self.report is not None:
+            self.report(text)
 
 
 class BaseTool(ABC):

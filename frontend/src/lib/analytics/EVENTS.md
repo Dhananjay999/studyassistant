@@ -12,6 +12,11 @@ common context (see `README.md`): `device_id`, `anonymous_id`, `user_id`, `sessi
 `error_kind` is always `offline | high_demand | generic`. ★ marks a
 conversion-funnel step. Types are the source of truth: `events.ts`.
 
+The Super Admin panel reports as `page_name: admin` with `page_path` /
+`page_url` / `landing_page` scrubbed to plain `/admin` (`publicPath()` in
+`routeName.ts`): its real URL is a secret and never leaves the browser. Admin
+lists are `data-analytics-private`; nav clicks are `ADMIN_NAV_<SECTION>_CLICK`.
+
 ## Core (emitted by the SDK)
 
 | Event | When | Properties | Hook |
@@ -89,8 +94,10 @@ The prompt is a `ResponsiveModal`, so it also emits the generic `AUTH_PROMPT_MOD
 | ★ `CHAT_MESSAGE_SENT` | `send()` passed its guards | `chat_session_id`, `is_new_session`, `message_length`, `media_count`, `intent: text\|clarification\|quiz\|flashcards\|source_seed\|followup`, `source: composer\|suggested_prompt\|followup\|slash\|seed\|revision\|action`, `voice_used`, `has_seed_context` |
 | `CHAT_SESSION_CREATED` | A chat session row was created | `chat_session_id`, `space_id`, `trigger: first_message\|revision\|space\|note\|flashcard_resume\|bookmark_resume\|quiz_report_flashcards` (also `useRevisionActions`, `SpaceWorkspacePage`, `NoteEditorPage`, `FlashcardViewer`, `BookmarkDetailPage`, `QuizAttemptReport`) |
 | `CHAT_SESSION_CREATE_FAILED` | Lazy create threw | `error_kind` |
-| `CHAT_TOOL_SELECTED` | `tool_selected` SSE frame | `chat_session_id`, `tool` |
-| `CHAT_RESPONSE_COMPLETED` | `done` frame | `chat_session_id`, `tool_used`, `response_type`, `latency_ms`, `first_token_ms`, `response_length`, `source_count`, `image_count`, `has_quiz`, `has_flashcards`, `followup_count` |
+| `CHAT_TOOL_SELECTED` | `tool_selected` SSE frame | `chat_session_id`, `tool`, `agent_total?` (agents planned for the turn) |
+| `CHAT_RESPONSE_COMPLETED` | `done` frame | `chat_session_id`, `tool_used`, `response_type`, `latency_ms`, `first_token_ms`, `response_length`, `source_count`, `image_count`, `has_quiz`, `has_flashcards`, `followup_count`, `tools_used?`, `agent_count?`, `parallel?`, `failed_agents?`, `image_style?` |
+| `CHAT_AGENT_COMPLETED` | A generator agent (quiz / flashcards / image) of a multi-agent turn finished or failed (`agent_status` SSE frame) | `chat_session_id`, `tool`, `status: done\|failed`, `ms`, `input: message\|answer`, `agent_total` |
+| `CHAT_AGENT_RETRIED` | "Retry" pressed on a failed agent card in the workboard | `chat_session_id`, `tool` (`components/chat/AgentWorkboard.tsx`) |
 | `CHAT_RESPONSE_FAILED` | Stream error | `chat_session_id`, `error_kind`, `phase: pre_stream\|mid_stream`, `latency_ms` |
 | `CHAT_RESPONSE_STOPPED` | Stop generating | `chat_session_id`, `elapsed_ms`, `had_content` |
 | `CHAT_RESPONSE_RETRIED` | Retry on the error card | `chat_session_id` |
@@ -106,6 +113,7 @@ The prompt is a `ResponsiveModal`, so it also emits the generic `AUTH_PROMPT_MOD
 | `CHAT_SESSION_DELETED` | Sidebar delete | `chat_session_id`, `was_active` (`AppLayout.tsx`) |
 | `CHAT_SESSION_PINNED` | Pin / unpin | `chat_session_id`, `pinned` (`chat/AppSidebar.tsx`) |
 | `CHAT_NEW_STARTED` | New chat | `source: sidebar\|shortcut\|palette\|header` (`AppLayout.tsx`, `ChatPage.tsx`) |
+| `CHAT_SEND_BLOCKED` | Send refused because a selected file is still indexing (toast shown) | `reason: media_processing`, `media_count` |
 
 ## Media — `pages/ChatPage.tsx` unless noted
 
@@ -115,8 +123,8 @@ The prompt is a `ResponsiveModal`, so it also emits the generic `AUTH_PROMPT_MOD
 | `MEDIA_UPLOAD_COMPLETED` | Upload HTTP done | `upload_id`, `media_id`, `mime_type`, `size_bytes`, `upload_ms` |
 | `MEDIA_UPLOAD_FAILED` | Upload threw | `upload_id`, `error_kind`, `mime_type`, `size_bytes` |
 | ★ `MEDIA_PROCESSING_COMPLETED` | Processing reached `ready` | `media_id`, `processing_ms`, `via: stream\|poll`, `stages_seen` |
-| `MEDIA_PROCESSING_FAILED` | Processing error frame / poll failure | `media_id`, `stage_last`, `recoverable`, `processing_ms` |
-| `MEDIA_UPLOAD_RETRIED` / `MEDIA_UPLOAD_DISMISSED` | Upload card actions | `upload_id`, `mode: resume\|reupload` / `upload_id`, `status` |
+| `MEDIA_PROCESSING_FAILED` | Processing error frame / poll failure | `media_id`, `stage_last`, `recoverable`, `kept?` (row kept for in-place retry), `processing_ms` |
+| `MEDIA_UPLOAD_RETRIED` / `MEDIA_UPLOAD_DISMISSED` | Upload card actions, or the sidebar "Retry" on a failed (not indexed) file | `upload_id`, `mode: resume\|reupload` / `upload_id`, `status` |
 | `MEDIA_CONTEXT_TOGGLED` | File (de)selected as chat context | `media_id`, `selected`, `selected_count`, `refused_not_ready` |
 | `MEDIA_DELETED` | Sidebar delete | `media_id`, `source` (`chat/MediaSidebar.tsx`) |
 | `MEDIA_VIEWER_OPENED` | PDF/image opened | `media_id?`, `source: thumbnail\|citation\|files\|deeplink`, `kind: pdf\|image`, `page?` (`contexts/DocumentViewerContext.tsx`, `pages/FilesPage.tsx`) |

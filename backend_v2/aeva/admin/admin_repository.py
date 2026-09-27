@@ -762,6 +762,59 @@ class AdminRepository:
         media["embedded_chunks"] = chunks.count or 0
         return success_response("Media detail", media)
 
+
+    def reindex_media(self, admin: str, media_id: str) -> dict[str, Any]:
+        """Re-chunk + re-embed a document from its stored parse (audited).
+
+        Drives ``MediaProcessor.reindex`` to completion synchronously (an
+        admin action on one file) and returns the terminal event plus the
+        new chunk count. Used to backfill documents onto the current
+        embedding layout without another LlamaParse run.
+        """
+        row = (
+            self.client.table("media")
+            .select("id,user_id,file_name,chunk_count")
+            .eq("id", media_id)
+            .maybe_single()
+            .execute()
+        )
+        if not row or not row.data:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        media = dict(row.data)
+        processor = current_app.extensions["container"].media_processor()
+        last: dict[str, Any] = {}
+        for event in processor.reindex(str(media["user_id"]), media_id):
+            last = event
+        ok = last.get("stage") == "ready"
+        after = (
+            self.client.table("media_chunks")
+            .select("id", count="exact")
+            .eq("media_id", media_id)
+            .limit(1)
+            .execute()
+        )
+        chunk_count = int(getattr(after, "count", 0) or 0)
+        self._audit(
+            admin,
+            "media.reindex",
+            user_id=str(media["user_id"]),
+            resource=f"media:{media_id}",
+            detail={
+                "ok": ok,
+                "chunks_before": media.get("chunk_count"),
+                "chunks_after": chunk_count,
+                "message": last.get("msg"),
+            },
+        )
+        if not ok:
+            raise CustomError(
+                ERROR_CODES["INTERNAL_ERROR"],
+                details=str(last.get("msg") or "Re-index failed"),
+            )
+        return success_response(
+            "Media re-indexed",
+            {"id": media_id, "chunk_count": chunk_count, "stage": "ready"},
+        )
     def timeline(self, user_id: str, limit: int = 100) -> dict[str, Any]:
         """Unified activity feed: questions, quizzes, attempts, cards, files.
 

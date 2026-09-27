@@ -24,12 +24,15 @@ strict mode, so the app's shared schemas -- which are not all strict-compatible
 
 import base64
 import json
+import logging
 import math
-from collections.abc import Generator
+import time
+from collections.abc import Callable, Generator
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 from flask import current_app
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, OpenAI
 
 from aeva.llm import prompts
 from aeva.llm.providers.base import LLMProvider
@@ -41,6 +44,51 @@ if TYPE_CHECKING:
 # OpenAI's embeddings endpoint accepts many inputs per call; batch under a
 # conservative cap so a large document's chunks embed across several requests.
 _EMBED_BATCH_SIZE = 100
+# Image sizes per aspect for each OpenAI image model family.
+_GPT_IMAGE_SIZES = {
+    "square": "1024x1024",
+    "landscape": "1536x1024",
+    "portrait": "1024x1536",
+}
+_DALLE3_SIZES = {
+    "square": "1024x1024",
+    "landscape": "1792x1024",
+    "portrait": "1024x1792",
+}
+# Transient failures (rate limits, 5xx, dropped connections) retry with
+# backoff so one blip cannot fail a whole document's indexing run.
+_EMBED_BACKOFF_S = (0.5, 1.0, 2.0)
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+logger = logging.getLogger(__name__)
+
+
+def _retryable(exc: Exception) -> bool:
+    """Whether an OpenAI error is worth retrying."""
+    if isinstance(exc, APIConnectionError):
+        return True
+    return (
+        isinstance(exc, APIStatusError)
+        and exc.status_code in _RETRYABLE_STATUS
+    )
+
+
+def _with_embed_retry(call: Callable[[], Any]) -> Any:
+    """Run one embed batch, retrying transient API errors with backoff."""
+    for attempt, delay in enumerate(_EMBED_BACKOFF_S):
+        try:
+            return call()
+        except (APIConnectionError, APIStatusError) as exc:
+            if not _retryable(exc):
+                raise
+            logger.warning(
+                "OpenAI embed retry %d/%d after %s",
+                attempt + 1,
+                len(_EMBED_BACKOFF_S),
+                exc,
+            )
+            time.sleep(delay)
+    return call()
 
 
 def _l2_normalize(values: list[float]) -> list[float]:
@@ -353,7 +401,17 @@ class OpenAIProvider(LLMProvider):
             if delta:
                 yield delta
 
-    def generate_image(self, prompt: str) -> tuple[bytes, str, str]:
+    def _image_size(self, aspect: str) -> str:
+        """Map an aspect name to a size this model family accepts."""
+        if self.model.startswith("dall-e-2"):
+            return "1024x1024"
+        is_dalle = self.model.startswith("dall-e")
+        sizes = _DALLE3_SIZES if is_dalle else _GPT_IMAGE_SIZES
+        return sizes.get(aspect, "1024x1024")
+
+    def generate_image(
+        self, prompt: str, *, aspect: str = "square"
+    ) -> tuple[bytes, str, str]:
         """Generate one image via OpenAI's Images API.
 
         ``gpt-image-1`` always returns base64 (and rejects the
@@ -366,7 +424,7 @@ class OpenAIProvider(LLMProvider):
             "model": self.model,
             "prompt": prompt,
             "n": 1,
-            "size": "1024x1024",
+            "size": self._image_size(aspect),
         }
         if self.model.startswith("dall-e"):
             kwargs["response_format"] = "b64_json"
@@ -376,6 +434,12 @@ class OpenAIProvider(LLMProvider):
             msg = "OpenAI returned no image data"
             raise ValueError(msg)
         return base64.b64decode(data.b64_json), "image/png", ""
+
+    def _embed_batch(self, batch: list[str], dimensions: int) -> Any:
+        """One embeddings.create call (wrapped by the retry helper)."""
+        return self.client.embeddings.create(
+            model=self.model, input=batch, dimensions=dimensions
+        )
 
     def embed(
         self,
@@ -392,10 +456,8 @@ class OpenAIProvider(LLMProvider):
         """
         vectors: list[list[float]] = []
         for batch in _batched(texts, _EMBED_BATCH_SIZE):
-            response = self.client.embeddings.create(
-                model=self.model,
-                input=batch,
-                dimensions=output_dimensionality,
+            response = _with_embed_retry(
+                partial(self._embed_batch, batch, output_dimensionality)
             )
             vectors.extend(
                 _l2_normalize(list(item.embedding)) for item in response.data

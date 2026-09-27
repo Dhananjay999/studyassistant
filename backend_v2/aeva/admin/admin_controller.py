@@ -217,6 +217,17 @@ class AdminMediaDetail(MethodView):
         return repo.media_detail(media_id)
 
 
+class AdminMediaReindex(MethodView):
+    """Re-chunk + re-embed one document from its stored parse (audited)."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def post(admin: str, media_id: str) -> dict[str, Any]:
+        """Rebuild a document's chunks on the current embedding layout."""
+        return repo.reindex_media(admin, media_id)
+
+
 class AdminAuditLog(MethodView):
     """Sensitive-action audit trail."""
 
@@ -390,6 +401,11 @@ blueprint.add_url_rule(
     "/media/<media_id>/detail",
     view_func=AdminMediaDetail,
     endpoint="admin_media_detail",
+)
+blueprint.add_url_rule(
+    "/media/<media_id>/reindex",
+    view_func=AdminMediaReindex,
+    endpoint="admin_media_reindex",
 )
 blueprint.add_url_rule(
     "/audit-log",

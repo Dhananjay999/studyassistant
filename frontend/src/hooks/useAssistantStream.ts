@@ -6,7 +6,11 @@ export interface StreamCallbacks {
   onChunk: (delta: string) => void;
   onComplete: (
     full: string,
-    meta: { tool_used?: string; content?: Record<string, unknown> },
+    meta: {
+      tool_used?: string;
+      tools_used?: string[];
+      content?: Record<string, unknown>;
+    },
   ) => void;
   onClarification: (data: Record<string, unknown>) => void;
   onQuizSetup: (data: Record<string, unknown>) => void;
@@ -14,12 +18,26 @@ export interface StreamCallbacks {
   /** The orchestrator picked a tool — lets the UI switch to a
    *  context-specific loader before any answer tokens arrive. */
   onToolSelected?: (tool: string) => void;
+  /** The roster of agents planned for this turn (always sent; one agent on
+   *  ordinary turns). `parallel` is true when agents run concurrently. */
+  onAgentsPlanned?: (agents: unknown[], parallel: boolean) => void;
+  /** One agent changed state (queued → running → done / failed) or reported
+   *  a progress note. Interleaves with answer tokens. */
+  onAgentStatus?: (update: {
+    id: string;
+    tool: string;
+    status: string;
+    ms?: number;
+    note?: string;
+    error?: string;
+  }) => void;
 }
 
 /**
  * Drives the /assistant/stream SSE endpoint. Token chunks are batched with
  * requestAnimationFrame so React renders at ~60fps instead of per-token.
- * Handles content / clarification / quiz_setup / done frames; abortable.
+ * Handles content / clarification / quiz_setup / done frames plus the agent
+ * frames (agents_planned, agent_status) of multi-agent turns; abortable.
  */
 export function useAssistantStream() {
   const [streaming, setStreaming] = useState(false);
@@ -71,8 +89,11 @@ export function useAssistantStream() {
         const decoder = new TextDecoder();
         let buffer = "";
         let full = "";
-        const meta: { tool_used?: string; content?: Record<string, unknown> } =
-          {};
+        const meta: {
+          tool_used?: string;
+          tools_used?: string[];
+          content?: Record<string, unknown>;
+        } = {};
 
         for (;;) {
           const { done, value } = await reader.read();
@@ -109,6 +130,33 @@ export function useAssistantStream() {
               }
               continue;
             }
+            if (parsed.type === "agents_planned") {
+              if (Array.isArray(parsed.agents)) {
+                cb.onAgentsPlanned?.(parsed.agents, parsed.parallel === true);
+              }
+              continue;
+            }
+            if (parsed.type === "agent_status") {
+              if (
+                typeof parsed.id === "string" &&
+                typeof parsed.tool === "string" &&
+                typeof parsed.status === "string"
+              ) {
+                cb.onAgentStatus?.({
+                  id: parsed.id,
+                  tool: parsed.tool,
+                  status: parsed.status,
+                  ms: typeof parsed.ms === "number" ? parsed.ms : undefined,
+                  note:
+                    typeof parsed.note === "string" ? parsed.note : undefined,
+                  error:
+                    typeof parsed.error === "string"
+                      ? parsed.error
+                      : undefined,
+                });
+              }
+              continue;
+            }
             if (parsed.type === "clarification") {
               cb.onClarification(parsed.data as Record<string, unknown>);
               setStreaming(false);
@@ -125,6 +173,9 @@ export function useAssistantStream() {
                 flush();
               }
               if (parsed.tool_used) meta.tool_used = parsed.tool_used as string;
+              if (Array.isArray(parsed.tools_used)) {
+                meta.tools_used = parsed.tools_used as string[];
+              }
               if (parsed.content)
                 meta.content = parsed.content as Record<string, unknown>;
               cb.onComplete(full, meta);

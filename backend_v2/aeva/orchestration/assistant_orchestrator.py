@@ -13,14 +13,24 @@ from aeva.feature_flag import feature_flag_service
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
 from aeva.mcp.base import (
+    ACTION_OPEN_FLASHCARDS,
+    ACTION_OPEN_QUIZ,
     LEARNING_ACTIONS,
     BaseTool,
+    PriorResult,
     ToolContext,
     ToolDefinition,
 )
 from aeva.mcp.registry import ToolRegistry
+from aeva.orchestration.agent_runner import AgentRunner, TeamOutcome
 from aeva.orchestration.model_candidates import models_for, resolve_model
 from aeva.orchestration.models import (
+    ANSWER_TOOLS,
+    GENERATOR_TOOLS,
+    STEP_INPUT_ANSWER,
+    STEP_INPUT_MESSAGE,
+    STEP_KIND_ANSWER,
+    STEP_KIND_GENERATOR,
     AssistantContext,
     AssistantResult,
     ClarificationAction,
@@ -29,6 +39,7 @@ from aeva.orchestration.models import (
     FlashcardOptions,
     QuizOptions,
     RunStatus,
+    Step,
 )
 from aeva.supabase.supabase_service import SupabaseService
 
@@ -62,6 +73,10 @@ _REPEAT_RE = re.compile(
 # what the user means, so those fall through to normal routing.
 _REPEATABLE_TOOLS = frozenset({"quiz_generator", "flashcard_generator"})
 
+# Generator agents per turn (quiz + flashcards + image at most).
+_MAX_GENERATORS = 3
+_QUIZ_WORDS = ("quiz", "practice test", "test me")
+
 # Cues that a question hinges on external, up-to-date information Aeva cannot
 # already know — the only case the deterministic fast path routes to
 # web_search. Everything else answers from Aeva's own knowledge (`general`),
@@ -72,17 +87,44 @@ _FRESH_INFO_RE = re.compile(
     r"\b(latest|newest|current(?:ly)?|today|tonight|right now|as of|"
     r"recent(?:ly)?|up[- ]?to[- ]?date|this (?:week|month|year)|"
     r"news|headlines?|weather|forecast|temperature|"
-    r"stock|share price|price of|exchange rate|score|standings|"
+    r"stock|share price|prices?|cost|exchange rate|score|standings|"
     r"who won|winner of|release date|released|launching|"
-    r"schedule|deadline|exam date|admit card|result date|notification)\b"
-    r"|\b20\d{2}\b|\bsearch (?:the web|online|for)\b",
+    r"schedule|deadline|exam date|admit card|result date|notification|"
+    # Commerce cues: nobody wants a from-memory guess at specs or prices.
+    r"specs?|specifications?|reviews?|cheapest|budget|worth (?:buying|it)|"
+    r"which (?:one )?should i (?:buy|get|choose|pick)|"
+    r"iphone|galaxy|pixel|macbook|ipad|oneplus|playstation|xbox|airpods)\b"
+    r"|\b20\d{2}\b|\bsearch (?:the web|online|for)\b|\bgoogle it\b",
+    re.IGNORECASE,
+)
+
+# "best/top/cheapest/latest <thing>" and "<model number> vs" — product or
+# choice questions whose honest answer needs current data, even when no
+# freshness word appears. Deliberately NOT bare "best"/"compare"/"vs": those
+# also open academic questions ("best way to revise", "mitosis vs meiosis").
+_PRODUCT_INTENT_RE = re.compile(
+    r"\b(best|top|cheapest|latest|newest|good)\b.{0,40}\b(phones?|iphones?|"
+    r"laptops?|tablets?|earbuds|headphones|cameras?|watch(?:es)?|tvs?|"
+    r"consoles?|gpus?|bikes?|cars?|scooters?|courses?|colleges?|"
+    r"universit(?:y|ies)|institutes?|books?|apps?|models?|brands?)\b"
+    r"|\b\w+ ?\d{1,3}\w*\b.{0,20}\b(vs\.?|versus)\b",
     re.IGNORECASE,
 )
 
 
 def _needs_fresh_info(text: str) -> bool:
-    """True when a message clearly depends on external/up-to-date information."""
+    """Report whether a message clearly depends on up-to-date information."""
     return bool(_FRESH_INFO_RE.search(text))
+
+
+def _needs_web_upgrade(text: str) -> bool:
+    """Report whether a `general` plan should be promoted to `web_search`.
+
+    Catches product/choice questions ("suggest the best iPhone 17 model",
+    "top colleges for CSE", "Pixel 9 vs iPhone 16") that the planner tends
+    to answer from memory; concept questions never match.
+    """
+    return bool(_PRODUCT_INTENT_RE.search(text)) or _needs_fresh_info(text)
 
 
 # Messages that are ONLY pleasantries — the one case cheap enough for the
@@ -181,55 +223,36 @@ class AssistantOrchestrator:
         planning_ms = int((time.perf_counter() - t_start) * 1000)
         debug_enabled = self._debug_enabled
 
-        # Quiz requested but not yet configured -> ALWAYS open the setup popover
-        # first, pre-filled with whatever the planner detected. The user then
-        # confirms or edits and submits, which comes back with quiz_options set.
-        # A forced/planned flashcard turn never diverts here — its injected
-        # source content may merely mention "quiz" without being a quiz request.
-        if (
-            ctx.quiz_options is None
-            and ctx.flashcard_options is None
-            and (plan.get("tool") or {}).get("name") != "flashcard_generator"
-            and self._is_quiz_intent(plan, enriched_message)
-        ):
+        if self._should_open_quiz_setup(plan, ctx, enriched_message):
             return self._quiz_setup_result(plan, ctx)
 
         if plan.get("action") == "clarify":
             return self._handle_clarification(ctx, plan, enriched_message)
 
-        tool_name, tool_model, tool_params = self._resolve_tool(plan)
-        tool_model, tool_config_key = self._fast_override(plan, tool_model)
-        tool_ctx = self._build_tool_ctx(
-            ctx, enriched_message, history, personalization,
-            tool_model, tool_config_key, session.get("space_id"),
+        steps = self._normalize_steps(plan, enriched_message)
+        runner = self._runner(
+            ctx, session, history, enriched_message, personalization
         )
-
         t_tool = time.perf_counter()
-        result = self.registry.execute(tool_name, tool_ctx, tool_params)
+        outcome = self._drain(runner.run(steps))
         tool_ms = int((time.perf_counter() - t_tool) * 1000)
-        answer, meta = self._split_answer_meta(result.get("answer", ""))
-        if answer:
-            result["answer"] = answer
-        self._attach_actions(tool_name, result, meta=meta)
-        display_text = self._format_display(tool_name, result)
-        if debug_enabled:
-            result["model"] = tool_model
-            result["debug"] = self._debug_info(
-                plan, ctx, history, tool_name, tool_model, tool_config_key,
-                planning_ms, tool_ms, t_start, streamed=False,
-            )
-        badge = self._model_badge(tool_model, debug_enabled)
-        if badge:
-            result["model"] = tool_model
-            display_text += badge
-        msg = self._persist_answer(
-            ctx, session, tool_name, result, display_text
+        display_text, _badge = self._finish_turn(
+            plan, ctx, history, outcome, planning_ms, tool_ms, t_start,
+            debug_enabled=debug_enabled,
         )
-
+        msg = self._persist_answer(
+            ctx,
+            session,
+            outcome.tool_used,
+            outcome.result,
+            display_text,
+            tools_used=outcome.tools_used,
+        )
         return AssistantResult(
             status=RunStatus.COMPLETED,
-            tool_used=tool_name,
-            content=result,
+            tool_used=outcome.tool_used,
+            tools_used=outcome.tools_used,
+            content=outcome.result,
             message_id=msg["id"],
             display_text=display_text,
         )
@@ -251,22 +274,15 @@ class AssistantOrchestrator:
         planning_ms = int((time.perf_counter() - t_start) * 1000)
         debug_enabled = self._debug_enabled
         logger.info(
-            "Turn planned | action=%s | tool=%s",
+            "Turn planned | action=%s | steps=%s",
             plan.get("action"),
-            (plan.get("tool") or {}).get("name"),
+            [s.get("tool") for s in self._plan_steps(plan)],
         )
 
-        # Quiz requested but not yet configured -> ALWAYS open the setup popover
-        # first, pre-filled with whatever the planner detected; the user
-        # confirms or edits and submits (which returns with quiz_options set).
-        # A forced/planned flashcard turn never diverts here — its injected
-        # source content may merely mention "quiz" without being a quiz request.
-        if (
-            ctx.quiz_options is None
-            and ctx.flashcard_options is None
-            and (plan.get("tool") or {}).get("name") != "flashcard_generator"
-            and self._is_quiz_intent(plan, enriched_message)
-        ):
+        # Quiz requested but not yet configured -> open the setup popover
+        # first, pre-filled with whatever the planner detected. Explicit
+        # settings in the message and multi-agent chains run straight away.
+        if self._should_open_quiz_setup(plan, ctx, enriched_message):
             logger.info("Turn → quiz setup popover (pre-filled)")
             yield self._quiz_setup_frame(plan, ctx)
             return
@@ -277,83 +293,275 @@ class AssistantOrchestrator:
             yield self._clarification_frame(clar)
             return
 
-        tool_name, tool_model, tool_params = self._resolve_tool(plan)
-        tool_model, tool_config_key = self._fast_override(plan, tool_model)
+        steps = self._normalize_steps(plan, enriched_message)
         logger.info(
-            "Turn → running tool: %s | model=%s%s",
-            tool_name,
-            tool_model,
-            f" | via {tool_config_key}" if tool_config_key else "",
+            "Turn → agents: %s",
+            [f"{s.tool}[{s.input}]" for s in steps],
         )
-        # Tell the client which tool will answer so it can switch from the
-        # generic loader to a context-specific one. Structured metadata only —
-        # never planner reasoning. The frame carries no content text.
-        yield LLMClient.format_sse_chunk(
-            "", extra={"type": "tool_selected", "tool": tool_name}
+        runner = self._runner(
+            ctx, session, history, enriched_message, personalization
         )
-        tool_ctx = self._build_tool_ctx(
-            ctx, enriched_message, history, personalization,
-            tool_model, tool_config_key, session.get("space_id"),
-        )
-        tool = self.registry.get(tool_name)
-
-        result: dict[str, Any] = {}
-        meta: dict[str, Any] | None = None
         t_tool = time.perf_counter()
-        if tool.can_stream():
-            # Stream only the answer; the follow-up metadata trailer the model
-            # appends is held back here and parsed (no second LLM call).
-            stream = self._stream_answer(
-                tool.execute_stream(tool_ctx, tool_params)
-            )
-            raw = ""
-            try:
-                while True:
-                    yield LLMClient.format_sse_chunk(next(stream))
-            except StopIteration as stop:
-                raw, result = stop.value if stop.value else ("", {})
-            if not isinstance(result, dict):
-                result = {}
-            answer, meta = self._split_answer_meta(raw)
-            result["answer"] = answer
-            display_text = answer or self._format_display(tool_name, result)
-        else:
-            result = self.registry.execute(tool_name, tool_ctx, tool_params)
-            display_text = self._format_display(tool_name, result)
-            yield LLMClient.format_sse_chunk(display_text)
-
+        outcome = yield from runner.run(steps)
         tool_ms = int((time.perf_counter() - t_tool) * 1000)
-        if debug_enabled:
-            result["model"] = tool_model
-            result["debug"] = self._debug_info(
-                plan, ctx, history, tool_name, tool_model, tool_config_key,
-                planning_ms, tool_ms, t_start, streamed=tool.can_stream(),
-            )
 
-        # Optional "powered by: <model>" badge — streamed as a trailing chunk
-        # and folded into the persisted display text (never into the answer).
-        badge = self._model_badge(tool_model, debug_enabled)
+        display_text, badge = self._finish_turn(
+            plan, ctx, history, outcome, planning_ms, tool_ms, t_start,
+            debug_enabled=debug_enabled,
+        )
         if badge:
-            result["model"] = tool_model
-            display_text = (display_text or "") + badge
             yield LLMClient.format_sse_chunk(badge)
-
-        # Follow-up chips ride the finished answer's metadata trailer.
-        self._attach_actions(tool_name, result, tool, meta)
-        self._persist_answer(ctx, session, tool_name, result, display_text)
+        self._persist_answer(
+            ctx,
+            session,
+            outcome.tool_used,
+            outcome.result,
+            display_text,
+            tools_used=outcome.tools_used,
+        )
         logger.info(
-            "Turn complete | tool=%s | answer=%dchars | actions=%s | "
+            "Turn complete | tools=%s | answer=%dchars | actions=%s | "
             "followups=%d",
-            tool_name,
+            outcome.tools_used,
             len(display_text or ""),
-            result.get("available_actions"),
-            len(result.get("suggested_followups") or []),
+            outcome.result.get("available_actions"),
+            len(outcome.result.get("suggested_followups") or []),
         )
         yield LLMClient.format_sse_chunk(
             "",
             done=True,
-            extra={"tool_used": tool_name, "content": result},
+            extra={
+                "tool_used": outcome.tool_used,
+                "tools_used": outcome.tools_used,
+                "content": outcome.result,
+            },
         )
+
+    # ------------------------------------------------------------ agents
+
+    def _runner(
+        self,
+        ctx: AssistantContext,
+        session: dict[str, Any],
+        history: list[dict[str, str]],
+        enriched_message: str,
+        personalization: str,
+    ) -> AgentRunner:
+        """Build the agent runner for this turn (binds the tool context)."""
+        from flask import current_app
+
+        app = current_app._get_current_object()  # type: ignore[attr-defined]  # noqa: SLF001
+        cfg = current_app.config
+
+        def build_ctx(step: Step, prior: list[PriorResult]) -> ToolContext:
+            tool_ctx = self._build_tool_ctx(
+                ctx, enriched_message, history, personalization,
+                step.model, step.config_key, session.get("space_id"),
+            )
+            tool_ctx.prior_results = list(prior)
+            return tool_ctx
+
+        return AgentRunner(
+            self.registry,
+            app,
+            build_ctx=build_ctx,
+            stream_answer=self._stream_answer,
+            split_meta=self._split_answer_meta,
+            format_display=self._format_display,
+            max_parallel=int(cfg.get("AGENT_MAX_PARALLEL", 3)),
+            step_timeout_s=float(cfg.get("AGENT_STEP_TIMEOUT_S", 90)),
+        )
+
+    @staticmethod
+    def _drain(
+        frames: Generator[str, None, TeamOutcome],
+    ) -> TeamOutcome:
+        """Run a frame generator to completion, discarding the frames."""
+        try:
+            while True:
+                next(frames)
+        except StopIteration as stop:
+            outcome: TeamOutcome = stop.value
+            return outcome
+
+    def _finish_turn(
+        self,
+        plan: dict[str, Any],
+        ctx: AssistantContext,
+        history: list[dict[str, str]],
+        outcome: TeamOutcome,
+        planning_ms: int,
+        tool_ms: int,
+        t_start: float,
+        *,
+        debug_enabled: bool,
+    ) -> tuple[str, str]:
+        """Stamp actions/diagnostics/badge; return (display_text, badge)."""
+        result = outcome.result
+        retrieval_diag = result.pop("_retrieval", None)
+        self._attach_actions(outcome.tool_used, result, meta=outcome.meta)
+        self._add_generator_actions(result)
+        display_text = outcome.display_text
+        dropped = plan.get("_dropped") or []
+        if dropped:
+            note = self._dropped_note(dropped)
+            display_text = f"{display_text}\n\n{note}".strip()
+            result["answer"] = f"{result.get('answer', '')}\n\n{note}".strip()
+        if debug_enabled:
+            result["model"] = outcome.primary_model
+            result["debug"] = self._debug_info(
+                plan, ctx, history, outcome.tool_used, outcome.primary_model,
+                outcome.primary_config_key, planning_ms, tool_ms, t_start,
+                streamed=outcome.streamed,
+                agents=[a.to_public() for a in outcome.agents],
+            )
+            if retrieval_diag:
+                result["debug"]["retrieval"] = retrieval_diag
+        badge = self._model_badge(outcome.primary_model, debug_enabled)
+        if badge:
+            result["model"] = outcome.primary_model
+            display_text = (display_text or "") + badge
+        return display_text, badge
+
+    @staticmethod
+    def _dropped_note(dropped: list[str]) -> str:
+        """Tell the student which requested generator is switched off."""
+        labels = {
+            "image_generator": "Image generation",
+            "web_search": "Web search",
+        }
+        names = ", ".join(labels.get(t, t) for t in dropped)
+        return f"_({names} is currently turned off.)_"
+
+    @staticmethod
+    def _add_generator_actions(result: dict[str, Any]) -> None:
+        """Offer the open-card actions for artifacts produced this turn."""
+        actions = list(result.get("available_actions") or [])
+        if result.get("quiz") and ACTION_OPEN_QUIZ not in actions:
+            actions.append(ACTION_OPEN_QUIZ)
+        if result.get("flashcards") and ACTION_OPEN_FLASHCARDS not in actions:
+            actions.append(ACTION_OPEN_FLASHCARDS)
+        result["available_actions"] = actions
+
+    @staticmethod
+    def _plan_steps(plan: dict[str, Any]) -> list[dict[str, Any]]:
+        """Raw step dicts of a plan (legacy single ``tool`` plans included)."""
+        steps = plan.get("steps")
+        if isinstance(steps, list) and steps:
+            return [s for s in steps if isinstance(s, dict)]
+        tool = plan.get("tool")
+        if isinstance(tool, dict) and tool.get("name"):
+            return [
+                {
+                    "tool": tool["name"],
+                    "model": tool.get("model"),
+                    "params": tool.get("params") or {},
+                }
+            ]
+        return []
+
+    @staticmethod
+    def _answer_index(steps: list[dict[str, Any]]) -> int | None:
+        """Index of the answer step (the one that streams text), if any."""
+        for index, step in enumerate(steps):
+            if step.get("tool") in ANSWER_TOOLS:
+                return index
+        return None
+
+    def _primary_tool(self, plan: dict[str, Any]) -> str | None:
+        """Tool that defines the turn's intent: the answer step, else first."""
+        steps = self._plan_steps(plan)
+        index = self._answer_index(steps)
+        if index is not None:
+            return str(steps[index].get("tool"))
+        return str(steps[0].get("tool")) if steps else None
+
+    def _normalize_steps(
+        self, plan: dict[str, Any], message: str
+    ) -> list[Step]:
+        """Turn a plan into the ordered agent roster the runner executes.
+
+        Keeps the first answer tool (streams), then up to three distinct
+        generators. Flag-disabled generators are dropped (and noted); a
+        disabled answer tool degrades to ``general``. Generators default to
+        ``input="answer"`` when an answer step exists, else ``"message"``.
+        The fast-path model override applies to the answer step only.
+        """
+        flags = feature_flag_service.get_flags()
+        answer: Step | None = None
+        generators: list[Step] = []
+        dropped: list[str] = []
+        for item in self._plan_steps(plan):
+            name = str(item.get("tool") or "")
+            params = dict(item.get("params") or {})
+            if not self._tool_enabled(name, flags):
+                if name in ANSWER_TOOLS:
+                    logger.warning(
+                        "Tool %s disabled by feature flag; using general",
+                        name,
+                    )
+                    query = (
+                        params.get("query")
+                        or params.get("prompt")
+                        or params.get("topic")
+                        or message
+                    )
+                    name, params = "general", {"query": query}
+                else:
+                    dropped.append(name)
+                    continue
+            purpose = str(item.get("purpose") or "")
+            if name in ANSWER_TOOLS:
+                if answer is None:
+                    answer = Step(
+                        id="answer",
+                        tool=name,
+                        kind=STEP_KIND_ANSWER,
+                        params=params,
+                        model=resolve_model(name, item.get("model")),
+                        purpose=purpose,
+                    )
+                continue
+            if (
+                name not in GENERATOR_TOOLS
+                or any(g.tool == name for g in generators)
+                or len(generators) >= _MAX_GENERATORS
+            ):
+                continue
+            requested = item.get("input")
+            generators.append(
+                Step(
+                    id=f"gen{len(generators) + 1}",
+                    tool=name,
+                    kind=STEP_KIND_GENERATOR,
+                    params=params,
+                    model=resolve_model(name, item.get("model")),
+                    purpose=purpose,
+                    input=(
+                        str(requested)
+                        if requested in (STEP_INPUT_MESSAGE, STEP_INPUT_ANSWER)
+                        else STEP_INPUT_ANSWER
+                    ),
+                )
+            )
+        if answer is None and not generators:
+            answer = Step(
+                id="answer",
+                tool="general",
+                kind=STEP_KIND_ANSWER,
+                params={"query": message},
+                model=resolve_model("general", None),
+            )
+        if answer is not None:
+            answer.model, answer.config_key = self._fast_override(
+                plan, answer.model
+            )
+        else:
+            for step in generators:
+                step.input = STEP_INPUT_MESSAGE
+        if dropped:
+            plan["_dropped"] = dropped
+        return ([answer] if answer else []) + generators
 
     def _setup_and_plan(
         self, ctx: AssistantContext
@@ -420,6 +628,7 @@ class AssistantOrchestrator:
             )
 
         media_choice_ids: list[str] | None = None
+        media_choice_query: str | None = None
         if ctx.run_id and ctx.clarification:
             run = self._get_run(ctx.run_id, ctx.user_id)
             if not run:
@@ -436,6 +645,9 @@ class AssistantOrchestrator:
                 media_choice_ids = self._resolve_media_choice(
                     run["plan"], ctx.clarification
                 )
+                # Retrieval must search for the QUESTION, not the merged
+                # "the user answered: Choose a file: X" text.
+                media_choice_query = run.get("original_message") or None
             self._complete_run(ctx.run_id)
 
         # Clarification replies are invisible: the answers are folded into the
@@ -447,7 +659,7 @@ class AssistantOrchestrator:
         # Deterministic plans (resolved file choice, popover-driven quiz/flash)
         # skip LLM planning entirely. Each path stamps `_source` (internal,
         # never persisted) so Developer Mode can show WHY a tool was chosen.
-        forced = self._forced_plan(ctx, media_choice_ids)
+        forced = self._forced_plan(ctx, media_choice_ids, media_choice_query)
         if forced is not None:
             forced["_source"] = "forced"
             return session, history, enriched_message, forced, personalization
@@ -466,7 +678,9 @@ class AssistantOrchestrator:
         # instead of falling through to a web search.
         cont = self._continuation_plan(ctx, enriched_message)
         if cont is not None:
-            logger.info("Turn → continuation of last tool: %s", cont["tool"])
+            logger.info(
+                "Turn → continuation of last tool: %s", self._primary_tool(cont)
+            )
             cont["_source"] = "continuation"
             return session, history, enriched_message, cont, personalization
 
@@ -482,42 +696,48 @@ class AssistantOrchestrator:
         )
         plan = self._refine_plan(plan, ctx, enriched_message, history)
         plan["_source"] = "planner"
+        plan = self._media_routing_guard(plan, ctx, enriched_message)
         return session, history, enriched_message, plan, personalization
 
     def _forced_plan(
         self,
         ctx: AssistantContext,
         media_choice_ids: list[str] | None,
+        media_choice_query: str | None = None,
     ) -> dict[str, Any] | None:
-        """Deterministic plan that bypasses the planner, or None to plan."""
+        """Deterministic plan that bypasses the planner, or None to plan.
+
+        ``media_choice_query`` is the student's original question when the
+        turn resolves a "which file?" clarification; it becomes the retrieval
+        query so the vector search is not polluted by the clarification text.
+        """
         if media_choice_ids is not None:
             # A resolved "which file?" answer runs media_llm on the choice.
-            return {
-                "action": "run_tool",
-                "tool": {
-                    "name": "media_llm",
-                    "params": {"media_ids": media_choice_ids},
-                },
-            }
+            params: dict[str, Any] = {"media_ids": media_choice_ids}
+            if media_choice_query:
+                params["query"] = media_choice_query
+            return self._single_step("media_llm", params)
         if ctx.flashcard_options is not None:
             # Create Flashcards action forces flashcard generation.
-            return {
-                "action": "run_tool",
-                "tool": {
-                    "name": "flashcard_generator",
-                    "params": self._flashcard_params(ctx.flashcard_options),
-                },
-            }
+            return self._single_step(
+                "flashcard_generator",
+                self._flashcard_params(ctx.flashcard_options),
+            )
         if ctx.quiz_options is not None:
             # Explicit quiz settings from the setup popover.
-            return {
-                "action": "run_tool",
-                "tool": {
-                    "name": "quiz_generator",
-                    "params": self._quiz_params_from_options(ctx.quiz_options),
-                },
-            }
+            return self._single_step(
+                "quiz_generator",
+                self._quiz_params_from_options(ctx.quiz_options),
+            )
         return None
+
+    @staticmethod
+    def _single_step(tool: str, params: dict[str, Any]) -> dict[str, Any]:
+        """A run_tool plan with exactly one step."""
+        return {
+            "action": "run_tool",
+            "steps": [{"tool": tool, "params": params}],
+        }
 
     def _refine_plan(
         self,
@@ -554,6 +774,86 @@ class AssistantOrchestrator:
             )
             plan = self._fallback_tool_plan(ctx, enriched_message)
 
+        return self._web_upgrade(plan, enriched_message)
+
+    @staticmethod
+    def _web_upgrade(plan: dict[str, Any], message: str) -> dict[str, Any]:
+        """Promote a from-memory plan to web_search for product questions.
+
+        The planner is biased toward `general`; "suggest the best iPhone 17
+        model" answered from training data is stale and often wrong. When
+        the wording signals a product/choice/fresh-data question and web
+        search is enabled, the answer step is switched to `web_search` with
+        a guessed intent. Media-attached turns are left to the media guard.
+        """
+        steps = AssistantOrchestrator._plan_steps(plan)
+        index = AssistantOrchestrator._answer_index(steps)
+        if (
+            plan.get("action") != "run_tool"
+            or index is None
+            or steps[index].get("tool") != "general"
+            or not _needs_web_upgrade(message)
+            or not feature_flag_service.is_enabled("web_search")
+        ):
+            return plan
+        params = steps[index].get("params") or {}
+        query = params.get("query") or message
+        logger.info("Upgrading general -> web_search (product/fresh intent)")
+        steps[index] = {
+            **steps[index],
+            "tool": "web_search",
+            "params": {
+                "query": query,
+                "search_intent": prompts.guess_search_intent(message),
+            },
+        }
+        plan["steps"] = steps
+        plan.pop("tool", None)
+        plan["_upgraded"] = True
+        return plan
+
+    @staticmethod
+    def _media_routing_guard(
+        plan: dict[str, Any],
+        ctx: AssistantContext,
+        message: str,
+    ) -> dict[str, Any]:
+        """Keep study questions on ``media_llm`` while files are selected.
+
+        The planner only sees a one-line media hint and is told ``general``
+        is the default, so "what is osmosis?" with a biology PDF attached
+        can route to a from-memory answer that never opens the document.
+        A selected file is the student's explicit instruction to use it:
+        a ``general`` plan (unless the message is pure small talk) or a
+        ``web_search`` plan with no fresh-information cue is rewritten to
+        ``media_llm`` over the selected ids. ``product_info``, generators,
+        image requests, and clarifications are left alone.
+        """
+        if not ctx.media_ids or plan.get("action") != "run_tool":
+            return plan
+        steps = AssistantOrchestrator._plan_steps(plan)
+        index = AssistantOrchestrator._answer_index(steps)
+        if index is None:
+            return plan
+        name = steps[index].get("tool")
+        divert = (name == "general" and not _is_small_talk(message)) or (
+            name == "web_search" and not _needs_fresh_info(message)
+        )
+        if not divert:
+            return plan
+        params = steps[index].get("params") or {}
+        query = params.get("query") or message
+        logger.info(
+            "Media guard: %s -> media_llm (files selected)", name
+        )
+        steps[index] = {
+            **steps[index],
+            "tool": "media_llm",
+            "params": {"query": query, "media_ids": list(ctx.media_ids)},
+        }
+        plan["steps"] = steps
+        plan.pop("tool", None)
+        plan["_source"] = f"{plan.get('_source', 'planner')}+media_guard"
         return plan
 
     @staticmethod
@@ -607,6 +907,7 @@ class AssistantOrchestrator:
         tool_ms: int,
         t_start: float,
         streamed: bool,
+        agents: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Diagnostics block attached to responses for Developer Mode users.
 
@@ -623,6 +924,7 @@ class AssistantOrchestrator:
             "model_config_key": tool_config_key,
             "plan_source": plan.get("_source", "planner"),
             "plan_action": plan.get("action", "run_tool"),
+            "plan_upgraded": bool(plan.get("_upgraded")),
             "clarification_round": bool(ctx.run_id and ctx.clarification),
             # Context size
             "history_messages": len(history),
@@ -632,6 +934,7 @@ class AssistantOrchestrator:
             "tool_ms": tool_ms,
             "total_ms": int((time.perf_counter() - t_start) * 1000),
             "streamed": streamed,
+            "agents": agents or [],
         }
 
     @staticmethod
@@ -643,44 +946,15 @@ class AssistantOrchestrator:
         candidates simply omits the models line and runs its own default.
         """
         line = f"- {t.name}: {t.description}"
+        props = (t.parameters_schema or {}).get("properties") or {}
+        if props:
+            # Names only: the rules in the prompt explain each one, and the
+            # planner cannot fill a parameter it has never seen listed.
+            line += f"\n  params: {', '.join(props)}"
         models = models_for(t.name)
         if models:
             line += f"\n  available models: {', '.join(models)}"
         return line
-
-    @staticmethod
-    def _resolve_tool(
-        plan: dict[str, Any],
-    ) -> tuple[str, str | None, dict[str, Any]]:
-        """Pull the tool name, planner-chosen model, and params from a plan.
-
-        The model is clamped to the tool's allowed candidates — the planner is
-        free-text and may emit an invalid or retired name — falling back to the
-        cheapest candidate (``resolve_model``). Hardcoded/forced plans that
-        carry no model resolve to the cheapest candidate too.
-        """
-        tool_info = plan.get("tool") or {}
-        name = tool_info.get("name", "general")
-        params = tool_info.get("params") or {}
-        # Belt and braces: even if a flag-disabled tool slips through the
-        # planner filter (forced/cached/fallback plans), downgrade it to a
-        # plain text answer rather than running it.
-        if not AssistantOrchestrator._tool_enabled(
-            name, feature_flag_service.get_flags()
-        ):
-            logger.warning(
-                "Tool %s disabled by feature flag; downgrading to general",
-                name,
-            )
-            query = (
-                params.get("query")
-                or params.get("prompt")
-                or params.get("topic")
-                or ""
-            )
-            name, params = "general", {"query": query}
-        model = resolve_model(name, tool_info.get("model"))
-        return name, model, params
 
     def _attach_actions(
         self,
@@ -709,7 +983,12 @@ class AssistantOrchestrator:
             return
         meta = meta or {"available_actions": [], "suggested_followups": []}
         result["available_actions"] = meta.get("available_actions", [])
-        result["suggested_followups"] = meta.get("suggested_followups", [])
+        # A tool may supply its own chips when the answer carried no trailer
+        # (e.g. the "nothing found in your files" reply offers a general-
+        # knowledge retry); the model's trailer wins when present.
+        result["suggested_followups"] = meta.get("suggested_followups") or (
+            result.get("suggested_followups") or []
+        )
 
     def _stream_answer(
         self, gen: Generator[str, None, dict[str, Any]]
@@ -855,13 +1134,9 @@ class AssistantOrchestrator:
                 },
             }
         if len(named) < len(files):
-            return {
-                "action": "run_tool",
-                "tool": {
-                    "name": "media_llm",
-                    "params": {"media_ids": [f["id"] for f in named]},
-                },
-            }
+            return self._single_step(
+                "media_llm", {"media_ids": [f["id"] for f in named]}
+            )
         return None
 
     @staticmethod
@@ -932,6 +1207,7 @@ class AssistantOrchestrator:
         tool_name: str,
         result: dict[str, Any],
         display_text: str,
+        tools_used: list[str] | None = None,
     ) -> dict[str, Any]:
         """Persist the assistant message and auto-title a fresh session."""
         msg = self.supabase.add_message(
@@ -941,6 +1217,7 @@ class AssistantOrchestrator:
             metadata={
                 "status": "completed",
                 "tool_used": tool_name,
+                "tools_used": list(tools_used or [tool_name]),
                 "content": result,
             },
         )
@@ -983,13 +1260,31 @@ class AssistantOrchestrator:
             params["exam_config"] = opts.exam_config
         return params
 
-    @staticmethod
-    def _is_quiz_intent(plan: dict[str, Any], message: str) -> bool:
-        """Whether this turn is a quiz request (so we collect options first)."""
-        if (plan.get("tool") or {}).get("name") == "quiz_generator":
-            return True
+    def _should_open_quiz_setup(
+        self, plan: dict[str, Any], ctx: AssistantContext, message: str
+    ) -> bool:
+        """Whether to collect quiz settings in the popover before running.
+
+        The popover opens for a plain quiz request whose settings are not
+        already in the message. It is skipped when the setup form was just
+        submitted (``quiz_options``), for a flashcard turn, for a multi-agent
+        chain (the student typed a compound instruction; planner params +
+        defaults apply), and when the message already names both a count
+        and a difficulty ("10 hard questions from this PDF").
+        """
+        if ctx.quiz_options is not None or ctx.flashcard_options is not None:
+            return False
+        steps = self._plan_steps(plan)
+        tools = [str(s.get("tool") or "") for s in steps]
+        if "flashcard_generator" in tools or len(steps) > 1:
+            return False
+        if tools and tools[0] == "quiz_generator":
+            params = steps[0].get("params") or {}
+            return not (
+                params.get("question_count") and params.get("difficulty")
+            )
         text = message.lower()
-        return any(w in text for w in ("quiz", "practice test", "test me"))
+        return any(w in text for w in _QUIZ_WORDS)
 
     def _quiz_setup_data(
         self, plan: dict[str, Any], ctx: AssistantContext
@@ -997,10 +1292,19 @@ class AssistantOrchestrator:
         """Payload to open the quiz-setup popover, pre-filled with what we know.
 
         Every field the planner already detected (topic, count, types,
-        difficulty) is sent so the form opens populated — the user only fills
-        the genuinely missing pieces rather than re-entering everything.
+        difficulty, whether to use the files) is sent so the form opens
+        populated — the user only fills the genuinely missing pieces rather
+        than re-entering everything.
         """
-        tool_params = (plan.get("tool") or {}).get("params") or {}
+        quiz_step = next(
+            (
+                s
+                for s in self._plan_steps(plan)
+                if s.get("tool") == "quiz_generator"
+            ),
+            {},
+        )
+        tool_params = quiz_step.get("params") or {}
         return {
             "status": "quiz_setup",
             "topic": tool_params.get("topic") or "",
@@ -1009,6 +1313,11 @@ class AssistantOrchestrator:
             "difficulty": tool_params.get("difficulty"),
             "exam_config": tool_params.get("exam_config") or {},
             "media_available": bool(ctx.media_ids),
+            "use_media": (
+                bool(tool_params["use_media"])
+                if "use_media" in tool_params
+                else None
+            ),
         }
 
     def _quiz_setup_result(
@@ -1092,9 +1401,13 @@ class AssistantOrchestrator:
         history: list[dict[str, str]] = []
         for m in recent:
             item = {"role": m["role"], "content": m["content"]}
-            tool = (m.get("metadata") or {}).get("tool_used")
+            meta = m.get("metadata") or {}
+            tool = meta.get("tool_used")
+            tools = meta.get("tools_used") or []
             if m["role"] == "assistant" and tool:
                 item["tool"] = tool
+                if len(tools) > 1:
+                    item["tools"] = ", ".join(str(t) for t in tools)
             history.append(item)
         return history
 
@@ -1115,7 +1428,10 @@ class AssistantOrchestrator:
         for item in history:
             content = item["content"]
             tool = item.get("tool")
-            if item["role"] == "assistant" and tool:
+            tools = item.get("tools")
+            if item["role"] == "assistant" and tools:
+                content = f"[tools: {tools}]\n{content}"
+            elif item["role"] == "assistant" and tool:
                 content = f"[tool: {tool}]\n{content}"
             annotated.append({"role": item["role"], "content": content})
         return annotated
@@ -1154,6 +1470,8 @@ class AssistantOrchestrator:
                 for w in (
                     "draw", "image", "picture", "diagram", "illustrat",
                     "sketch", "infographic", "visualize", "visualise",
+                    "flowchart", "flow chart", "mind map", "timeline",
+                    "poster", "chart", "graph", "comic", "line art",
                 )
             )
             # A demonstrative with nothing to resolve it must be clarified.
@@ -1168,7 +1486,7 @@ class AssistantOrchestrator:
         # dedicated fast model/provider — the same create_provider flow, just a
         # different config key. web_search keeps its own config (it needs the
         # search grounding the fast provider may not support).
-        if (plan.get("tool") or {}).get("name") == "general":
+        if self._primary_tool(plan) == "general":
             plan["model_config_key"] = "LLM_FAST_MODEL"
         return plan
 
@@ -1193,11 +1511,7 @@ class AssistantOrchestrator:
             for t in self.registry.list_definitions()
             if self._tool_enabled(t.name, flags)
         )
-        media_hint = (
-            f"User has selected media IDs: {ctx.media_ids}"
-            if ctx.media_ids
-            else "No media selected."
-        )
+        media_hint = self._media_hint(ctx)
         clar_hint = ""
         if clarification:
             if clarification.action == ClarificationAction.SKIP:
@@ -1219,6 +1533,8 @@ class AssistantOrchestrator:
             AVAILABLE_TOOLS=tools_desc,
             MEDIA_HINT=media_hint,
             CLARIFICATION_HINT=clar_hint,
+            CURRENT_DATE=prompts.current_date(),
+            IMAGE_SKILLS=prompts.skills_for_planner(),
         )
         return self.llm.generate_structured(
             rendered.user_message,
@@ -1226,6 +1542,23 @@ class AssistantOrchestrator:
             history=self._history_for_planner(history),
             system_prompt=rendered.system_prompt,
             log_label="orchestrator",
+        )
+
+    def _media_hint(self, ctx: AssistantContext) -> str:
+        """Planner line describing the selected files (names + ids).
+
+        File names let the planner tell a biology PDF from a screenshot and
+        resolve "the diagram" / "my notes" without a clarification; the ids
+        stay so it can still narrow ``media_ids`` in the tool params.
+        """
+        if not ctx.media_ids:
+            return "No media selected."
+        files = self._selected_media(ctx)
+        names = ", ".join(f["name"] for f in files) or "unknown files"
+        return (
+            f"User has selected {len(ctx.media_ids)} file(s): {names}. "
+            f"Selected media IDs: {ctx.media_ids}. Questions about study "
+            "content default to media_llm while files are selected."
         )
 
     @staticmethod
@@ -1241,7 +1574,9 @@ class AssistantOrchestrator:
         Deep-copies the module-level schema — never mutate the shared dict.
         """
         schema = copy.deepcopy(prompts.PLAN_TURN_SCHEMA)
-        name_spec = schema["properties"]["tool"]["properties"]["name"]
+        name_spec = schema["properties"]["steps"]["items"]["properties"][
+            "tool"
+        ]
         name_spec["enum"] = [
             n
             for n in name_spec["enum"]
@@ -1336,41 +1671,39 @@ class AssistantOrchestrator:
             fc_params: dict[str, Any] = {"topic": message}
             if ctx.media_ids:
                 fc_params["use_media"] = True
-            return {
-                "action": "run_tool",
-                "tool": {"name": "flashcard_generator", "params": fc_params},
-            }
+            return AssistantOrchestrator._single_step(
+                "flashcard_generator", fc_params
+            )
 
         # Quiz wins over media: a quiz request is its own intent, and the quiz
         # tool grounds itself in the conversation history.
-        if any(w in text for w in ("quiz", "practice test", "test me")):
+        if any(w in text for w in _QUIZ_WORDS):
             params: dict[str, Any] = {"topic": message}
             if ctx.media_ids:
                 params["use_media"] = True
-            return {
-                "action": "run_tool",
-                "tool": {"name": "quiz_generator", "params": params},
-            }
+            return AssistantOrchestrator._single_step("quiz_generator", params)
 
         if ctx.media_ids:
-            return {
-                "action": "run_tool",
-                "tool": {"name": "media_llm", "params": {"query": message}},
-            }
+            return AssistantOrchestrator._single_step(
+                "media_llm", {"query": message}
+            )
 
         # Only reach for the web when the message clearly needs fresh, external
         # facts; otherwise Aeva answers from its own knowledge (no needless
         # search on greetings, identity questions, or concept explanations).
-        tool_name = (
+        if _needs_fresh_info(text) and feature_flag_service.is_enabled(
             "web_search"
-            if _needs_fresh_info(text)
-            and feature_flag_service.is_enabled("web_search")
-            else "general"
+        ):
+            return AssistantOrchestrator._single_step(
+                "web_search",
+                {
+                    "query": message,
+                    "search_intent": prompts.guess_search_intent(message),
+                },
+            )
+        return AssistantOrchestrator._single_step(
+            "general", {"query": message}
         )
-        return {
-            "action": "run_tool",
-            "tool": {"name": tool_name, "params": {"query": message}},
-        }
 
     def _continuation_plan(
         self,
@@ -1401,10 +1734,7 @@ class AssistantOrchestrator:
         last_tool = self._last_generator_tool(ctx.session_id)
         if last_tool is None:
             return None
-        return {
-            "action": "run_tool",
-            "tool": {"name": last_tool, "params": {"topic": message}},
-        }
+        return self._single_step(last_tool, {"topic": message})
 
     def _last_generator_tool(self, session_id: str) -> str | None:
         """Name of the most recent assistant turn's repeatable generator tool.
@@ -1417,10 +1747,14 @@ class AssistantOrchestrator:
         for msg in reversed(self.supabase.get_messages(session_id)):
             if msg.get("role") != "assistant":
                 continue
-            tool_used = (msg.get("metadata") or {}).get("tool_used")
+            meta = msg.get("metadata") or {}
+            tool_used = meta.get("tool_used")
             if not tool_used:
                 continue
-            return tool_used if tool_used in _REPEATABLE_TOOLS else None
+            for tool in meta.get("tools_used") or [tool_used]:
+                if tool in _REPEATABLE_TOOLS:
+                    return str(tool)
+            return None
         return None
 
     def _handle_clarification(

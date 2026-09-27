@@ -22,8 +22,10 @@ Create study flashcards as Aeva.
 Topic: {TOPIC}
 Card count: {CARD_COUNT}
 Recent context: {RECENT_CONTEXT}
-
+{SOURCE_CONTEXT}
 Use the attached study material if provided; otherwise generate the cards from the topic. If the topic is vague, infer it from the recent context.
+
+When SOURCE CONTEXT is present (content Aeva produced earlier in this turn, or excerpts from the student's files), build every card from it: never add facts absent from it, keep its terminology, and cover it broadly.
 
 Requirements:
 - Generate exactly {CARD_COUNT} flashcards.
@@ -36,7 +38,7 @@ Requirements:
 - Keep formulas, code, technical terms, and proper nouns unchanged.
 """,
     defaults={"SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK},
-    optional=("USER_PROFILE",),
+    optional=("USER_PROFILE", "SOURCE_CONTEXT"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
     uses_attachments=True,

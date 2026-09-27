@@ -13,7 +13,8 @@ from aeva.mcp.base import (
     ToolContext,
     ToolDefinition,
 )
-from aeva.media.attachments import download_attachments
+from aeva.media.grounding import ground_generator
+from aeva.media.retrieval import RetrievalService
 from aeva.quiz import exam_patterns
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
@@ -80,10 +81,12 @@ class QuizGeneratorTool(BaseTool):
         llm: LLMClient | None = None,
         quiz_repo: QuizRepository | None = None,
         supabase: SupabaseService | None = None,
+        retrieval: RetrievalService | None = None,
     ) -> None:
         self._llm = llm
         self._quiz_repo = quiz_repo
         self._supabase = supabase
+        self._retrieval = retrieval
 
     @property
     def llm(self) -> LLMClient:
@@ -99,6 +102,13 @@ class QuizGeneratorTool(BaseTool):
     def supabase(self) -> SupabaseService:
         """Lazy Supabase client (for media-based quizzes)."""
         return self._supabase or SupabaseService()
+
+    @property
+    def retrieval(self) -> RetrievalService:
+        """Lazy retrieval service (grounds quizzes in indexed uploads)."""
+        if self._retrieval is None:
+            self._retrieval = RetrievalService(supabase=self.supabase)
+        return self._retrieval
 
     @property
     def definition(self) -> ToolDefinition:
@@ -179,18 +189,24 @@ class QuizGeneratorTool(BaseTool):
             ]
         )
 
-        attachments = None
-        history: list[dict[str, str]] | None = ctx.history
-        from_media = False
-        if self._wants_media(params, ctx):
-            attachments = download_attachments(
-                self.supabase, ctx.user_id, ctx.session_id, ctx.media_ids
-            )
-            if attachments:
-                from_media = True
-                # Quiz purely from the uploaded material; drop chat history so
-                # an earlier topic (e.g. "what is DBMS") doesn't bias it.
-                history = None
+        # Material, in priority order: what an earlier agent produced this
+        # turn, excerpts retrieved from the indexed uploads, then whole files
+        # for anything that cannot be searched (images, unindexed docs).
+        grounding = ground_generator(
+            ctx,
+            topic=str(params.get("topic") or ""),
+            wants_media=self._wants_media(params, ctx),
+            supabase=self.supabase,
+            retrieval=self.retrieval,
+        )
+        attachments = grounding.attachments
+        source_context = grounding.source_context
+        from_media = grounding.from_media
+        # Grounded quizzes drop chat history so an earlier topic (e.g. "what
+        # is DBMS") doesn't bias questions about the material.
+        history: list[dict[str, str]] | None = (
+            None if grounding.grounded else ctx.history
+        )
 
         instructions = params.get("additional_instructions") or "(none)"
         rendered = prompts.PromptBuilder.build(
@@ -202,7 +218,9 @@ class QuizGeneratorTool(BaseTool):
             RECENT_CONTEXT=ctx.enriched_message,
             ADDITIONAL_INSTRUCTIONS=instructions,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+            SOURCE_CONTEXT=source_context,
         )
+        ctx.note(f"Drafting {count} questions…")
         quiz_data = self.resolve_llm(ctx, "LLM_QUIZ_MODEL").generate_structured(
             rendered.user_message,
             prompts.QUIZ_GENERATION_SCHEMA,
@@ -220,6 +238,7 @@ class QuizGeneratorTool(BaseTool):
         # omits both).
         quiz_data["difficulty"] = difficulty
         quiz_data["exam_config"] = exam_config
+        ctx.note("Saving your quiz…")
         quiz = self.quiz_repo.create(
             user_id=ctx.user_id,
             session_id=ctx.session_id,
@@ -233,5 +252,14 @@ class QuizGeneratorTool(BaseTool):
             "questions": quiz["questions"],
             "difficulty": difficulty,
             "exam_config": exam_config,
-            "source": "Uploaded material" if from_media else quiz["topic"],
+            "source": (
+                "Uploaded material"
+                if from_media
+                else "From this conversation"
+                if grounding.from_prior
+                else quiz["topic"]
+            ),
+            "source_media_ids": (
+                grounding.source_media_ids if from_media else []
+            ),
         }

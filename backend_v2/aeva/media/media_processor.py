@@ -9,6 +9,12 @@ instead of re-parsing, which matters under the serverless request ceiling.
 
 Progress events are plain dicts ``{stage, pct, msg}``; terminal events use the
 ``ready`` and ``error`` stages.
+
+Failures never delete the upload. A document that cannot be indexed (parsing
+not configured, or a scan with no extractable text) is marked ``ready`` with
+zero chunks so the media tool answers it from the raw file, exactly like an
+image; any other failure is persisted as ``failed`` with its message so the
+file stays visible with retry/remove actions.
 """
 
 import json
@@ -21,7 +27,11 @@ from typing import Any
 from flask import current_app
 
 from aeva.llm.llm_client import LLMClient
-from aeva.media.chunking import chunk_parsed_document
+from aeva.media.chunking import (
+    EMBEDDING_VERSION,
+    Chunk,
+    chunk_parsed_document,
+)
 from aeva.media.llamaparse_service import (
     STATUS_COMPLETED,
     TERMINAL_STATUSES,
@@ -37,10 +47,6 @@ logger = logging.getLogger(__name__)
 _POLL_INTERVAL_SECONDS = 3
 _MAX_POLL_SECONDS = 240
 
-# Storage-path suffixes for the artifacts a failed run may have written; cleaned
-# up alongside the original so nothing unusable is ever left behind.
-_PARSED_SUFFIXES = (".parsed.json", ".parsed.md", ".parsed.txt")
-
 # While LlamaParse works, cycle these so a long parse still feels alive.
 _PARSE_HINTS = ("Reading pages…", "Understanding document structure…")
 
@@ -52,7 +58,7 @@ class MediaProcessingError(Exception):
 
     ``recoverable`` marks a failure the client can retry by *resuming* the
     existing run (e.g. a parse that is merely slow) rather than re-uploading.
-    Non-recoverable failures trigger a full cleanup of the half-built document.
+    Non-recoverable failures are persisted as ``failed``; the upload is kept.
     """
 
     def __init__(self, message: str, *, recoverable: bool = False) -> None:
@@ -103,6 +109,9 @@ class MediaProcessor:
             "pct": 0,
             "msg": msg,
             "recoverable": recoverable,
+            # The upload always survives a failure now; the client keeps the
+            # row (with retry/remove) instead of dropping it.
+            "kept": True,
         }
 
     def process(
@@ -172,45 +181,64 @@ class MediaProcessor:
         *,
         recoverable: bool,
     ) -> Generator[Event, None, None]:
-        """React to a terminal failure, then emit the error event.
+        """Persist the failure, then emit the error event.
 
-        A recoverable failure (a slow parse) keeps the record + job id so a
-        reconnect resumes it. An unrecoverable one scrubs every artifact so the
-        application never holds a partially processed, unusable file.
+        A recoverable failure (a slow parse) keeps the status so a reconnect
+        resumes the job. An unrecoverable one is marked ``failed`` — the
+        original file, parsed artifacts, and pages are all kept, so the
+        student can retry later or still get answers from the raw file.
         """
         media_id = record["id"]
-        if recoverable:
-            self.supabase.update_media_processing(
-                media_id,
-                user_id,
-                processing_error=message[:500],
-            )
-        else:
-            self._cleanup(user_id, record)
+        fields: dict[str, Any] = {"processing_error": message[:500]}
+        if not recoverable:
+            fields["processing_status"] = "failed"
+            # A retry must submit a fresh parse, not poll the dead job.
+            fields["llamaparse_job_id"] = None
+        self.supabase.update_media_processing(media_id, user_id, **fields)
         yield self._error_event(message, recoverable=recoverable)
 
-    def _cleanup(self, user_id: str, record: dict[str, Any]) -> None:
-        """Delete the original, derived artifacts, chunks, pages, and row."""
+    def _mark_unindexed(
+        self, user_id: str, record: dict[str, Any], reason: str
+    ) -> Generator[Event, None, None]:
+        """Finish a document that cannot be chunked as ready-with-no-chunks.
+
+        Zero chunks routes the file to the media tool's whole-file attachment
+        path (the same contract images use), so it stays answerable instead
+        of vanishing. ``reason`` is kept on the row for diagnostics.
+        """
         media_id = record["id"]
-        base = record["storage_path"].rsplit(".", 1)[0]
-        paths = [record["storage_path"]]
-        paths += [f"{base}{suffix}" for suffix in _PARSED_SUFFIXES]
-        for path in paths:
-            try:
-                self.supabase.delete_storage_file(path)
-            except Exception:  # noqa: BLE001 - best-effort cleanup
-                logger.warning("Cleanup could not delete storage %s", path)
-        try:
-            self.supabase.delete_media_chunks(media_id, user_id)
-            self.supabase.delete_media_record(media_id, user_id)
-        except Exception:  # noqa: BLE001 - best-effort cleanup
-            logger.warning("Cleanup could not delete record %s", media_id)
+        logger.info(
+            "Media unindexed (attachment path) | media=%s | %s",
+            media_id,
+            reason,
+        )
+        self.supabase.update_media_processing(
+            media_id,
+            user_id,
+            processing_status="ready",
+            chunk_count=0,
+            processing_error=reason[:500],
+            processed_at=datetime.now(tz=UTC).isoformat(),
+        )
+        yield self._event(
+            "ready", 100, "Uploaded — answers will use the full file."
+        )
 
     def _run(
         self, user_id: str, record: dict[str, Any]
     ) -> Generator[Event, None, None]:
         """Happy-path stages; exceptions bubble to ``process`` for cleanup."""
         media_id = record["id"]
+
+        if not self.llamaparse.enabled:
+            # No parser configured: keep the file usable via attachments
+            # (the pre-RAG behaviour) rather than failing the upload.
+            yield from self._mark_unindexed(
+                user_id,
+                record,
+                "Document parsing is not configured on this server.",
+            )
+            return
 
         yield self._event("parsing", 12, "Parsing document…")
         logger.info("Stage: parsing | media=%s", media_id)
@@ -223,28 +251,29 @@ class MediaProcessor:
 
         yield self._event("chunking", 65, "Creating semantic chunks…")
         logger.info("Stage: chunking | media=%s", media_id)
-        chunks = chunk_parsed_document(
-            doc,
-            target_tokens=current_app.config["RAG_CHUNK_TOKENS"],
-            overlap_tokens=current_app.config["RAG_CHUNK_OVERLAP"],
-        )
+        self._set_status(user_id, media_id, "chunking")
+        chunks = self._chunk(doc, record)
         if not chunks:
-            msg = "No readable text was found in this document."
-            raise MediaProcessingError(msg)
+            # A scanned/empty document: nothing to retrieve from, but the
+            # file itself can still be sent to the model whole.
+            yield from self._mark_unindexed(
+                user_id,
+                record,
+                "No readable text was found in this document.",
+            )
+            return
         logger.info("Chunked | media=%s | %d chunks", media_id, len(chunks))
 
         yield self._event("embedding", 82, "Generating embeddings…")
         logger.info(
             "Stage: embedding | media=%s | %d chunks", media_id, len(chunks)
         )
-        vectors = self.embed_llm.embed(
-            [c.content for c in chunks],
-            task_type="RETRIEVAL_DOCUMENT",
-            output_dimensionality=current_app.config["RAG_EMBEDDING_DIM"],
-        )
+        self._set_status(user_id, media_id, "embedding")
+        vectors = self._embed(chunks)
 
         yield self._event("indexing", 93, "Building knowledge index…")
         logger.info("Stage: indexing | media=%s", media_id)
+        self._set_status(user_id, media_id, "indexing")
         self._index(user_id, media_id, chunks, vectors)
         yield self._event("indexing", 98, "Almost ready…")
 
@@ -264,14 +293,96 @@ class MediaProcessor:
         )
         yield self._event("ready", 100, "Document is ready!")
 
+    def reindex(
+        self, user_id: str, media_id: str
+    ) -> Generator[Event, None, None]:
+        """Re-chunk and re-embed an indexed document from its stored parse.
+
+        Used to backfill documents onto the current embedding layout (context
+        headers, sentence-aware splitting) without paying for another
+        LlamaParse run: the ``parsed.json`` artifact is rebuilt into a
+        ``ParsedDocument`` and pushed through chunk → embed → index again.
+        """
+        record = self.supabase.get_media(media_id, user_id)
+        if not record:
+            yield self._error_event("File not found.", recoverable=False)
+            return
+        json_path = record.get("parsed_json_path")
+        if not json_path:
+            yield self._error_event(
+                "No parsed document is stored for this file; re-upload it.",
+                recoverable=False,
+            )
+            return
+        try:
+            raw = json.loads(self.supabase.download_file(json_path))
+            doc = LlamaParseService.normalize_raw(raw)
+            yield self._event("chunking", 40, "Re-chunking document…")
+            chunks = self._chunk(doc, record)
+            if not chunks:
+                yield from self._mark_unindexed(
+                    user_id, record, "No readable text was found."
+                )
+                return
+            yield self._event("embedding", 70, "Re-embedding chunks…")
+            vectors = self._embed(chunks)
+            yield self._event("indexing", 90, "Rebuilding knowledge index…")
+            self.supabase.delete_media_chunks(media_id, user_id)
+            self.supabase.insert_media_pages([
+                {
+                    "media_id": media_id,
+                    "user_id": user_id,
+                    "page_number": page.page_number,
+                    "text": page.text,
+                    "markdown": page.markdown,
+                }
+                for page in doc.pages
+            ])
+            self._index(user_id, media_id, chunks, vectors)
+            self.supabase.update_media_processing(
+                media_id,
+                user_id,
+                processing_status="ready",
+                chunk_count=len(chunks),
+                page_count=doc.page_count,
+                processing_error=None,
+                processed_at=datetime.now(tz=UTC).isoformat(),
+            )
+        except Exception:
+            logger.exception("Re-index failed for %s", media_id)
+            yield self._error_event("Re-index failed.", recoverable=False)
+            return
+        logger.info(
+            "Media re-indexed | media=%s | %d chunks", media_id, len(chunks)
+        )
+        yield self._event("ready", 100, "Document re-indexed!")
+
+    def _chunk(
+        self, doc: ParsedDocument, record: dict[str, Any]
+    ) -> list[Chunk]:
+        """Chunk a parsed document with the configured sizes + file name."""
+        cfg = current_app.config
+        return chunk_parsed_document(
+            doc,
+            target_tokens=cfg["RAG_CHUNK_TOKENS"],
+            overlap_tokens=cfg["RAG_CHUNK_OVERLAP"],
+            max_tokens=int(cfg.get("RAG_CHUNK_MAX_TOKENS", 640)),
+            table_max_chars=int(cfg.get("RAG_TABLE_MAX_CHARS", 6000)),
+            file_name=str(record.get("file_name") or ""),
+        )
+
+    def _embed(self, chunks: list[Chunk]) -> list[list[float]]:
+        """Embed the header-prefixed text of every chunk."""
+        return self.embed_llm.embed(
+            [c.embed_text for c in chunks],
+            task_type="RETRIEVAL_DOCUMENT",
+            output_dimensionality=current_app.config["RAG_EMBEDDING_DIM"],
+        )
+
     def _parse(
         self, user_id: str, record: dict[str, Any]
     ) -> Generator[Event, None, str]:
         """Submit (or resume) the LlamaParse job and poll to completion."""
-        if not self.llamaparse.enabled:
-            msg = "Document parsing is not configured on this server."
-            raise MediaProcessingError(msg)
-
         media_id = record["id"]
         job_id = record.get("llamaparse_job_id")
         if not job_id:
@@ -354,11 +465,17 @@ class MediaProcessor:
             parsed_text_path=text_path,
         )
 
+    def _set_status(self, user_id: str, media_id: str, status: str) -> None:
+        """Persist the current stage so polling clients see real progress."""
+        self.supabase.update_media_processing(
+            media_id, user_id, processing_status=status
+        )
+
     def _index(
         self,
         user_id: str,
         media_id: str,
-        chunks: list[Any],
+        chunks: list[Chunk],
         vectors: list[list[float]],
     ) -> None:
         """Insert chunk rows with their embeddings."""
@@ -371,6 +488,8 @@ class MediaProcessor:
                 "page_number": chunk.page_number,
                 "section": chunk.section,
                 "token_count": chunk.token_count,
+                "context": chunk.context,
+                "embedding_version": EMBEDDING_VERSION,
                 "embedding": vector,
             }
             for chunk, vector in zip(chunks, vectors, strict=False)

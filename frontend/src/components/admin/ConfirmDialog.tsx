@@ -54,6 +54,9 @@ export function ConfirmDialog({
       open={open}
       onOpenChange={(o) => !loading && onOpenChange(o)}
       dismissible={!loading}
+      // Titles vary per action ("Delete this user?"); one stable name keeps
+      // the popup events grouped.
+      analyticsName="Admin confirm"
     >
       <ResponsiveModalContent className="sm:max-w-md">
         <ResponsiveModalHeader>

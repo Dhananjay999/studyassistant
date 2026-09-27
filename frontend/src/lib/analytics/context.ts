@@ -5,7 +5,7 @@
 
 import type { AppContext, DeviceContext, PageContext } from "./types";
 import { isBrowser } from "./storage";
-import { routeName } from "./routeName";
+import { publicPath, routeName } from "./routeName";
 
 interface UAData {
   brands?: { brand: string; version: string }[];
@@ -102,7 +102,7 @@ export function getDeviceContext(): DeviceContext {
 
 export function getPageContext(): PageContext {
   const loc = window.location;
-  const path = loc.pathname;
+  const path = publicPath(loc.pathname);
   return {
     path,
     url: loc.origin + path, // no query string: ids/PII stay out of page_url

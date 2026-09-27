@@ -112,6 +112,48 @@ class AssistantContext:
     source_content: str | None = None
 
 
+# Tools that produce the streamed text answer (at most one per turn) versus
+# tools that produce an artifact (quiz, flashcard set, image) and can run in
+# parallel as generator agents.
+ANSWER_TOOLS = frozenset({"general", "product_info", "web_search", "media_llm"})
+GENERATOR_TOOLS = frozenset({
+    "quiz_generator",
+    "flashcard_generator",
+    "image_generator",
+})
+STEP_KIND_ANSWER = "answer"
+STEP_KIND_GENERATOR = "generator"
+STEP_INPUT_MESSAGE = "message"
+STEP_INPUT_ANSWER = "answer"
+
+
+@dataclass
+class Step:
+    """One planned agent of a turn (a normalized planner step)."""
+
+    id: str
+    tool: str
+    kind: str
+    params: dict[str, Any] = field(default_factory=dict)
+    model: str | None = None
+    # Which ``LLM_*_MODEL`` config pair to resolve through (fast path).
+    config_key: str | None = None
+    purpose: str = ""
+    # "message": independent of the answer (starts immediately, in parallel);
+    # "answer": built from the answer agent's output (starts after it).
+    input: str = STEP_INPUT_MESSAGE
+
+    def to_public(self) -> dict[str, Any]:
+        """Client-facing description (no params — they may hold content)."""
+        return {
+            "id": self.id,
+            "tool": self.tool,
+            "kind": self.kind,
+            "input": self.input,
+            "purpose": self.purpose,
+        }
+
+
 @dataclass
 class AssistantResult:
     """Output from the orchestrator."""
@@ -123,3 +165,5 @@ class AssistantResult:
     content: dict[str, Any] | None = None
     message_id: str | None = None
     display_text: str = ""
+    # Every tool that ran this turn (``tool_used`` is the primary one).
+    tools_used: list[str] = field(default_factory=list)

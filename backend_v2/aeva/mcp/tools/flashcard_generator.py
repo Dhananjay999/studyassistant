@@ -14,7 +14,8 @@ from aeva.mcp.base import (
     ToolContext,
     ToolDefinition,
 )
-from aeva.media.attachments import download_attachments
+from aeva.media.grounding import ground_generator
+from aeva.media.retrieval import RetrievalService
 from aeva.supabase.supabase_service import SupabaseService
 
 
@@ -26,10 +27,12 @@ class FlashcardGeneratorTool(BaseTool):
         llm: LLMClient | None = None,
         flashcard_repo: FlashcardRepository | None = None,
         supabase: SupabaseService | None = None,
+        retrieval: RetrievalService | None = None,
     ) -> None:
         self._llm = llm
         self._flashcard_repo = flashcard_repo
         self._supabase = supabase
+        self._retrieval = retrieval
 
     @property
     def llm(self) -> LLMClient:
@@ -45,6 +48,13 @@ class FlashcardGeneratorTool(BaseTool):
     def supabase(self) -> SupabaseService:
         """Lazy Supabase client (for media-based flashcards)."""
         return self._supabase or SupabaseService()
+
+    @property
+    def retrieval(self) -> RetrievalService:
+        """Lazy retrieval service (grounds cards in indexed uploads)."""
+        if self._retrieval is None:
+            self._retrieval = RetrievalService(supabase=self.supabase)
+        return self._retrieval
 
     @property
     def definition(self) -> ToolDefinition:
@@ -92,16 +102,19 @@ class FlashcardGeneratorTool(BaseTool):
             current_app.config.get("FLASHCARD_MAX_CARDS", 20),
         )
 
-        attachments = None
-        history: list[dict[str, str]] | None = ctx.history
-        source_type = "response"
-        if self._wants_media(params, ctx):
-            attachments = download_attachments(
-                self.supabase, ctx.user_id, ctx.session_id, ctx.media_ids
-            )
-            if attachments:
-                source_type = "media"
-                history = None
+        grounding = ground_generator(
+            ctx,
+            topic=str(params.get("topic") or ""),
+            wants_media=self._wants_media(params, ctx),
+            supabase=self.supabase,
+            retrieval=self.retrieval,
+        )
+        attachments = grounding.attachments
+        source_context = grounding.source_context
+        source_type = "media" if grounding.from_media else "response"
+        history: list[dict[str, str]] | None = (
+            None if grounding.grounded else ctx.history
+        )
 
         rendered = prompts.PromptBuilder.build(
             prompts.FLASHCARD_GENERATION_TEMPLATE,
@@ -109,7 +122,9 @@ class FlashcardGeneratorTool(BaseTool):
             CARD_COUNT=str(count),
             RECENT_CONTEXT=ctx.enriched_message,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+            SOURCE_CONTEXT=source_context,
         )
+        ctx.note(f"Writing {count} cards…")
         data = self.resolve_llm(
             ctx, "LLM_FLASHCARD_MODEL"
         ).generate_structured(
@@ -119,6 +134,7 @@ class FlashcardGeneratorTool(BaseTool):
             history=history,
             attachments=attachments,
         )
+        ctx.note("Saving your flashcards…")
         fset = self.flashcard_repo.create(
             user_id=ctx.user_id,
             session_id=ctx.session_id,
@@ -134,6 +150,11 @@ class FlashcardGeneratorTool(BaseTool):
             "source": (
                 "Uploaded material"
                 if source_type == "media"
+                else "From this conversation"
+                if grounding.from_prior
                 else fset["topic"]
+            ),
+            "source_media_ids": (
+                grounding.source_media_ids if grounding.from_media else []
             ),
         }

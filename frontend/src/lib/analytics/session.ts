@@ -14,6 +14,7 @@
 //   • Cross-tab: the `storage` event keeps tabs on the same session.
 
 import { STORAGE_KEYS, readJSON, randomId, writeJSON, isBrowser } from "./storage";
+import { publicPath } from "./routeName";
 
 export interface StoredSession {
   id: string;
@@ -72,7 +73,7 @@ export class SessionManager {
   }
 
   private start(number: number, now: number): StoredSession {
-    const path = isBrowser() ? window.location.pathname : "";
+    const path = isBrowser() ? publicPath(window.location.pathname) : "";
     this.current = {
       id: `sess_${randomId()}`,
       number,

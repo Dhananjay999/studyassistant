@@ -16,6 +16,7 @@ const PLAN_SOURCE_LABEL: Record<string, string> = {
   continuation: "repeat of the previous generator tool",
   forced: "forced by user action (file choice / setup form)",
   media_choice: "resolved from a file clarification",
+  "planner+media_guard": "planner, then redirected to the selected files",
 };
 
 /** Keys given labeled rows below; anything else renders in "Other". */
@@ -32,6 +33,7 @@ const KNOWN_KEYS = new Set([
   "tool_ms",
   "total_ms",
   "streamed",
+  "retrieval",
 ]);
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -139,6 +141,94 @@ export function DebugInfoPanel({ debug }: { debug: ResponseDebugInfo }) {
                 <Row label="Tool run" value={ms(debug.tool_ms)} />
                 <Row label="Total" value={ms(debug.total_ms)} />
               </Section>
+              {debug.retrieval && (
+                <div className="sm:col-span-2">
+                  <Section title="Retrieval">
+                    <Row
+                      label="Mode"
+                      value={[
+                        debug.retrieval.mode,
+                        debug.retrieval.exact_scan ? "exact scan" : undefined,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    />
+                    <Row
+                      label="Query used"
+                      value={
+                        debug.retrieval.query_used
+                          ? `${debug.retrieval.query_used}${
+                              debug.retrieval.rewritten ? " (rewritten)" : ""
+                            }`
+                          : undefined
+                      }
+                    />
+                    <Row
+                      label="Keywords"
+                      value={debug.retrieval.keywords?.join(", ") || undefined}
+                    />
+                    <Row
+                      label="Candidates → kept"
+                      value={
+                        typeof debug.retrieval.candidates === "number"
+                          ? `${debug.retrieval.candidates} → ${
+                              debug.retrieval.after_threshold ?? "?"
+                            } → ${debug.retrieval.kept ?? "?"} (${
+                              debug.retrieval.excerpts ?? "?"
+                            } excerpts, +${
+                              debug.retrieval.neighbors_added ?? 0
+                            } neighbours)`
+                          : undefined
+                      }
+                    />
+                    <Row
+                      label="Top similarity"
+                      value={debug.retrieval.top_similarity}
+                    />
+                    <Row
+                      label="Documents hit"
+                      value={
+                        typeof debug.retrieval.docs_hit === "number"
+                          ? `${debug.retrieval.docs_hit} / ${
+                              debug.retrieval.docs_searched ?? "?"
+                            }`
+                          : undefined
+                      }
+                    />
+                    <Row
+                      label="Reranked"
+                      value={
+                        debug.retrieval.rerank_timeout
+                          ? "no (timed out)"
+                          : bool(debug.retrieval.reranked)
+                      }
+                    />
+                    <Row
+                      label="Citations"
+                      value={
+                        typeof debug.retrieval.citations_used === "number"
+                          ? `${debug.retrieval.citations_used} used, ${
+                              debug.retrieval.citations_dropped ?? 0
+                            } dropped`
+                          : undefined
+                      }
+                    />
+                    <Row
+                      label="Timing"
+                      value={[
+                        ["rewrite", debug.retrieval.rewrite_ms],
+                        ["embed", debug.retrieval.embed_ms],
+                        ["search", debug.retrieval.search_ms],
+                        ["rerank", debug.retrieval.rerank_ms],
+                        ["total", debug.retrieval.total_ms],
+                      ]
+                        .filter(([, v]) => typeof v === "number")
+                        .map(([k, v]) => `${k} ${v} ms`)
+                        .join(" · ")}
+                    />
+                  </Section>
+                </div>
+              )}
               {extras.length > 0 && (
                 <div className="sm:col-span-2">
                   <Section title="Other">

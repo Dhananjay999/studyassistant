@@ -40,6 +40,7 @@ Available tools:
 
 {MEDIA_HINT}
 {CLARIFICATION_HINT}
+Today's date: {CURRENT_DATE}. Judge "latest", "current", and years in the message against this date.
 
 Student message:
 {USER_MESSAGE}
@@ -81,15 +82,19 @@ Do NOT clarify when:
 
 ================ TOOL SELECTION =================
 
-Choose exactly ONE tool.
+Plan the turn as one or more STEPS (agents). Most turns are exactly one step.
 
-Ask first: "Can Aeva answer this confidently from its own knowledge and the conversation so far?" If yes, choose `general` — NOT web_search. Web search is only for information Aeva genuinely cannot already know.
+Ask two questions first:
+(1) Does a correct answer depend on facts that change over time, or that a model cannot know reliably from training (prices, versions, rankings, schedules, availability, recent events)?
+(2) Is the student asking about a specific real-world product, service, brand, institution, exam cycle, or event — rather than a concept?
+If EITHER is yes, choose `web_search`. Otherwise choose `general`.
 
-general  (DEFAULT — prefer this)
+general  (DEFAULT for study content)
 - Greetings, thanks, goodbyes, and casual conversation.
 - Identity and persona questions only ("who are you?", "introduce yourself", "what's your name?"). App features and how-tos go to product_info.
 - Concept explanations, definitions, and general knowledge already within the model's training.
-- Personal tutoring, step-by-step help, worked examples, opinions, and brainstorming.
+- Personal tutoring, step-by-step help, worked examples, and brainstorming; opinions about STUDY approach (how to revise, which topic first). Product or purchase opinions go to web_search.
+- Comparisons of CONCEPTS ("mitosis vs meiosis", "TCP vs UDP") — timeless subject matter.
 - Follow-up questions answerable from the current conversation.
 - Off-topic or unsafe requests (the answering model handles the refusal).
 
@@ -101,14 +106,19 @@ product_info
 - When genuinely unsure, prefer general — it can still answer app questions acceptably.
 
 web_search
-- ONLY when the answer genuinely requires external or up-to-date information the model cannot already know.
-- Latest news or current events, today's weather, live prices or scores, recent releases, current/future dates and schedules (e.g. this year's exam dates), recent government notifications — anything that hinges on "latest / current / today / now / recent / this year".
-- When the student explicitly asks you to look it up or search the web.
-- If Aeva could answer confidently without fresh data, do NOT use web_search — use `general`.
+- Anything that hinges on "latest / current / today / now / recent / this year" or names a year at or after the current one: news, current events, weather, live prices or scores, recent releases, current or future dates and schedules (this year's exam dates, admit cards, results), government notifications.
+- PRODUCT recommendations and comparisons: "best iPhone 17 model", "suggest a laptop under 60k", "iPhone 17 vs 17 Pro", "which should I buy", specs, reviews, prices, availability, "is X worth it".
+- RANKINGS and admissions: "top NITs for CSE", "cutoff for X", "best books for JEE 2026", college or course choices that depend on current data.
+- When the student explicitly asks you to look it up, google it, or search the web.
+- Fill `search_intent`: `compare` when two or more named options or "X vs Y"; `recommend` for "best / suggest / which should I buy / worth it"; `news` for events, announcements, releases, dates; otherwise `lookup`.
+- Make `query` standalone: include the product/exam names and the year when relevant.
+- NOT for timeless subject matter Aeva can teach from training — that is `general`.
 
 media_llm
 - Questions about uploaded PDFs, images, diagrams, notes, or screenshots.
 - Summaries or explanations of uploaded material.
+- When files are selected, ANY study question defaults to media_llm — the student attached the files to be used ("what is osmosis?" with a biology PDF selected → media_llm, not general). Choose `general` only for small talk or app questions, and `web_search` only when the message explicitly needs fresh, external information.
+- Pass the file names/ids from the media hint as `media_ids` only when the student names a specific file; otherwise omit it to use everything selected.
 
 quiz_generator
 - Quiz, test, or practice question requests.
@@ -123,6 +133,25 @@ quiz_generator
 flashcard_generator
 - Flashcard or revision-card requests.
 - Same topic and use_media rules as quiz_generator.
+
+image_generator
+- ONLY when the student explicitly wants a visual made: "draw", "sketch", "illustrate", "generate an image", "show me a picture/diagram of", "make a flowchart / mind map / timeline / poster / chart / comic".
+- NOT for a text answer that merely mentions a diagram, and not for explaining an uploaded image (that is media_llm).
+- ALWAYS set `style` to the best-fitting format id:
+{IMAGE_SKILLS}
+- Honour an explicit look the student names: "black and white" / "sketch" → line_art; "colourful" → illustration; "realistic" → photo_real.
+- `prompt` must stand alone: resolve "it" / "this" from the conversation, name the subject, and list the labels or steps to show.
+- `title`: a short caption (at most 8 words).
+
+Worked examples (message → tool, params):
+- "Suggest the best iPhone 17 model for a student" → web_search, search_intent=recommend
+- "iPhone 17 vs iPhone 17 Pro, which is better value?" → web_search, search_intent=compare
+- "What's the latest JEE 2026 syllabus change?" → web_search, search_intent=news
+- "Top engineering colleges in Pune for CSE" → web_search, search_intent=recommend
+- "Compare mitosis and meiosis" → general (concept comparison)
+- "What is dictatorship?" → general
+- "How should I revise for boards in 30 days?" → general (study advice)
+- "How do I upload a PDF here?" → product_info
 
 ================ MODEL SELECTION ================
 
@@ -158,9 +187,27 @@ When in doubt, choose the stronger model — a wrong or confusing explanation co
 - Infer the topic only from recent conversation when appropriate.
 - Never invent parameter values.
 - Omit optional parameters the student did not specify.
-- Choose exactly one tool.
 
-```text
+================ MULTI-AGENT TURNS =================
+
+Return more than one step ONLY when the message explicitly asks for more than one outcome. Rules:
+- At most ONE answer step (general, product_info, web_search, media_llm), always listed FIRST. Never two answer steps.
+- Then 0-3 generator steps (quiz_generator, flashcard_generator, image_generator), each at most once.
+- A purely generative message needs NO answer step ("create a quiz and flashcards on photosynthesis" → two generator steps, nothing else).
+- Each generator step sets `input`:
+  - "message" when its topic is fully specified by the message itself — it runs immediately, in parallel with everything else.
+  - "answer" when it must be built from the answer step's content ("summarize my notes and make flashcards", "explain X and draw a diagram of it") — it runs after the answer and receives it automatically.
+- Give each step a short `purpose` (what it will produce for the student).
+
+Examples (message → steps):
+- "create a quiz and flashcards on photosynthesis" → quiz_generator(input=message), flashcard_generator(input=message)
+- "summarize my notes and make flashcards" → media_llm, flashcard_generator(input=answer)
+- "explain photosynthesis from my PDF and draw a diagram" → media_llm, image_generator(input=answer)
+- "search the latest CBSE class 10 science syllabus and create a quiz" → web_search, quiz_generator(input=answer)
+- "compare Python and Java from the web and make flashcards" → web_search(search_intent=compare), flashcard_generator(input=answer)
+- "explain osmosis" → general (one step)
+- "make a quiz on osmosis" → quiz_generator (one step)
+
 ================ CLARIFICATION =================
 
 Clarification is a LAST RESORT. Default to `run_tool`.
@@ -197,7 +244,6 @@ When clarifying:
 After the frontend submits the clarification answers, NEVER ask another clarification question. Generate the final answer immediately.
 
 If the user closes or skips clarification, treat it as skipped and continue with reasonable assumptions. Never reopen clarification automatically.
-```
 
 
 Return only JSON matching the supplied schema.
@@ -276,37 +322,60 @@ PLAN_TURN_SCHEMA: dict = {
             },
             "required": ["reason", "questions"],
         },
-        "tool": {
-            "type": "object",
+        "steps": {
+            "type": "array",
             "description": (
-                "Present only when action is run_tool. Exactly one tool."
+                "Present only when action is run_tool. Ordered agents for "
+                "this turn: at most one answer tool first, then up to three "
+                "generators. Most turns are exactly one step."
             ),
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "enum": [
-                        "general",
-                        "product_info",
-                        "web_search",
-                        "media_llm",
-                        "quiz_generator",
-                        "flashcard_generator",
-                        "image_generator",
-                    ],
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tool": {
+                        "type": "string",
+                        "enum": [
+                            "general",
+                            "product_info",
+                            "web_search",
+                            "media_llm",
+                            "quiz_generator",
+                            "flashcard_generator",
+                            "image_generator",
+                        ],
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": (
+                            "A model from the chosen tool's listed models, "
+                            "per the MODEL SELECTION rules: cheaper only "
+                            "for small talk and formatting; a stronger "
+                            "model for anything that teaches facts or "
+                            "concepts. Must be one of that tool's listed "
+                            "models."
+                        ),
+                    },
+                    "params": {"type": "object"},
+                    "purpose": {
+                        "type": "string",
+                        "description": (
+                            "One short phrase: what this step produces."
+                        ),
+                    },
+                    "input": {
+                        "type": "string",
+                        "enum": ["message", "answer"],
+                        "description": (
+                            "Generators only: 'message' runs immediately "
+                            "from the message; 'answer' waits for and uses "
+                            "the answer step's output."
+                        ),
+                    },
                 },
-                "model": {
-                    "type": "string",
-                    "description": (
-                        "A model from the chosen tool's listed models, per "
-                        "the MODEL SELECTION rules: cheaper only for small "
-                        "talk and formatting; a stronger model for anything "
-                        "that teaches facts or concepts. Must be one of "
-                        "that tool's listed models."
-                    ),
-                },
-                "params": {"type": "object"},
+                "required": ["tool", "model", "params"],
             },
-            "required": ["name", "model", "params"],
         },
     },
     "required": ["action"],

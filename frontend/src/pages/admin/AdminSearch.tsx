@@ -1,7 +1,7 @@
 // Global search across users and every listable resource. Results are grouped;
 // clicking a hit jumps to the owner's detail (or opens a conversation).
 
-import { useEffect, useState, type LucideIcon } from "react";
+import { useEffect, useState } from "react";
 import {
   BookMarked,
   ChevronRight,
@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Search,
   Users as UsersIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SessionDialog } from "@/components/admin/SessionDialog";

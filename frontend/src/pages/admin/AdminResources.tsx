@@ -2,7 +2,7 @@
 // bookmarks/files). Search, filter-by-owner, per-row delete, delete-all,
 // pagination — driven entirely by the resource key.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   BookMarked,
@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Eye,
   FileText,
+  Filter,
   Layers,
   ListChecks,
   type LucideIcon,
@@ -21,16 +22,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
+import {
+  ResponsiveTable,
+  type ResponsiveColumn,
+} from "@/components/admin/ResponsiveTable";
 import { SessionDialog } from "@/components/admin/SessionDialog";
 import {
   useAdminResource,
@@ -71,11 +67,10 @@ const META: Record<
   },
 };
 
-interface Column {
-  header: string;
-  align?: "right";
-  cell: (it: AdminResourceItem) => ReactNode;
-}
+type Column = Pick<
+  ResponsiveColumn<AdminResourceItem>,
+  "header" | "align" | "cell"
+>;
 
 function columnsFor(resource: ResourceKey): Column[] {
   switch (resource) {
@@ -138,7 +133,45 @@ const PAGE_SIZE = 25;
 
 export function AdminResources({ resource }: { resource: ResourceKey }) {
   const meta = META[resource];
-  const cols = useMemo(() => columnsFor(resource), [resource]);
+  // The first resource column is the card title; the owner its subtitle;
+  // everything else a labelled value.
+  const cols = useMemo<ResponsiveColumn<AdminResourceItem>[]>(
+    () => [
+      ...columnsFor(resource).map(
+        (c, index): ResponsiveColumn<AdminResourceItem> => ({
+          ...c,
+          key: c.header,
+          role: index === 0 ? "primary" : "meta",
+          className: c.align === "right" ? undefined : "max-w-[260px] truncate",
+        }),
+      ),
+      {
+        key: "owner",
+        header: "Owner",
+        role: "secondary",
+        cell: (it) => (
+          <button
+            type="button"
+            onClick={() => filterByOwnerRef.current(it)}
+            data-analytics-name="Filter by owner"
+            className="max-w-[180px] truncate text-left text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+            title="Filter by this owner"
+          >
+            {it.owner_email || "—"}
+          </button>
+        ),
+        // The card offers a labelled "Filter by owner" button instead.
+        mobileCell: (it) => it.owner_email || "—",
+      },
+      {
+        key: "created",
+        header: "Created",
+        className: "whitespace-nowrap text-muted-foreground",
+        cell: (it) => formatDate(it.created_at),
+      },
+    ],
+    [resource],
+  );
 
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
@@ -151,6 +184,7 @@ export function AdminResources({ resource }: { resource: ResourceKey }) {
   );
   const [confirmAll, setConfirmAll] = useState(false);
   const [openSession, setOpenSession] = useState<string | null>(null);
+  const filterByOwnerRef = useRef<(it: AdminResourceItem) => void>(() => {});
 
   // Debounce the search box; any new search resets to page 1.
   useEffect(() => {
@@ -186,6 +220,8 @@ export function AdminResources({ resource }: { resource: ResourceKey }) {
     setOwner({ id: it.owner_id, label: it.owner_email || "selected user" });
     setPage(1);
   };
+  // The memoized columns call the latest handler through a ref.
+  filterByOwnerRef.current = filterByOwner;
 
   const runDeleteItem = async () => {
     if (!pendingItem) return;
@@ -210,10 +246,10 @@ export function AdminResources({ resource }: { resource: ResourceKey }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Icon className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold tracking-tight">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon className="h-5 w-5 shrink-0 text-primary" />
+          <h1 className="truncate text-xl font-semibold tracking-tight">
             {meta.title}
           </h1>
           {data && (
@@ -225,8 +261,9 @@ export function AdminResources({ resource }: { resource: ResourceKey }) {
         <Button
           variant="destructive"
           size="sm"
-          className="gap-1.5"
+          className="h-10 shrink-0 gap-1.5 sm:h-9"
           disabled={!data?.total}
+          data-analytics-name="Delete all resources"
           onClick={() => setConfirmAll(true)}
         >
           <Trash2 className="h-4 w-4" />
@@ -245,15 +282,21 @@ export function AdminResources({ resource }: { resource: ResourceKey }) {
           />
         </div>
         {owner && (
-          <Badge variant="secondary" className="gap-1.5 py-1.5 pl-3 pr-1.5">
-            <span className="max-w-[180px] truncate">Owner: {owner.label}</span>
+          <Badge
+            variant="secondary"
+            className="max-w-full gap-1 py-1 pl-3 pr-1 sm:max-w-[260px]"
+            data-analytics-private
+          >
+            <span className="min-w-0 truncate">Owner: {owner.label}</span>
             <button
               type="button"
+              aria-label="Clear owner filter"
+              data-analytics-name="Clear owner filter"
               onClick={() => {
                 setOwner(null);
                 setPage(1);
               }}
-              className="rounded-full p-0.5 hover:bg-background/60"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-background/60 active:bg-background/80"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -267,99 +310,77 @@ export function AdminResources({ resource }: { resource: ResourceKey }) {
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {cols.map((c) => (
-                <TableHead
-                  key={c.header}
-                  className={c.align === "right" ? "text-right" : undefined}
-                >
-                  {c.header}
-                </TableHead>
-              ))}
-              <TableHead>Owner</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 8 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: cols.length + 3 }).map((__, j) => (
-                    <TableCell key={j}>
-                      <Skeleton className="h-4 w-full" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : items.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={cols.length + 3}
-                  className="py-10 text-center text-sm text-muted-foreground"
-                >
-                  Nothing found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              items.map((it) => (
-                <TableRow key={it.id}>
-                  {cols.map((c) => (
-                    <TableCell
-                      key={c.header}
-                      className={
-                        c.align === "right"
-                          ? "whitespace-nowrap text-right tabular-nums"
-                          : "max-w-[260px] truncate"
-                      }
-                    >
-                      {c.cell(it)}
-                    </TableCell>
-                  ))}
-                  <TableCell>
-                    <button
-                      type="button"
-                      onClick={() => filterByOwner(it)}
-                      className="max-w-[180px] truncate text-left text-muted-foreground hover:text-foreground hover:underline"
-                      title="Filter by this owner"
-                    >
-                      {it.owner_email || "—"}
-                    </button>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatDate(it.created_at)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      {resource === "sessions" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setOpenSession(it.id)}
-                          title="View conversation"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setPendingItem(it)}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+      <ResponsiveTable
+        columns={cols}
+        rows={items}
+        rowKey={(it) => it.id}
+        loading={isLoading}
+        empty="Nothing found."
+        analyticsSection="admin_resources_list"
+        desktopActions={(it) => (
+          <>
+            {resource === "sessions" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="View conversation"
+                data-analytics-name="View conversation"
+                onClick={() => setOpenSession(it.id)}
+                title="View conversation"
+              >
+                <Eye className="h-4 w-4" />
+              </Button>
             )}
-          </TableBody>
-        </Table>
-      </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Delete"
+              data-analytics-name="Delete resource"
+              onClick={() => setPendingItem(it)}
+              title="Delete"
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </>
+        )}
+        mobileActions={(it) => (
+          <>
+            {resource === "sessions" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 gap-1.5"
+                data-analytics-name="View conversation"
+                onClick={() => setOpenSession(it.id)}
+              >
+                <Eye className="h-4 w-4" />
+                View
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 gap-1.5"
+              disabled={!it.owner_id}
+              data-analytics-name="Filter by owner"
+              onClick={() => filterByOwner(it)}
+            >
+              <Filter className="h-4 w-4" />
+              This owner
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 gap-1.5 text-destructive hover:text-destructive"
+              data-analytics-name="Delete resource"
+              onClick={() => setPendingItem(it)}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          </>
+        )}
+      />
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
@@ -370,6 +391,7 @@ export function AdminResources({ resource }: { resource: ResourceKey }) {
           <Button
             variant="outline"
             size="sm"
+            className="h-10 sm:h-9"
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
@@ -379,6 +401,7 @@ export function AdminResources({ resource }: { resource: ResourceKey }) {
           <Button
             variant="outline"
             size="sm"
+            className="h-10 sm:h-9"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >

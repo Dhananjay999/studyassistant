@@ -183,6 +183,67 @@ class LlamaParseService:
         )
 
 
+    @staticmethod
+    def normalize_raw(raw: dict[str, Any]) -> ParsedDocument:
+        """Rebuild a ``ParsedDocument`` from the stored ``parsed.json`` dump.
+
+        ``fetch_result`` dumps the SDK result with ``model_dump(mode="json")``
+        and the processor persists it to Storage, so a re-chunk/re-embed
+        (``MediaProcessor.reindex``) never needs another parse. Mirrors
+        ``_normalize`` over plain dicts.
+        """
+        texts = _raw_pages_by_number(raw.get("text"), "text")
+        markdowns = _raw_pages_by_number(raw.get("markdown"), "markdown")
+        items = _raw_items_by_number(raw.get("items"))
+        numbers = sorted(texts.keys() | markdowns.keys() | items.keys())
+        pages = [
+            ParsedPage(
+                page_number=number,
+                text=str(texts.get(number, "")),
+                markdown=str(markdowns.get(number, "")),
+                items=items.get(number, []),
+            )
+            for number in numbers
+        ]
+        joined_md = "\n\n".join(p.markdown for p in pages if p.markdown)
+        joined_text = "\n\n".join(p.text for p in pages if p.text)
+        return ParsedDocument(
+            pages=pages,
+            markdown=str(raw.get("markdown_full") or joined_md),
+            text=str(raw.get("text_full") or joined_text),
+            page_count=len(pages),
+            raw=raw,
+        )
+
+
+def _raw_pages_by_number(collection: Any, key: str) -> dict[int, str]:
+    """Map page number -> text/markdown from the stored JSON dump."""
+    if not isinstance(collection, dict):
+        return {}
+    mapping: dict[int, str] = {}
+    for page in collection.get("pages") or []:
+        number = page.get("page_number") if isinstance(page, dict) else None
+        if number is None:
+            continue
+        mapping[int(number)] = str(page.get(key) or "")
+    return mapping
+
+
+def _raw_items_by_number(collection: Any) -> dict[int, list[dict[str, Any]]]:
+    """Map page number -> layout items from the stored JSON dump."""
+    if not isinstance(collection, dict):
+        return {}
+    mapping: dict[int, list[dict[str, Any]]] = {}
+    for page in collection.get("pages") or []:
+        number = page.get("page_number") if isinstance(page, dict) else None
+        if number is None:
+            continue
+        mapping[int(number)] = [
+            item for item in page.get("items") or [] if isinstance(item, dict)
+        ]
+    return mapping
+
+
 def _pages_by_number(collection: Any, attr: str) -> dict[int, str]:
     """Map page number -> text/markdown for one expanded collection."""
     if collection is None:

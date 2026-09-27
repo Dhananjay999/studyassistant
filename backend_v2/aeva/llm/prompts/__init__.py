@@ -11,7 +11,7 @@ Names are re-exported here so callers can use ``from aeva.llm import prompts``
 and access ``prompts.WEB_SEARCH_TEMPLATE``, ``prompts.PLAN_TURN_SCHEMA``, etc.
 """
 
-from aeva.llm.prompts.blocks import user_profile_segment
+from aeva.llm.prompts.blocks import current_date, user_profile_segment
 from aeva.llm.prompts.builder import (
     PromptBuilder,
     PromptError,
@@ -27,11 +27,25 @@ from aeva.llm.prompts.general import (
     GENERAL_ANSWER_PARAMS,
     GENERAL_ANSWER_TEMPLATE,
 )
+from aeva.llm.prompts.image import (
+    IMAGE_GENERATION_PARAMS,
+    IMAGE_TEMPLATE,
+)
+from aeva.llm.prompts.image_skills import (
+    IMAGE_SKILLS,
+    ImageSkill,
+    pick_skill,
+    skill_ids,
+    skills_for_planner,
+)
 from aeva.llm.prompts.media import (
     MEDIA_PARAMS,
     MEDIA_TEMPLATE,
     NO_CONTEXT_MESSAGE,
     NO_MEDIA_MESSAGE,
+    PROCESSING_MESSAGE,
+    attached_files_block,
+    no_context_message,
 )
 from aeva.llm.prompts.orchestrator import (
     PLAN_TURN_SCHEMA,
@@ -60,10 +74,22 @@ from aeva.llm.prompts.quiz_generation import (
     QUIZ_GENERATOR_PARAMS,
 )
 from aeva.llm.prompts.response_meta import META_SENTINEL
+from aeva.llm.prompts.retrieval import (
+    PARAPHRASE_RULE_OFF,
+    PARAPHRASE_RULE_ON,
+    QUERY_REWRITE_SCHEMA,
+    QUERY_REWRITE_TEMPLATE,
+    RERANK_SCHEMA,
+    RERANK_TEMPLATE,
+)
 from aeva.llm.prompts.system import SYSTEM_PROMPT
 from aeva.llm.prompts.web_search import (
+    SEARCH_INTENT_GUIDANCE,
+    SEARCH_INTENTS,
     WEB_SEARCH_PARAMS,
     WEB_SEARCH_TEMPLATE,
+    guess_search_intent,
+    search_mode_block,
 )
 
 __all__ = [
@@ -72,13 +98,23 @@ __all__ = [
     "FLASHCARD_GENERATOR_PARAMS",
     "GENERAL_ANSWER_PARAMS",
     "GENERAL_ANSWER_TEMPLATE",
+    "IMAGE_GENERATION_PARAMS",
+    "IMAGE_SKILLS",
+    "IMAGE_TEMPLATE",
     "MEDIA_PARAMS",
     "MEDIA_TEMPLATE",
     "META_SENTINEL",
     "NO_CONTEXT_MESSAGE",
     "NO_MEDIA_MESSAGE",
+    "PARAPHRASE_RULE_OFF",
+    "PARAPHRASE_RULE_ON",
     "PLAN_TURN_SCHEMA",
     "PLAN_TURN_TEMPLATE",
+    "PROCESSING_MESSAGE",
+    "PRODUCT_INFO_PARAMS",
+    "PRODUCT_INFO_TEMPLATE",
+    "QUERY_REWRITE_SCHEMA",
+    "QUERY_REWRITE_TEMPLATE",
     "QUIZ_ANALYSIS_SCHEMA",
     "QUIZ_ANALYSIS_TEMPLATE",
     "QUIZ_FEEDBACK_SCHEMA",
@@ -86,17 +122,28 @@ __all__ = [
     "QUIZ_GENERATION_SCHEMA",
     "QUIZ_GENERATION_TEMPLATE",
     "QUIZ_GENERATOR_PARAMS",
-    "PRODUCT_INFO_PARAMS",
-    "PRODUCT_INFO_TEMPLATE",
+    "RERANK_SCHEMA",
+    "RERANK_TEMPLATE",
+    "SEARCH_INTENTS",
+    "SEARCH_INTENT_GUIDANCE",
     "SYSTEM_PROMPT",
     "WEB_SEARCH_PARAMS",
     "WEB_SEARCH_TEMPLATE",
+    "ImageSkill",
     "PromptBuilder",
     "PromptError",
     "PromptTemplate",
     "RenderedPrompt",
+    "attached_files_block",
     "build_identity_block",
     "build_personalization_block",
     "build_space_block",
+    "current_date",
+    "guess_search_intent",
+    "no_context_message",
+    "pick_skill",
+    "search_mode_block",
+    "skill_ids",
+    "skills_for_planner",
     "user_profile_segment",
 ]

@@ -13,6 +13,7 @@ from aeva.mcp.tools.quiz_generator import QuizGeneratorTool
 from aeva.mcp.tools.web_search import WebSearchTool
 from aeva.media.llamaparse_service import LlamaParseService
 from aeva.media.media_processor import MediaProcessor
+from aeva.media.retrieval import RetrievalService
 from aeva.supabase.supabase_service import SupabaseService
 
 
@@ -25,8 +26,14 @@ def build_tool_registry(
     embed_llm: LLMClient,
     product_info_llm: LLMClient,
     supabase: SupabaseService,
+    retrieval: RetrievalService | None = None,
 ) -> ToolRegistry:
-    """Create registry with per-tool LLM clients."""
+    """Create registry with per-tool LLM clients.
+
+    ``retrieval`` is the shared hybrid retrieval service every
+    material-grounded tool uses; ``None`` lets the media tool build its own
+    (tests, ad-hoc scripts).
+    """
     registry = ToolRegistry()
     # Default text answerer (no web grounding); shares the web-search model.
     registry.register(GeneralAnswerTool(llm=web_search_llm))
@@ -34,11 +41,22 @@ def build_tool_registry(
     registry.register(ProductInfoTool(llm=product_info_llm))
     registry.register(WebSearchTool(llm=web_search_llm))
     registry.register(
-        MediaLLMTool(llm=media_llm, supabase=supabase, embed_llm=embed_llm)
+        MediaLLMTool(
+            llm=media_llm,
+            supabase=supabase,
+            embed_llm=embed_llm,
+            retrieval=retrieval,
+        )
     )
-    registry.register(QuizGeneratorTool(llm=quiz_llm, supabase=supabase))
     registry.register(
-        FlashcardGeneratorTool(llm=flashcard_llm, supabase=supabase)
+        QuizGeneratorTool(
+            llm=quiz_llm, supabase=supabase, retrieval=retrieval
+        )
+    )
+    registry.register(
+        FlashcardGeneratorTool(
+            llm=flashcard_llm, supabase=supabase, retrieval=retrieval
+        )
     )
     registry.register(ImageGeneratorTool(llm=image_llm, supabase=supabase))
     return registry
@@ -85,6 +103,15 @@ class Container(containers.DeclarativeContainer):
         config_key="LLM_FAST_MODEL",
     )
 
+    # Hybrid retrieval over indexed uploads; the fast model does the query
+    # rewrite + rerank, the embedding client the query vectors.
+    retrieval_service = providers.Singleton(
+        RetrievalService,
+        supabase=supabase_service,
+        embed_llm=llm_embedding,
+        rewrite_llm=llm_fast,
+    )
+
     llamaparse_service = providers.Singleton(LlamaParseService)
     media_processor = providers.Singleton(
         MediaProcessor,
@@ -103,4 +130,5 @@ class Container(containers.DeclarativeContainer):
         embed_llm=llm_embedding,
         product_info_llm=llm_fast,
         supabase=supabase_service,
+        retrieval=retrieval_service,
     )

@@ -10,6 +10,10 @@ from flask_smorest import Blueprint
 from aeva.common.decorators import user_required
 from aeva.common.schema import ResponseEnvelopeSchema, UserData
 from aeva.media.media_repository import MediaRepository
+from aeva.media.schema.media_schema import (
+    AttachMediaData,
+    AttachMediaSchema,
+)
 
 blueprint = Blueprint(
     "media",
@@ -42,6 +46,21 @@ class MediaUpload(MethodView):
         session_id = request.args.get("session_id")
         space_id = request.args.get("space_id")
         return MediaRepository.list_media(current_user, session_id, space_id)
+
+
+class MediaAttach(MethodView):
+    """Link uploads to a chat session."""
+
+    @staticmethod
+    @blueprint.arguments(AttachMediaSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def post(
+        current_user: UserData,
+        request_data: AttachMediaData,
+    ) -> dict[str, Any]:
+        """Attach media uploaded before the chat existed to that session."""
+        return MediaRepository.attach_media(current_user, request_data)
 
 
 class MediaDetail(MethodView):
@@ -103,6 +122,9 @@ class MediaProcess(MethodView):
 
 blueprint.add_url_rule(
     "/", view_func=MediaUpload, endpoint="media_upload"
+)
+blueprint.add_url_rule(
+    "/attach", view_func=MediaAttach, endpoint="media_attach"
 )
 blueprint.add_url_rule(
     "/<media_id>",

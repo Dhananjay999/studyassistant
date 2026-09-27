@@ -63,4 +63,4 @@ export type {
   PopupClosedProps,
 } from "./events";
 export type { AnalyticsUser, TrackPayload } from "./types";
-export { routeName } from "./routeName";
+export { publicPath, routeName } from "./routeName";

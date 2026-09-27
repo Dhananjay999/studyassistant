@@ -36,6 +36,7 @@ export function QuizSetupForm({
   initialTypes,
   initialDifficulty,
   initialExamConfig,
+  initialUseMedia,
   draft,
   onDraftChange,
   mediaAvailable = false,
@@ -49,6 +50,8 @@ export function QuizSetupForm({
   initialTypes?: QuestionType[] | null;
   initialDifficulty?: Difficulty | null;
   initialExamConfig?: ExamConfig | null;
+  /** Pre-select "use my files" (the assistant detected a quiz from uploads). */
+  initialUseMedia?: boolean | null;
   /** A previously-typed form snapshot; wins over `initial*` so closing and
    * reopening the setup popup restores the user's progress. */
   draft?: QuizSetupDraft | null;
@@ -80,7 +83,9 @@ export function QuizSetupForm({
     draft?.types ?? initialTypes ?? [],
   );
   const [instructions, setInstructions] = useState(draft?.instructions ?? "");
-  const [useMedia, setUseMedia] = useState(draft?.useMedia ?? false);
+  const [useMedia, setUseMedia] = useState(
+    draft?.useMedia ?? (mediaAvailable && !!initialUseMedia),
+  );
 
   // Exam Mode: editable marking scheme + timer (see ExamSettingsFields).
   const [exam, setExam] = useState<ExamConfig>(

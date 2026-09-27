@@ -8,6 +8,7 @@ const ROUTES: [RegExp, string][] = [
   [/^\/privacy\/?$/, "privacy"],
   [/^\/terms\/?$/, "terms"],
   [/^\/auth\/callback/, "auth_callback"],
+  [/^\/admin(\/|$)/, "admin"],
   [/^\/share\/[^/]+/, "share"],
   [/^\/quiz\/share\/[^/]+/, "quiz_share"],
   [/^\/quiz\/result\/[^/]+/, "quiz_result_share"],
@@ -32,6 +33,15 @@ export function routeName(pathname: string): string {
     if (re.test(pathname)) return name;
   }
   return "other";
+}
+
+/**
+ * The path that may leave the browser. The admin panel lives at an
+ * unguessable URL; analytics must never record it (page_path, page_url,
+ * landing_page, session entry path), so it is reported as plain "/admin".
+ */
+export function publicPath(pathname: string): string {
+  return routeName(pathname) === "admin" ? "/admin" : pathname;
 }
 
 // Query params that are safe to attach to page_entry: internal entity ids and

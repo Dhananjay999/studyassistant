@@ -10,6 +10,7 @@ import {
   Trash2,
   Upload,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { MediaProcessingCard } from "@/components/chat/MediaProcessingCard";
 import {
   isMediaReady,
+  isMediaSelectable,
   type FlashcardListItem,
   type MediaItem,
   type QuizListItem,
@@ -47,6 +49,7 @@ export function MediaSidebar({
   onDelete,
   onUpload,
   onRetryUpload,
+  onReprocess,
   onDismissUpload,
   onOpenQuiz,
   onOpenFlashcards,
@@ -67,6 +70,8 @@ export function MediaSidebar({
   onDelete: (id: string) => void | Promise<void>;
   onUpload: (files: FileList) => void;
   onRetryUpload: (id: string) => void;
+  /** Re-run indexing for a file whose earlier processing failed. */
+  onReprocess: (mediaId: string) => void;
   onDismissUpload: (id: string) => void;
   onOpenQuiz: (quizId: string) => void;
   onOpenFlashcards: (setId: string) => void;
@@ -174,6 +179,8 @@ export function MediaSidebar({
           {items.map((m) => {
             const isImage = m.mime_type.startsWith("image/");
             const ready = isMediaReady(m);
+            const failed = m.processing_status === "failed";
+            const selectable = isMediaSelectable(m);
             const isSelected = selected.has(m.id);
             const inThisChat =
               !!activeSessionId && m.session_id === activeSessionId;
@@ -191,7 +198,7 @@ export function MediaSidebar({
               >
                 <Checkbox
                   checked={isSelected}
-                  disabled={!ready}
+                  disabled={!selectable}
                   onCheckedChange={() => onToggle(m.id)}
                   data-analytics-name="Use file as chat context"
                   aria-label={`Use ${m.file_name}`}
@@ -236,12 +243,25 @@ export function MediaSidebar({
                       <span className="text-[10px] text-muted-foreground">
                         {prettySize(m.size_bytes)}
                       </span>
+                    ) : failed ? (
+                      // Kept but not indexed: still usable (answered from
+                      // the raw file); offer a visible retry.
+                      <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        Not indexed
+                        <button
+                          type="button"
+                          onClick={() => onReprocess(m.id)}
+                          data-analytics-name="Retry indexing"
+                          className="ml-0.5 font-semibold underline underline-offset-2 hover:text-foreground"
+                        >
+                          Retry
+                        </button>
+                      </span>
                     ) : (
                       <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                         <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                        {m.processing_status === "failed"
-                          ? "Processing failed"
-                          : "Processing…"}
+                        Processing…
                       </span>
                     )}
                     {inThisChat && (

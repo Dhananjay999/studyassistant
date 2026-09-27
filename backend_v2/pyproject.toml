@@ -36,6 +36,9 @@ format-check = "ruff format --config pyproject.toml --check"
 format = "ruff format --config pyproject.toml"
 type-check = "mypy --config-file pyproject.toml"
 run = "flask --app aeva.app run --debug --port 8000"
+# Re-chunk + re-embed already-indexed uploads onto the current embedding
+# layout (context headers). Local/one-off; see scripts/reindex_media.py.
+reindex-media = "python scripts/reindex_media.py"
 
 [tool.ruff]
 line-length = 80
@@ -55,6 +58,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]
+# Tests: asserts, private-member access, and magic numbers are the point.
+"tests/*" = [
+    "S101", "SLF001", "PLR2004", "D", "ANN", "INP001", "E501", "ARG",
+]
+"scripts/*" = ["INP001", "T201"]
 
 [tool.mypy]
 python_version = "3.12"

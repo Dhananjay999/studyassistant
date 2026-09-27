@@ -1,9 +1,16 @@
 // Entry point for the secret admin route. Owns its own auth gate (independent
-// of the user app) and a lightweight in-memory view router. Rendered by a
-// single <Route> in App.tsx, outside ProtectedRoute.
+// of the user app) and a lightweight view router. Rendered by a single
+// <Route> in App.tsx, outside ProtectedRoute.
+//
+// The current view lives in the URL's search params (`?v=users`,
+// `?v=user&id=…`, `?v=resource&r=files`) so the browser/phone Back button
+// walks user detail → users instead of leaving the panel, and a refresh
+// keeps the admin where they were. Only known keys are read; anything else
+// falls back to the overview.
 
-import { useState } from "react";
+import { useCallback, useMemo } from "react";
 import { Helmet } from "react-helmet-async";
+import { useSearchParams } from "react-router-dom";
 import {
   BookMarked,
   Bug,
@@ -38,17 +45,22 @@ import { AdminDevTools } from "@/pages/admin/AdminDevTools";
 import { AdminFeatureFlags } from "@/pages/admin/AdminFeatureFlags";
 import type { ResourceKey } from "@/types/admin";
 
+const SIMPLE_VIEWS = [
+  "overview",
+  "users",
+  "search",
+  "debug",
+  "flags",
+  "audit",
+  "devtools",
+  "danger",
+] as const;
+type SimpleView = (typeof SIMPLE_VIEWS)[number];
+
 type View =
-  | { name: "overview" }
-  | { name: "users" }
+  | { name: SimpleView }
   | { name: "user"; id: string }
-  | { name: "resource"; resource: ResourceKey }
-  | { name: "search" }
-  | { name: "debug" }
-  | { name: "flags" }
-  | { name: "audit" }
-  | { name: "devtools" }
-  | { name: "danger" };
+  | { name: "resource"; resource: ResourceKey };
 
 const RESOURCE_KEYS: ResourceKey[] = [
   "sessions",
@@ -57,6 +69,39 @@ const RESOURCE_KEYS: ResourceKey[] = [
   "bookmarks",
   "files",
 ];
+
+/** Nav key → the view it opens (typed lookup; unknown keys do nothing). */
+const NAV_TO_VIEW: Record<string, View> = {
+  ...Object.fromEntries(
+    SIMPLE_VIEWS.map((name): [string, View] => [name, { name }]),
+  ),
+  ...Object.fromEntries(
+    RESOURCE_KEYS.map((resource): [string, View] => [
+      resource,
+      { name: "resource", resource },
+    ]),
+  ),
+};
+
+function parseView(params: URLSearchParams): View {
+  const v = params.get("v") ?? "";
+  if (v === "user") {
+    const id = params.get("id");
+    return id ? { name: "user", id } : { name: "users" };
+  }
+  if (v === "resource") {
+    const resource = RESOURCE_KEYS.find((key) => key === params.get("r"));
+    return resource ? { name: "resource", resource } : { name: "overview" };
+  }
+  const simple = SIMPLE_VIEWS.find((name) => name === v);
+  return { name: simple ?? "overview" };
+}
+
+function viewToParams(view: View): Record<string, string> {
+  if (view.name === "user") return { v: "user", id: view.id };
+  if (view.name === "resource") return { v: "resource", r: view.resource };
+  return view.name === "overview" ? {} : { v: view.name };
+}
 
 const NAV: AdminNavItem[] = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
@@ -84,26 +129,20 @@ function CenterLoader() {
 
 function AdminInner() {
   const { status, username, logout } = useAdminAuth();
-  const [view, setView] = useState<View>({ name: "overview" });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = useMemo(() => parseView(searchParams), [searchParams]);
+  const setView = useCallback(
+    (next: View, options?: { replace?: boolean }) =>
+      setSearchParams(viewToParams(next), { replace: options?.replace }),
+    [setSearchParams],
+  );
 
   if (status === "checking") return <CenterLoader />;
   if (status === "anon") return <AdminLogin />;
 
   const navigate = (key: string) => {
-    if (
-      key === "overview" ||
-      key === "users" ||
-      key === "search" ||
-      key === "debug" ||
-      key === "flags" ||
-      key === "audit" ||
-      key === "devtools" ||
-      key === "danger"
-    ) {
-      setView({ name: key });
-    } else if ((RESOURCE_KEYS as string[]).includes(key)) {
-      setView({ name: "resource", resource: key as ResourceKey });
-    }
+    const target = NAV_TO_VIEW[key];
+    if (target) setView(target);
   };
 
   const active =
@@ -112,9 +151,14 @@ function AdminInner() {
       : view.name === "resource"
         ? view.resource
         : view.name;
+  const activeLabel = NAV.find((item) => item.key === active)?.label;
 
   return (
-    <AdminShell
+    <>
+      <Helmet>
+        <title>{activeLabel ? `${activeLabel} · Admin` : "Admin"}</title>
+      </Helmet>
+      <AdminShell
       nav={NAV}
       active={active}
       onNavigate={navigate}
@@ -131,7 +175,8 @@ function AdminInner() {
         <AdminUserDetail
           userId={view.id}
           onBack={() => setView({ name: "users" })}
-          onDeleted={() => setView({ name: "users" })}
+          // Replace: Back must never return to a user that no longer exists.
+          onDeleted={() => setView({ name: "users" }, { replace: true })}
         />
       )}
       {view.name === "resource" && (
@@ -143,7 +188,8 @@ function AdminInner() {
       {view.name === "flags" && <AdminFeatureFlags />}
       {view.name === "devtools" && <AdminDevTools />}
       {view.name === "danger" && <AdminDangerZone />}
-    </AdminShell>
+      </AdminShell>
+    </>
   );
 }
 

@@ -236,6 +236,61 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["RAG_ATTACHMENT_FALLBACK"] = (
         os.environ.get("RAG_ATTACHMENT_FALLBACK", "true").lower() == "true"
     )
+    # Retrieval quality knobs, read once per query by
+    # aeva.media.retrieval.RetrievalOptions.from_config (defaults mirror it).
+    for flag, default in (
+        ("RAG_HYBRID", True),
+        ("RAG_QUERY_REWRITE", True),
+        ("RAG_MULTI_QUERY", True),
+    ):
+        app.config[flag] = (
+            os.environ.get(flag, str(default)).lower() in ("1", "true", "yes")
+        )
+    for int_key, int_default in (
+        ("RAG_VECTOR_CANDIDATES", 24),
+        ("RAG_FTS_CANDIDATES", 24),
+        ("RAG_RRF_K", 60),
+        ("RAG_MIN_RESULTS", 3),
+        ("RAG_PER_DOC_MIN", 1),
+        ("RAG_NEIGHBOR_WINDOW", 1),
+        ("RAG_CONTEXT_MAX_CHARS", 24000),
+        ("RAG_EXACT_SCAN_MAX", 5000),
+        ("RAG_EF_SEARCH", 100),
+        ("RAG_REWRITE_HISTORY_TURNS", 6),
+        ("RAG_RERANK_CANDIDATES", 20),
+        # Hard per-chunk ceiling (an oversized paragraph/page is split) and
+        # the size above which a table is split by rows.
+        ("RAG_CHUNK_MAX_TOKENS", 640),
+        ("RAG_TABLE_MAX_CHARS", 6000),
+        # Excerpts handed to quiz/flashcard generation from the uploads
+        # (coverage over precision, so more than the answer's RAG_TOP_K).
+        ("QUIZ_RAG_TOP_K", 16),
+    ):
+        app.config[int_key] = int(os.environ.get(int_key, str(int_default)))
+    for float_key, float_default in (
+        ("RAG_MIN_SIMILARITY", 0.40),
+        ("RAG_FLOOR_SIMILARITY", 0.25),
+        ("RAG_RERANK_TIMEOUT_S", 2.5),
+    ):
+        app.config[float_key] = float(
+            os.environ.get(float_key, str(float_default))
+        )
+    # "llm" reranks the top candidates on the fast model; "none" skips it.
+    app.config["RAG_RERANK"] = os.environ.get("RAG_RERANK", "llm").lower()
+
+    # Multi-agent turns (see aeva.orchestration.agent_runner): how many
+    # generator agents may run concurrently inside one request, how long one
+    # may take before it is reported as failed, and how much of an earlier
+    # agent's text a dependent generator receives.
+    app.config["AGENT_MAX_PARALLEL"] = int(
+        os.environ.get("AGENT_MAX_PARALLEL", "3")
+    )
+    app.config["AGENT_STEP_TIMEOUT_S"] = float(
+        os.environ.get("AGENT_STEP_TIMEOUT_S", "90")
+    )
+    app.config["PRIOR_CONTEXT_MAX_CHARS"] = int(
+        os.environ.get("PRIOR_CONTEXT_MAX_CHARS", "12000")
+    )
 
     app.config["QUIZ_MAX_QUESTIONS"] = int(
         os.environ.get("QUIZ_MAX_QUESTIONS", "10")

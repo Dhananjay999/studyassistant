@@ -30,11 +30,12 @@ class WebSearchTool(BaseTool):
         return ToolDefinition(
             name="web_search",
             description=(
-                "Search the web ONLY for external or up-to-date information "
-                "Aeva cannot already know — latest news, current events, live "
-                "prices/scores, today's weather, recent releases, current "
-                "dates/schedules. For anything answerable from existing "
-                "knowledge, use `general` instead."
+                "Search the web for external or up-to-date information: "
+                "news and events, live prices/scores, releases, current "
+                "dates/schedules, and any real-world product, service, "
+                "college or exam question — recommendations ('best X'), "
+                "comparisons ('X vs Y'), specs, reviews, prices, rankings. "
+                "Timeless subject matter belongs to `general`."
             ),
             parameters_schema=prompts.WEB_SEARCH_PARAMS,
         )
@@ -44,14 +45,27 @@ class WebSearchTool(BaseTool):
         """Grounded web answers are their own response category."""
         return RESPONSE_WEB_SEARCH
 
-    def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
-        """Run web search grounded generation."""
+    @staticmethod
+    def _render(
+        ctx: ToolContext, params: dict[str, Any]
+    ) -> tuple[prompts.RenderedPrompt, str, str]:
+        """Resolve the query + intent and render the prompt once."""
         query = params.get("query") or ctx.enriched_message
+        intent = params.get("search_intent")
+        if intent not in prompts.SEARCH_INTENTS:
+            intent = prompts.guess_search_intent(query)
         rendered = prompts.PromptBuilder.build(
             prompts.WEB_SEARCH_TEMPLATE,
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+            SEARCH_MODE=prompts.search_mode_block(intent),
+            CURRENT_DATE=prompts.current_date(),
         )
+        return rendered, query, str(intent)
+
+    def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
+        """Run web search grounded generation."""
+        rendered, _query, intent = self._render(ctx, params)
         llm = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL")
         answer = llm.generate(
             rendered.user_message,
@@ -62,6 +76,7 @@ class WebSearchTool(BaseTool):
         return {
             "answer": answer,
             "sources": llm.last_sources,
+            "search_intent": intent,
         }
 
     def can_stream(self) -> bool:
@@ -75,12 +90,7 @@ class WebSearchTool(BaseTool):
     ) -> Generator[str, None, dict[str, Any]]:
         """Stream the grounded answer, returning answer + sources at the end."""
         llm = self.resolve_llm(ctx, "LLM_WEB_SEARCH_MODEL")
-        query = params.get("query") or ctx.enriched_message
-        rendered = prompts.PromptBuilder.build(
-            prompts.WEB_SEARCH_TEMPLATE,
-            USER_MESSAGE=query,
-            USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
-        )
+        rendered, _query, intent = self._render(ctx, params)
         answer = ""
         for chunk in llm.generate_stream(
             rendered.user_message,
@@ -90,4 +100,8 @@ class WebSearchTool(BaseTool):
         ):
             answer += chunk
             yield chunk
-        return {"answer": answer, "sources": llm.last_sources}
+        return {
+            "answer": answer,
+            "sources": llm.last_sources,
+            "search_intent": intent,
+        }

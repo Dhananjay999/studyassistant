@@ -16,6 +16,7 @@ from aeva.media.compression import (
     ALLOWED_PDF_TYPE,
     compress_media,
 )
+from aeva.media.schema.media_schema import AttachMediaData
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,27 @@ class MediaRepository:
         for item in items:
             item["signed_url"] = urls.get(item["storage_path"], "")
         return success_response("Media retrieved", items)
+
+    @staticmethod
+    def attach_media(
+        current_user: UserData, data: AttachMediaData
+    ) -> dict[str, Any]:
+        """Link uploads that pre-date a chat to that session.
+
+        A file uploaded on a fresh "New chat" screen has no session yet; the
+        client calls this once the session exists so session-scoped lookups
+        (and "This chat" badges) find it. Owner-checked on both sides.
+        """
+        supabase = SupabaseService()
+        if not supabase.get_session(data.session_id, current_user.id):
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        supabase.attach_media_to_session(
+            data.media_ids, data.session_id, current_user.id
+        )
+        return success_response(
+            "Media attached",
+            {"session_id": data.session_id, "media_ids": data.media_ids},
+        )
 
     @staticmethod
     def delete_media(

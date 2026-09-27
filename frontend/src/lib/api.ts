@@ -45,6 +45,7 @@ import type {
   StudySpace,
   User,
 } from "@/types";
+import { mapAssistantContent } from "@/lib/messageMeta";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { errorKind } from "@/lib/errorMessage";
 
@@ -70,6 +71,7 @@ export const ENDPOINTS = {
   MEDIA_ITEM: (id: string) => `/media/${id}`,
   MEDIA_STATUS: (id: string) => `/media/${id}/status`,
   MEDIA_PROCESS: (id: string) => `/media/${id}/process`,
+  MEDIA_ATTACH: "/media/attach",
   ASSISTANT_STREAM: "/assistant/stream",
   QUIZZES: "/quiz/",
   QUIZ_EXAM_PATTERNS: "/quiz/exam-patterns",
@@ -374,27 +376,13 @@ export async function getMessages(id: string): Promise<Message[]> {
       content: m.content,
       createdAt: new Date(m.created_at),
       meta: {
-        // sources live under metadata.content on the backend, not top-level.
-        sources: (inner.sources as Message["meta"]["sources"]) || [],
-        tool_used: toolUsed,
-        // Present only for Developer Mode users (backend attaches them).
-        model: inner.model as string | undefined,
-        debug: inner.debug as Message["meta"]["debug"],
-        images: inner.images as Message["meta"]["images"],
+        // The turn result lives under metadata.content; the same mapper as
+        // the live stream, so a reloaded thread renders identically
+        // (quiz/flashcard cards, images, agent roster, follow-ups).
+        ...mapAssistantContent(inner, toolUsed),
         status: md.status as Message["meta"]["status"],
         run_id: md.run_id as string | undefined,
         clarification: md.clarification as Message["meta"]["clarification"],
-        // Only quiz/flashcard messages carry their respective content.
-        quiz:
-          toolUsed === "quiz_generator"
-            ? (inner as unknown as QuizContent)
-            : undefined,
-        flashcards:
-          toolUsed === "flashcard_generator"
-            ? (inner as unknown as Message["meta"]["flashcards"])
-            : undefined,
-        available_actions: inner.available_actions as string[] | undefined,
-        response_type: inner.response_type as string | undefined,
       },
     } satisfies Message;
   });
@@ -479,6 +467,13 @@ export const getMediaStatus = (id: string) =>
 /** Absolute URL of the media processing SSE stream. */
 export const mediaProcessUrl = (id: string) =>
   `${API_BASE_URL}${ENDPOINTS.MEDIA_PROCESS(id)}`;
+
+/** Link files uploaded before a chat existed to the session created since. */
+export const attachMedia = (sessionId: string, mediaIds: string[]) =>
+  unwrap<{ session_id: string; media_ids: string[] }>(ENDPOINTS.MEDIA_ATTACH, {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, media_ids: mediaIds }),
+  });
 
 /* ---------------------------------- quiz ---------------------------------- */
 

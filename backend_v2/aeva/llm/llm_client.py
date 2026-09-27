@@ -196,11 +196,15 @@ class LLMClient:
         self._log_response(log_label, result)
         return result
 
-    def generate_image(self, prompt: str) -> tuple[bytes, str, str]:
+    def generate_image(
+        self, prompt: str, *, aspect: str = "square"
+    ) -> tuple[bytes, str, str]:
         """Generate one image: ``(bytes, mime_type, caption)``."""
         self._log_request("image", prompt)
-        with self._timed("image", prompt):
-            image, mime, caption = self._provider.generate_image(prompt)
+        with self._timed("image", prompt, f" | aspect={aspect}"):
+            image, mime, caption = self._provider.generate_image(
+                prompt, aspect=aspect
+            )
         logger.info(
             "LLM image ← %d bytes (%s) | caption=%dchars",
             len(image),

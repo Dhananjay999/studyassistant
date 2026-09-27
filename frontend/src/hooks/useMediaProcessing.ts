@@ -6,9 +6,12 @@ export interface ProcessingFrame {
   stage: ProcessingStage;
   pct: number;
   msg?: string;
-  // Present on a terminal error frame: whether the run can be resumed (vs the
-  // backend having scrubbed the record, requiring a fresh re-upload).
+  // Present on a terminal error frame: whether the run can be resumed (a
+  // merely slow parse) — otherwise a retry re-runs indexing from scratch.
   recoverable?: boolean;
+  // The backend kept the media row + file after the failure (always true on
+  // current backends; absent on legacy ones that scrubbed the record).
+  kept?: boolean;
 }
 
 /** Which transport delivered the terminal state (analytics). */
@@ -17,12 +20,17 @@ export type ProcessingVia = "stream" | "poll";
 export interface ProcessingCallbacks {
   onFrame: (frame: ProcessingFrame) => void;
   onReady: (via: ProcessingVia) => void;
-  onError: (message: string, recoverable: boolean, via: ProcessingVia) => void;
+  onError: (
+    message: string,
+    recoverable: boolean,
+    via: ProcessingVia,
+    kept: boolean,
+  ) => void;
 }
 
 const POLL_INTERVAL_MS = 2500;
-// Give up polling status after this many consecutive failures — the record was
-// likely scrubbed by the backend's failure cleanup (404s on every read).
+// Give up polling status after this many consecutive failures (the record is
+// unreadable — deleted, or the network is gone).
 const MAX_POLL_MISSES = 3;
 
 /**
@@ -59,7 +67,7 @@ export function useMediaProcessing() {
         } catch {
           misses += 1;
           if (misses >= MAX_POLL_MISSES) {
-            cb.onError("Processing failed.", false, "poll");
+            cb.onError("Processing failed.", false, "poll", false);
             stopOne(mediaId);
             return;
           }
@@ -72,10 +80,12 @@ export function useMediaProcessing() {
           return;
         }
         if (status === "error" || status === "failed") {
+          // A failed row is kept server-side; retry re-runs indexing.
           cb.onError(
             item.processing_error || "Processing failed.",
             true,
             "poll",
+            true,
           );
           stopOne(mediaId);
           return;
@@ -132,6 +142,7 @@ export function useMediaProcessing() {
                 frame.msg || "Processing failed.",
                 !!frame.recoverable,
                 "stream",
+                !!frame.kept,
               );
               stopOne(mediaId);
               return;
