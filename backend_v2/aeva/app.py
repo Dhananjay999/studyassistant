@@ -18,6 +18,7 @@ from aeva.bookmark.bookmark_controller import blueprint as bookmark_bp
 from aeva.chat.chat_controller import blueprint as chat_bp
 from aeva.common.errors import CustomError
 from aeva.common.logging_config import preview, setup_logging
+from aeva.common.sentry import capture_exception, init_sentry
 from aeva.containers import Container
 from aeva.delay.delay_controller import blueprint as delay_bp
 from aeva.feature_flag import feature_flag_service
@@ -428,10 +429,11 @@ def _register_request_logging(app: Flask) -> None:
         return response
 
 
-def create_app() -> Flask:
+def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
     """Create and configure the Flask application."""
     load_dotenv()
     setup_logging()
+    init_sentry()
     app = Flask(__name__)
     load_env_vars(app)
     logger.info("Aeva backend starting up")
@@ -507,6 +509,7 @@ def create_app() -> Flask:
     @app.errorhandler(Exception)
     def handle_generic_error(error: Exception) -> tuple[Any, int]:
         """Handle unexpected errors."""
+        capture_exception(error)
         logger.exception(
             "Unhandled error on %s %s", request.method, request.path
         )

@@ -20,6 +20,7 @@ import { queryClient } from "@/lib/queryClient";
 import { noteLandingLogin } from "@/lib/analytics/landing";
 import { qk } from "@/hooks/api";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { setSentryUser } from "@/lib/sentry";
 import type { User } from "@/types";
 
 type LoadReason = "boot" | "login" | "refresh";
@@ -130,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // nothing after this point is attributed to the signed-out user, and
     // push any queued events out before the page goes away.
     analytics.reset();
+    setSentryUser(null);
     analytics.flush();
     clearSession();
     queryClient.clear();
@@ -205,6 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Single place identity reaches analytics: covers popup login, redirect
     // login and boot restore. The anonymous trail merges into this person.
     analytics.identify(me);
+    setSentryUser(me.id);
     if (reason === "login") {
       noteLandingLogin("succeeded");
       analytics.track(AnalyticsEvent.LOGIN_SUCCEEDED, {

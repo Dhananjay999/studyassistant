@@ -8,6 +8,11 @@ import { initAnalytics } from "./lib/analytics";
 import { initAppMode } from "./lib/appMode";
 import { attachGlobalRipple } from "./lib/ripple";
 import { API_BASE_URL } from "./lib/api";
+import { initSentry } from "./lib/sentry";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
+
+// First, so a crash anywhere in boot is still reported (SDK loads async).
+initSentry();
 
 // Before first paint: detect native-app (WebView) mode and install the
 // delegated touch ripple so every tappable gets native-feeling feedback.
@@ -30,10 +35,10 @@ try {
 }
 
 createRoot(document.getElementById("root")!).render(
-  <>
+  <ErrorBoundary>
     <App />
     <Analytics />
-  </>,
+  </ErrorBoundary>,
 );
 
 initAnalytics();

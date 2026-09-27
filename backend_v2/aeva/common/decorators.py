@@ -7,6 +7,7 @@ from flask import request
 
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import UserData
+from aeva.common.sentry import set_user
 from aeva.supabase.supabase_service import SupabaseService
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -33,6 +34,7 @@ def user_required(func: F) -> F:
             full_name=user.get("full_name"),
             avatar_url=user.get("avatar_url"),
         )
+        set_user(current_user.id)
         return func(current_user, *args, **kwargs)
 
     return wrapper  # type: ignore[return-value]

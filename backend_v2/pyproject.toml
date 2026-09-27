@@ -22,6 +22,7 @@ gunicorn = "^23.0.0"
 requests = "^2.32.0"
 openai = "^1.109.0"
 llama-cloud = "^2.9.0"
+sentry-sdk = {version = "^2.19.0", extras = ["flask"]}
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.0"
