@@ -18,11 +18,13 @@ from aeva.media.retrieval import RetrievalService
 from aeva.quiz import exam_patterns
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
+from aeva.tracing.services import tool_trace
 
 # Types that must resolve to exactly one correct answer.
 _SINGLE_ANSWER_TYPES = frozenset({"single_select", "true_false"})
 
 
+@tool_trace.quiz_repairs
 def _normalize_questions(
     questions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -207,6 +209,7 @@ class QuizGeneratorTool(BaseTool):
         history: list[dict[str, str]] | None = (
             None if grounding.grounded else ctx.history
         )
+        tool_trace.quiz_params(locals())
 
         instructions = params.get("additional_instructions") or "(none)"
         rendered = prompts.PromptBuilder.build(

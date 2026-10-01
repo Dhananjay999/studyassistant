@@ -36,6 +36,7 @@ from aeva.media.retrieval import (
 )
 from aeva.media.retrieval_utils import citation_marker
 from aeva.supabase.supabase_service import SupabaseService
+from aeva.tracing.services import tool_trace
 
 # ``processing_status`` values that mean "the pipeline is still running".
 _IN_PROGRESS_STATUSES = frozenset({
@@ -165,6 +166,7 @@ class MediaLLMTool(BaseTool):
             labels.append(f"{record.get('file_name', 'document')} ({note})")
         return labels
 
+    @tool_trace.media_retrieval
     def _retrieve(
         self, ctx: ToolContext, query: str, indexed: Records
     ) -> RetrievalResult:
@@ -173,6 +175,7 @@ class MediaLLMTool(BaseTool):
             ctx.user_id, query, indexed, history=ctx.history
         )
 
+    @tool_trace.media_whole_files
     def _whole_file_attachments(
         self, ctx: ToolContext, images: Records, raw_docs: Records
     ) -> tuple[list[dict[str, Any]], list[str]]:
@@ -195,6 +198,7 @@ class MediaLLMTool(BaseTool):
         )
         return attachments, self._attached_labels(images, docs)
 
+    @tool_trace.media_prepare
     def _prepare(self, ctx: ToolContext, params: dict[str, Any]) -> _Prepared:
         """Resolve files, retrieve excerpts, and render the prompt."""
         # The retrieval query is a search string (the planner's rewrite, else

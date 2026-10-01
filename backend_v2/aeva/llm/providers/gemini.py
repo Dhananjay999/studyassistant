@@ -16,6 +16,7 @@ from google.genai import types
 
 from aeva.llm import prompts
 from aeva.llm.providers.base import LLMProvider
+from aeva.tracing.services import llm_trace
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,7 @@ class GeminiProvider(LLMProvider):
             contents=self._contents(user_message, attachments, history),
             config=self._config(system_prompt, use_search),
         )
+        llm_trace.note_response(response)
         self.last_sources = self._extract_sources(response)
         return response.text or ""
 
@@ -188,6 +190,7 @@ class GeminiProvider(LLMProvider):
                 response_schema=response_schema,
             ),
         )
+        llm_trace.note_response(response)
         self.last_sources = self._extract_sources(response)
         text = response.text or "{}"
         data: dict[str, Any] = json.loads(text)
@@ -209,6 +212,7 @@ class GeminiProvider(LLMProvider):
             config=self._config(system_prompt, use_search),
         )
         for chunk in stream:
+            llm_trace.note_response(chunk)
             sources = self._extract_sources(chunk)
             if sources:
                 self.last_sources = sources
@@ -243,6 +247,7 @@ class GeminiProvider(LLMProvider):
             contents=prompt,
             config=self._image_config(aspect),
         )
+        llm_trace.note_response(response)
         image: bytes | None = None
         mime = "image/png"
         caption_parts: list[str] = []

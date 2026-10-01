@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/responsive-modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
+import { MessageTraceLink, SessionTracesButton } from "@/components/admin/trace/SessionTraceLinks";
 import { useAdminSession } from "@/hooks/adminApi";
 import { cn } from "@/lib/utils";
 import type { AdminMessage } from "@/types/admin";
@@ -209,6 +210,7 @@ function MessageRow({ m }: { m: AdminMessage }) {
                 )}
               />
             </button>
+            <MessageTraceLink message={m} />
             {showRaw && (
               <pre className="mt-1.5 max-h-72 overflow-auto rounded-lg bg-muted/40 p-2.5 font-mono text-[10px] leading-relaxed">
                 {JSON.stringify(m.metadata, null, 2)}
@@ -293,6 +295,7 @@ export function SessionDialog({
                 <Braces className="h-3 w-3" />
                 Raw
               </Button>
+              <SessionTracesButton sessionId={sessionId} />
             </div>
           </div>
         </ResponsiveModalHeader>

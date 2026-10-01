@@ -17,6 +17,7 @@ from aeva.mcp.base import (
 from aeva.media.grounding import ground_generator
 from aeva.media.retrieval import RetrievalService
 from aeva.supabase.supabase_service import SupabaseService
+from aeva.tracing.services import tool_trace
 
 
 class FlashcardGeneratorTool(BaseTool):
@@ -115,6 +116,7 @@ class FlashcardGeneratorTool(BaseTool):
         history: list[dict[str, str]] | None = (
             None if grounding.grounded else ctx.history
         )
+        tool_trace.flashcard_params(locals())
 
         rendered = prompts.PromptBuilder.build(
             prompts.FLASHCARD_GENERATION_TEMPLATE,

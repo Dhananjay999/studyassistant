@@ -42,6 +42,7 @@ from aeva.orchestration.models import (
     Step,
 )
 from aeva.supabase.supabase_service import SupabaseService
+from aeva.tracing.services import turn_trace
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +239,7 @@ class AssistantOrchestrator:
         """Lazy Supabase client."""
         return self._supabase or SupabaseService()
 
+    @turn_trace.turn
     def run(self, ctx: AssistantContext) -> AssistantResult:
         """Execute one assistant turn (non-streaming)."""
         t_start = time.perf_counter()
@@ -281,6 +283,7 @@ class AssistantOrchestrator:
             display_text=display_text,
         )
 
+    @turn_trace.turn_stream
     def run_stream(
         self, ctx: AssistantContext
     ) -> Generator[str, None, None]:
@@ -408,6 +411,7 @@ class AssistantOrchestrator:
             outcome: TeamOutcome = stop.value
             return outcome
 
+    @turn_trace.finish
     def _finish_turn(
         self,
         plan: dict[str, Any],
@@ -500,6 +504,7 @@ class AssistantOrchestrator:
             return str(steps[index].get("tool"))
         return str(steps[0].get("tool")) if steps else None
 
+    @turn_trace.roster
     def _normalize_steps(
         self, plan: dict[str, Any], message: str
     ) -> list[Step]:
@@ -587,6 +592,7 @@ class AssistantOrchestrator:
             plan["_dropped"] = dropped
         return ([answer] if answer else []) + generators
 
+    @turn_trace.setup
     def _setup_and_plan(
         self, ctx: AssistantContext
     ) -> tuple[
@@ -602,6 +608,7 @@ class AssistantOrchestrator:
         session = self.supabase.get_session(ctx.session_id, ctx.user_id)
         if not session:
             raise CustomError(ERROR_CODES["NOT_FOUND"])
+        turn_trace.session_loaded(ctx)
 
         profile = self.supabase.get_profile(ctx.user_id)
         # Developer Mode rides the profile row that personalization already
@@ -674,11 +681,16 @@ class AssistantOrchestrator:
                 media_choice_query = run.get("original_message") or None
             self._complete_run(ctx.run_id)
 
+        turn_trace.context_loaded(
+            ctx, session, profile, history, personalization, enriched_message
+        )
         # Clarification replies are invisible: the answers are folded into the
         # enriched message for the tool, but no user bubble is persisted — on
         # reload the answer reads as a direct continuation of the original ask.
         if not (ctx.run_id and ctx.clarification):
-            self.supabase.add_message(ctx.session_id, "user", ctx.message)
+            turn_trace.user_message(
+                self.supabase.add_message(ctx.session_id, "user", ctx.message)
+            )
 
         # Deterministic plans (resolved file choice, popover-driven quiz/flash)
         # skip LLM planning entirely. Each path stamps `_source` (internal,
@@ -723,6 +735,7 @@ class AssistantOrchestrator:
         plan = self._media_routing_guard(plan, ctx, enriched_message)
         return session, history, enriched_message, plan, personalization
 
+    @turn_trace.branch_forced
     def _forced_plan(
         self,
         ctx: AssistantContext,
@@ -763,6 +776,7 @@ class AssistantOrchestrator:
             "steps": [{"tool": tool, "params": params}],
         }
 
+    @turn_trace.rule_clarify
     def _refine_plan(
         self,
         plan: dict[str, Any],
@@ -801,6 +815,7 @@ class AssistantOrchestrator:
         return self._web_upgrade(plan, enriched_message)
 
     @staticmethod
+    @turn_trace.rule_web_upgrade
     def _web_upgrade(plan: dict[str, Any], message: str) -> dict[str, Any]:
         """Promote a from-memory plan to web_search for product questions.
 
@@ -837,6 +852,7 @@ class AssistantOrchestrator:
         return plan
 
     @staticmethod
+    @turn_trace.rule_media_guard
     def _media_routing_guard(
         plan: dict[str, Any],
         ctx: AssistantContext,
@@ -959,6 +975,7 @@ class AssistantOrchestrator:
             "total_ms": int((time.perf_counter() - t_start) * 1000),
             "streamed": streamed,
             "agents": agents or [],
+            **turn_trace.link(),
         }
 
     @staticmethod
@@ -1112,6 +1129,7 @@ class AssistantOrchestrator:
         ]
 
     @staticmethod
+    @turn_trace.named_files
     def _names_in_message(
         message: str, files: list[dict[str, str]]
     ) -> list[dict[str, str]]:
@@ -1125,6 +1143,7 @@ class AssistantOrchestrator:
                 found.append(f)
         return found
 
+    @turn_trace.branch_media_choice
     def _disambiguate_media(
         self, ctx: AssistantContext, message: str
     ) -> dict[str, Any] | None:
@@ -1224,6 +1243,7 @@ class AssistantOrchestrator:
             config_key=config_key,
         )
 
+    @turn_trace.answer_saved
     def _persist_answer(
         self,
         ctx: AssistantContext,
@@ -1243,6 +1263,7 @@ class AssistantOrchestrator:
                 "tool_used": tool_name,
                 "tools_used": list(tools_used or [tool_name]),
                 "content": result,
+                **turn_trace.link(),
             },
         )
         if session["title"] == "New chat":
@@ -1284,6 +1305,7 @@ class AssistantOrchestrator:
             params["exam_config"] = opts.exam_config
         return params
 
+    @turn_trace.outcome_quiz_setup
     def _should_open_quiz_setup(
         self, plan: dict[str, Any], ctx: AssistantContext, message: str
     ) -> bool:
@@ -1460,6 +1482,7 @@ class AssistantOrchestrator:
             annotated.append({"role": item["role"], "content": content})
         return annotated
 
+    @turn_trace.branch_fast_path
     def _fast_path_plan(
         self,
         ctx: AssistantContext,
@@ -1514,6 +1537,7 @@ class AssistantOrchestrator:
             plan["model_config_key"] = "LLM_FAST_MODEL"
         return plan
 
+    @turn_trace.branch_planner
     def _plan_turn(
         self,
         ctx: AssistantContext,
@@ -1731,6 +1755,7 @@ class AssistantOrchestrator:
             "general", {"query": message}
         )
 
+    @turn_trace.branch_continuation
     def _continuation_plan(
         self,
         ctx: AssistantContext,
@@ -1783,6 +1808,7 @@ class AssistantOrchestrator:
             return None
         return None
 
+    @turn_trace.outcome_clarification
     def _handle_clarification(
         self,
         ctx: AssistantContext,
@@ -1833,6 +1859,7 @@ class AssistantOrchestrator:
                         for q in questions
                     ],
                 },
+                **turn_trace.link(),
             },
         )
         return AssistantResult(
@@ -1916,6 +1943,7 @@ class AssistantOrchestrator:
         )
         return result.data[0]
 
+    @turn_trace.resumed_run
     def _get_run(
         self, run_id: str, user_id: str
     ) -> dict[str, Any] | None:

@@ -11,6 +11,7 @@ from aeva.mcp.base import (
     ToolContext,
     ToolDefinition,
 )
+from aeva.tracing.services import tool_trace
 
 
 class WebSearchTool(BaseTool):
@@ -47,6 +48,7 @@ class WebSearchTool(BaseTool):
         return RESPONSE_WEB_SEARCH
 
     @staticmethod
+    @tool_trace.search_intent
     def _render(
         ctx: ToolContext, params: dict[str, Any]
     ) -> tuple[prompts.RenderedPrompt, str, str]:

@@ -30,6 +30,7 @@ from aeva.media.retrieval import (
     partition_media_records,
 )
 from aeva.supabase.supabase_service import SupabaseService
+from aeva.tracing.services import retrieval_trace
 
 # Used when the "topic" is just a pointer at the files ("quiz from this
 # pdf"): search for what a good quiz covers instead of those words.
@@ -74,6 +75,7 @@ def retrieval_query(topic: str) -> str:
     return COVERAGE_QUERY if generic else cleaned
 
 
+@retrieval_trace.grounding
 def ground_generator(
     ctx: ToolContext,
     *,

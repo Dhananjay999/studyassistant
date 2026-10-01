@@ -39,6 +39,7 @@ from aeva.orchestration.models import (
     STEP_KIND_GENERATOR,
     Step,
 )
+from aeva.tracing.services import agent_trace
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,7 @@ class AgentRunner:
 
     # --------------------------------------------------------------- answer
 
+    @agent_trace.answer_step
     def _run_answer(
         self, step: Step
     ) -> Generator[str, None, tuple[str, dict[str, Any], dict[str, Any], bool]]:
@@ -276,6 +278,7 @@ class AgentRunner:
 
     # ----------------------------------------------------------- generators
 
+    @agent_trace.handoff
     def _submit(
         self, step: Step, prior: list[PriorResult]
     ) -> Generator[str, None, None]:
@@ -285,7 +288,9 @@ class AgentRunner:
         outcome = self._outcomes[step.id]
         outcome.status = STATUS_RUNNING
         self._started[step.id] = time.perf_counter()
-        self._futures[step.id] = self._pool.submit(self._work, step, prior)
+        self._futures[step.id] = self._pool.submit(
+            agent_trace.carry(self._work), step, prior
+        )
         yield self._status_frame(outcome)
 
     def _work(self, step: Step, prior: list[PriorResult]) -> None:
@@ -297,7 +302,7 @@ class AgentRunner:
                 ctx.report = lambda note: self._events.put(
                     ("note", step.id, note)
                 )
-                result = self._registry.execute(step.tool, ctx, step.params)
+                result = agent_trace.run_step(self._registry.execute, step, ctx)
             except Exception as exc:  # reported to the client, not raised
                 logger.exception("Agent %s failed", step.tool)
                 self._events.put(("failed", step.id, (
@@ -337,6 +342,7 @@ class AgentRunner:
             if outcome.status == STATUS_RUNNING and sid in self._futures
         ]
 
+    @agent_trace.timeouts
     def _expire_timeouts(self) -> Generator[str, None, None]:
         """Mark agents past the per-agent timeout as failed."""
         now = time.perf_counter()

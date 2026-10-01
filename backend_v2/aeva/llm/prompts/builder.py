@@ -42,6 +42,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 
+from aeva import tracing
 from aeva.common.logging_config import prompt_debug_enabled
 
 logger = logging.getLogger(__name__)
@@ -144,6 +145,7 @@ class PromptBuilder:
             )
         rendered = RenderedPrompt(system_prompt=system, user_message=user)
         cls._debug(template, rendered)
+        tracing.record_prompt(template, values, rendered)
         return rendered
 
     @classmethod

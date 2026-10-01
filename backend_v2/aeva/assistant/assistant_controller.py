@@ -13,6 +13,7 @@ from aeva.common.decorators import user_required
 from aeva.common.errors import CustomError
 from aeva.common.schema import ResponseEnvelopeSchema, UserData
 from aeva.llm.llm_client import LLMClient
+from aeva.tracing.services import turn_trace
 
 blueprint = Blueprint(
     "assistant",
@@ -97,6 +98,8 @@ class AssistantStreamEndpoint(MethodView):
                     # completing with a half-written answer.
                     app.logger.exception("Assistant stream failed")
                     yield sse_error_for(exc)
+                finally:
+                    turn_trace.flush()
 
         return Response(
             generate(),

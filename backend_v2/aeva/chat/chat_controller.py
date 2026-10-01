@@ -12,6 +12,7 @@ from aeva.chat.chat_repository import ChatRepository
 from aeva.chat.schema.chat_schema import ChatRequestSchema
 from aeva.common.decorators import user_required
 from aeva.common.schema import ResponseEnvelopeSchema, UserData
+from aeva.tracing.services import turn_trace
 
 blueprint = Blueprint(
     "chat",
@@ -60,6 +61,8 @@ class ChatStreamEndpoint(MethodView):
                     # error frame instead of dropping the connection.
                     app.logger.exception("Chat stream failed")
                     yield sse_error_for(exc)
+                finally:
+                    turn_trace.flush()
 
         return Response(
             generate(),

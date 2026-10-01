@@ -18,6 +18,7 @@ from aeva.mcp.base import (
     ToolContext,
     ToolDefinition,
 )
+from aeva.tracing.services import tool_trace
 
 
 class ProductInfoTool(BaseTool):
@@ -51,6 +52,7 @@ class ProductInfoTool(BaseTool):
         """A plain conversational answer."""
         return RESPONSE_NORMAL
 
+    @tool_trace.planner_query
     def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict[str, Any]:
         """Answer from the product knowledge block."""
         query = params.get("query") or ctx.enriched_message
@@ -70,6 +72,7 @@ class ProductInfoTool(BaseTool):
         """Product answers stream token-by-token."""
         return True
 
+    @tool_trace.planner_query
     def execute_stream(
         self,
         ctx: ToolContext,

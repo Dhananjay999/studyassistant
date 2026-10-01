@@ -28,6 +28,7 @@ import {
   Users as UsersIcon,
 } from "lucide-react";
 import { AdminShell, type AdminNavItem } from "@/components/admin/AdminShell";
+import { TRACE_NAV } from "@/components/admin/trace/traceRoutes";
 import {
   AdminAuthProvider,
   useAdminAuth,
@@ -43,6 +44,7 @@ import { AdminDangerZone } from "@/pages/admin/AdminDangerZone";
 import { AdminDebugUsers } from "@/pages/admin/AdminDebugUsers";
 import { AdminDevTools } from "@/pages/admin/AdminDevTools";
 import { AdminFeatureFlags } from "@/pages/admin/AdminFeatureFlags";
+import { AdminTraceViews } from "@/pages/admin/AdminTraceViews";
 import type { ResourceKey } from "@/types/admin";
 
 const SIMPLE_VIEWS = [
@@ -54,6 +56,8 @@ const SIMPLE_VIEWS = [
   "audit",
   "devtools",
   "danger",
+  "traces",
+  "prompts",
 ] as const;
 type SimpleView = (typeof SIMPLE_VIEWS)[number];
 
@@ -112,6 +116,7 @@ const NAV: AdminNavItem[] = [
   { key: "bookmarks", label: "Bookmarks", icon: BookMarked },
   { key: "files", label: "Files", icon: FileText },
   { key: "search", label: "Search", icon: Search },
+  ...TRACE_NAV,
   { key: "debug", label: "Debug Users", icon: Bug },
   { key: "flags", label: "Feature Flags", icon: Flag },
   { key: "audit", label: "Audit Log", icon: ScrollText },
@@ -185,6 +190,7 @@ function AdminInner() {
       {view.name === "search" && (
         <AdminSearch onOpenUser={(id) => setView({ name: "user", id })} />
       )}
+      <AdminTraceViews />
       {view.name === "flags" && <AdminFeatureFlags />}
       {view.name === "devtools" && <AdminDevTools />}
       {view.name === "danger" && <AdminDangerZone />}

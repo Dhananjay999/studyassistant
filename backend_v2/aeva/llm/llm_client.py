@@ -17,6 +17,7 @@ from aeva.common.logging_config import log_full_llm_requests, preview
 from aeva.llm import prompts
 from aeva.llm.providers.base import LLMProvider
 from aeva.llm.providers.factory import create_provider
+from aeva.tracing.services import llm_trace
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,7 @@ class LLMClient:
         """Grounding citations captured from the most recent call."""
         return self._provider.last_sources
 
+    @llm_trace.trace_generate
     def generate(
         self,
         user_message: str,
@@ -196,6 +198,7 @@ class LLMClient:
         self._log_response(log_label, result)
         return result
 
+    @llm_trace.trace_image
     def generate_image(
         self, prompt: str, *, aspect: str = "square"
     ) -> tuple[bytes, str, str]:
@@ -213,6 +216,7 @@ class LLMClient:
         )
         return image, mime, caption
 
+    @llm_trace.trace_structured
     def generate_structured(
         self,
         user_message: str,
@@ -246,6 +250,7 @@ class LLMClient:
         self._log_response(log_label, result)
         return result
 
+    @llm_trace.trace_stream
     def generate_stream(
         self,
         user_message: str,
@@ -305,6 +310,7 @@ class LLMClient:
 
         return _streamed()
 
+    @llm_trace.trace_embed
     def embed(
         self,
         texts: list[str],

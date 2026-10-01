@@ -6,6 +6,7 @@ from aeva.assistant.schema.assistant_schema import AssistantRequestData
 from aeva.common.schema import UserData, success_response
 from aeva.orchestration.assistant_orchestrator import AssistantOrchestrator
 from aeva.orchestration.models import AssistantContext, RunStatus
+from aeva.tracing.services import turn_trace
 
 
 class AssistantRepository:
@@ -40,6 +41,7 @@ class AssistantRepository:
         yield from orchestrator.run_stream(ctx)
 
     @staticmethod
+    @turn_trace.flush_after_response
     def process(
         current_user: UserData,
         request_data: AssistantRequestData,

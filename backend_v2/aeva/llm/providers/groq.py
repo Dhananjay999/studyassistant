@@ -21,6 +21,7 @@ from openai import OpenAI
 
 from aeva.llm import prompts
 from aeva.llm.providers.base import LLMProvider
+from aeva.tracing.services import llm_trace
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletionMessageParam
@@ -90,6 +91,7 @@ class GroqProvider(LLMProvider):
                 f"{', '.join(skipped)} are not supported by this provider "
                 "and were not included.]"
             )
+            llm_trace.note_dropped_attachments(user_message, text)
         parts.insert(0, {"type": "text", "text": text})
         return parts
 
@@ -105,6 +107,7 @@ class GroqProvider(LLMProvider):
         system = system_prompt or prompts.SYSTEM_PROMPT
         if schema_hint:
             system = f"{system}\n\n{schema_hint}"
+            llm_trace.note_schema_hint(schema_hint)
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system}
@@ -138,6 +141,7 @@ class GroqProvider(LLMProvider):
             ),
             **self._params(),
         )
+        llm_trace.note_response(response)
         return response.choices[0].message.content or ""
 
     def generate_structured(
@@ -174,6 +178,7 @@ class GroqProvider(LLMProvider):
             ),
             **self._params(),
         )
+        llm_trace.note_response(response)
         text = response.choices[0].message.content or "{}"
         data: dict[str, Any] = json.loads(text)
         return data
@@ -200,6 +205,7 @@ class GroqProvider(LLMProvider):
             **self._params(),
         )
         for chunk in stream:
+            llm_trace.note_response(chunk)
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta.content

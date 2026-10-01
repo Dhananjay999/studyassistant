@@ -5,6 +5,8 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from typing import Any
 
+from aeva.tracing.services import agent_trace
+
 # Canonical follow-up action keys a tool can expose to the client. The frontend
 # renders only the actions a response declares — never a hardcoded set.
 ACTION_QUIZ = "QUIZ"
@@ -175,6 +177,7 @@ class BaseTool(ABC):
         """Whether this tool streams text token-by-token via execute_stream."""
         return False
 
+    @agent_trace.model_choice
     def resolve_llm(self, ctx: ToolContext, config_key: str) -> Any:
         """Pick the LLM client for this call, honoring the planner's model.
 

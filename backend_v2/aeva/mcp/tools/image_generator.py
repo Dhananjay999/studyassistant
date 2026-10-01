@@ -28,6 +28,7 @@ from aeva.mcp.base import (
     source_context_block,
 )
 from aeva.supabase.supabase_service import SupabaseService
+from aeva.tracing.services import tool_trace
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,7 @@ class ImageGeneratorTool(BaseTool):
         skill = prompts.pick_skill(
             f"{ctx.message}\n{request}", params.get("style")
         )
+        tool_trace.image_skill(skill, params.get("style"))
         title = _clean_title(params.get("title"), request)
         grounding = source_context_block(
             ctx.prior_results, max_chars=_GROUNDING_MAX_CHARS

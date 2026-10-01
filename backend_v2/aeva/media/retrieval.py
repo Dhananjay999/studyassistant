@@ -47,6 +47,7 @@ from aeva.media.retrieval_utils import (
     rrf_fuse,
 )
 from aeva.supabase.supabase_service import SupabaseService
+from aeva.tracing.services import retrieval_trace
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +235,7 @@ class RetrievalService:
 
     # ------------------------------------------------------------------ main
 
+    @retrieval_trace.retrieve
     def retrieve(
         self,
         user_id: str,
@@ -310,6 +312,7 @@ class RetrievalService:
 
     # --------------------------------------------------------------- rewrite
 
+    @retrieval_trace.rewrite
     def _rewrite(
         self,
         query: str,
@@ -388,6 +391,7 @@ class RetrievalService:
 
     # ---------------------------------------------------------------- search
 
+    @retrieval_trace.search
     def _search_all(
         self,
         user_id: str,
@@ -443,6 +447,7 @@ class RetrievalService:
         diag["candidates"] = len(chunks)
         return chunks
 
+    @retrieval_trace.search_variant
     def _search(
         self,
         vector: list[float],
@@ -542,6 +547,7 @@ class RetrievalService:
             diag["reranked"] = False
         return chunks[: opts.top_k]
 
+    @retrieval_trace.rerank
     def _rerank(
         self,
         query: str,
@@ -565,6 +571,7 @@ class RetrievalService:
         app = current_app._get_current_object()  # type: ignore[attr-defined]  # noqa: SLF001
         llm = self.rewrite_llm
 
+        @retrieval_trace.rerank_call
         def call() -> dict[str, Any]:
             with app.app_context():
                 return llm.generate_structured(

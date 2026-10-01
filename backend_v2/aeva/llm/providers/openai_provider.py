@@ -36,6 +36,7 @@ from openai import APIConnectionError, APIStatusError, OpenAI
 
 from aeva.llm import prompts
 from aeva.llm.providers.base import LLMProvider
+from aeva.tracing.services import llm_trace
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletionMessageParam
@@ -174,6 +175,7 @@ class OpenAIProvider(LLMProvider):
                 f"{', '.join(skipped)} are not supported by this provider "
                 "and were not included.]"
             )
+            llm_trace.note_dropped_attachments(user_message, text)
         parts.insert(0, {"type": "text", "text": text})
         return parts
 
@@ -189,6 +191,7 @@ class OpenAIProvider(LLMProvider):
         system = system_prompt or prompts.SYSTEM_PROMPT
         if schema_hint:
             system = f"{system}\n\n{schema_hint}"
+            llm_trace.note_schema_hint(schema_hint)
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system}
@@ -267,6 +270,7 @@ class OpenAIProvider(LLMProvider):
             instructions=system_prompt or prompts.SYSTEM_PROMPT,
             input=cast("Any", self._search_input(user_message, history)),
         )
+        llm_trace.note_response(response)
         self._capture_sources(response)
         return response.output_text or ""
 
@@ -297,6 +301,7 @@ class OpenAIProvider(LLMProvider):
             ),
             **self._params(),
         )
+        llm_trace.note_response(response)
         return response.choices[0].message.content or ""
 
     def generate_structured(
@@ -333,6 +338,7 @@ class OpenAIProvider(LLMProvider):
             ),
             **self._params(),
         )
+        llm_trace.note_response(response)
         text = response.choices[0].message.content or "{}"
         data: dict[str, Any] = json.loads(text)
         return data
@@ -364,6 +370,7 @@ class OpenAIProvider(LLMProvider):
                 if delta:
                     yield delta
             elif etype == "response.completed":
+                llm_trace.note_response(getattr(event, "response", None))
                 self._capture_sources(getattr(event, "response", None))
 
     def generate_stream(
@@ -395,6 +402,7 @@ class OpenAIProvider(LLMProvider):
             **self._params(),
         )
         for chunk in stream:
+            llm_trace.note_response(chunk)
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta.content
@@ -429,6 +437,7 @@ class OpenAIProvider(LLMProvider):
         if self.model.startswith("dall-e"):
             kwargs["response_format"] = "b64_json"
         response = self.client.images.generate(**kwargs)
+        llm_trace.note_response(response)
         data = (response.data or [None])[0]
         if data is None or not data.b64_json:
             msg = "OpenAI returned no image data"
@@ -459,6 +468,7 @@ class OpenAIProvider(LLMProvider):
             response = _with_embed_retry(
                 partial(self._embed_batch, batch, output_dimensionality)
             )
+            llm_trace.note_embed_response(response)
             vectors.extend(
                 _l2_normalize(list(item.embedding)) for item in response.data
             )

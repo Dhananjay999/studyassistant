@@ -11,6 +11,7 @@ from flask_cors import CORS
 from flask_smorest import Api
 
 from aeva.admin.admin_controller import blueprint as admin_bp
+from aeva.admin.trace_controller import blueprint as admin_trace_bp
 from aeva.analytics.analytics_controller import blueprint as analytics_bp
 from aeva.assistant.assistant_controller import blueprint as assistant_bp
 from aeva.auth.auth_controller import blueprint as auth_bp
@@ -486,6 +487,7 @@ def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
     api.register_blueprint(learning_profile_bp)
     api.register_blueprint(analytics_bp)
     api.register_blueprint(admin_bp)
+    api.register_blueprint(admin_trace_bp)
     api.register_blueprint(delay_bp)
 
     _register_request_logging(app)
