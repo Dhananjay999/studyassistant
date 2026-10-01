@@ -19,6 +19,8 @@ from aeva.flashcard.schema.flashcard_schema import (
     StudyBatchSchema,
     StudySchema,
 )
+from aeva.generation.generation_service import GenerationService
+from aeva.generation.schema.generation_schema import FlashcardGenerateSchema
 from aeva.revision.revision_service import RevisionService
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,20 @@ class FlashcardList(MethodView):
             current_user.id, request.args.get("space_id")
         )
         return success_response("Flashcard sets retrieved", sets)
+
+
+class FlashcardGenerateEndpoint(MethodView):
+    """Create a flashcard set directly from the Flashcards page."""
+
+    @staticmethod
+    @blueprint.arguments(FlashcardGenerateSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def post(current_user: UserData, request_data: object) -> dict[str, Any]:
+        """Generate a set from a topic, files or a note and save it."""
+        return GenerationService().create_flashcards(
+            current_user.id, request_data
+        )
 
 
 class FlashcardDetail(MethodView):
@@ -121,6 +137,12 @@ class FlashcardStudyBatchEndpoint(MethodView):
 
 blueprint.add_url_rule(
     "/", view_func=FlashcardList, endpoint="flashcard_list"
+)
+# Registered before "/<set_id>" so the static path isn't captured as an id.
+blueprint.add_url_rule(
+    "/generate",
+    view_func=FlashcardGenerateEndpoint,
+    endpoint="flashcard_generate",
 )
 blueprint.add_url_rule(
     "/<set_id>",

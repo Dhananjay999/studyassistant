@@ -461,6 +461,44 @@ export interface QuizOptions {
   exam_config?: ExamConfig;
 }
 
+/**
+ * What a quiz / flashcard set is created from on the Quizzes and Flashcards
+ * pages: a typed topic, uploaded files, or a saved note. `topic` doubles as an
+ * optional focus for the file and note sources.
+ */
+export type GenerationSourceKind = "topic" | "files" | "note";
+
+export interface GenerationSource {
+  source: GenerationSourceKind;
+  topic?: string;
+  media_ids?: string[];
+  note_id?: string;
+  space_id?: string;
+}
+
+/** `POST /quiz/generate` — the Chat quiz-setup options plus a source. */
+export type QuizGenerateRequest = GenerationSource &
+  Omit<QuizOptions, "topic" | "use_media">;
+
+export interface QuizGenerateResult {
+  quiz_id: string;
+  title: string;
+  topic: string;
+}
+
+/** `POST /flashcards/generate`. */
+export type FlashcardGenerateRequest = GenerationSource & {
+  count?: number;
+  /** Optional free-text guidance (focus, style, level of detail). */
+  additional_instructions?: string;
+};
+
+export interface FlashcardGenerateResult {
+  set_id: string;
+  title: string;
+  topic: string;
+}
+
 /** Lifecycle of one agent in a multi-agent turn. */
 export type AgentStatus = "queued" | "running" | "done" | "failed";
 export type AgentKind = "answer" | "generator";
@@ -793,6 +831,8 @@ export type FeatureKey =
 export interface AppConfig {
   max_quiz_questions: number;
   /** Optional so a frontend deployed ahead of the backend still works. */
+  max_flashcard_cards?: number;
+  /** Optional so a frontend deployed ahead of the backend still works. */
   features?: Partial<Record<FeatureKey, boolean>>;
 }
 
@@ -906,7 +946,8 @@ export interface QuizListItem {
   quiz_id: string;
   title: string;
   topic: string;
-  session_id: string;
+  /** Null for quizzes created from the Quizzes page rather than a chat. */
+  session_id: string | null;
   created_at: string;
   // "easy" | "medium" | "hard" — persisted at generation time.
   difficulty: string | null;

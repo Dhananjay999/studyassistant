@@ -244,7 +244,8 @@ class QuizGeneratorTool(BaseTool):
         ctx.note("Saving your quiz…")
         quiz = self.quiz_repo.create(
             user_id=ctx.user_id,
-            session_id=ctx.session_id,
+            # Empty for direct (non-chat) creation from the library pages.
+            session_id=ctx.session_id or None,
             quiz_data=quiz_data,
             space_id=ctx.space_id,
         )

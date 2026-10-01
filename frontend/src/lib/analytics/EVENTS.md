@@ -138,8 +138,9 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 
 | Event | When | Properties | Hook |
 |---|---|---|---|
-| `QUIZ_SETUP_REQUESTED` | Setup UI opened by the assistant or `/quiz` | `chat_session_id`, `media_available`, `source: assistant\|slash` | `ChatPage.tsx` |
-| `QUIZ_GENERATION_REQUESTED` | Setup submitted | `question_count`, `difficulty`, `question_types`, `use_media`, `is_exam`, `has_topic`, `has_instructions`, `source: setup\|action` | `ChatPage.handleGenerateQuiz` |
+| `QUIZ_SETUP_REQUESTED` | Setup UI opened by the assistant, `/quiz`, or "Create quiz" on the Quizzes page | `chat_session_id`, `media_available`, `source: assistant\|slash\|quizzes_page`, `entry?: header\|empty_state` | `ChatPage.tsx`, `quiz/CreateQuizPanel.tsx` |
+| `QUIZ_GENERATION_REQUESTED` | Setup submitted | `question_count`, `difficulty`, `question_types`, `use_media`, `is_exam`, `has_topic`, `has_instructions`, `source: setup\|action\|quizzes_page`, `material?: topic\|files\|note` | `ChatPage.handleGenerateQuiz`, `CreateQuizPanel` |
+| `QUIZ_CREATE_FAILED` | Quizzes-page generation failed | `error_kind`, `material` | `CreateQuizPanel` |
 | `QUIZ_OPENED` | Quiz dashboard opened | `quiz_id`, `initial_view`, `source: chat_card\|quizzes_page\|deeplink\|bookmark` | `chat/QuizDrawer.tsx` |
 | `QUIZ_STARTED` | Runner mounted (new attempt) | `quiz_id`, `question_count`, `is_exam`, `timer_seconds`, `is_retake`, `is_guest` | `quiz/QuizRunner.tsx` |
 | ★ `QUIZ_COMPLETED` | Submit succeeded | `quiz_id`, `attempt_id?`, `time_taken_s`, `auto_submitted`, `answered_count`, `question_count`, `score`, `total`, `correct`, `partial`, `incorrect`, `unanswered`, `final_score?`, `max_marks?`, `is_guest` | `QuizRunner.submit` |
@@ -149,13 +150,16 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 | `QUIZ_ATTEMPT_OPENED` | Past attempt opened | `quiz_id`, `attempt_id` | `QuizDrawer` |
 | `QUIZ_ANALYSIS_REQUESTED` / `QUIZ_FLASHCARDS_REQUESTED` | Report actions | `quiz_id`, `attempt_id?` | `quiz/QuizAttemptReport.tsx` |
 | `QUIZ_QUESTION_VIEWED` | *(defined, not emitted — opt in if needed)* | `quiz_id`, `question_index` | — |
+| `QUIZ_FULLSCREEN_TOGGLED` | Desktop "Full screen" button while taking a quiz | `quiz_id`, `enabled` | `QuizDrawer.toggleFullscreen` |
 | `QUIZ_EXPORTED` / `QUIZ_SHARED` / `QUIZ_EXAM_CONFIG_UPDATED` | *(defined, not yet emitted)* | see `events.ts` | — |
 
 ## Flashcards — `components/chat/FlashcardViewer.tsx`
 
 | Event | When | Properties |
 |---|---|---|
-| `FLASHCARDS_GENERATION_REQUESTED` | "Create flashcards" from a reply | `chat_session_id`, `source` (`ChatPage.tsx`) |
+| `FLASHCARDS_SETUP_REQUESTED` | Creation panel opened on the Flashcards page | `source: flashcards_page`, `entry: header\|empty_state` (`flashcard/CreateFlashcardsPanel.tsx`) |
+| `FLASHCARDS_GENERATION_REQUESTED` | "Create flashcards" from a reply, or the Flashcards-page panel submitted | `chat_session_id`, `source: action\|flashcards_page`, `material?`, `count?`, `has_instructions?` (`ChatPage.tsx`, `CreateFlashcardsPanel`) |
+| `FLASHCARDS_CREATE_FAILED` | Flashcards-page generation failed | `error_kind`, `material` (`CreateFlashcardsPanel`) |
 | `FLASHCARDS_STUDY_STARTED` | Set opened and loaded | `set_id`, `card_count`, `source: chat\|flashcards_page\|deeplink\|bookmark` |
 | `FLASHCARDS_STUDY_COMPLETED` | Last card finished | `set_id`, `card_count`, `duration_s`, `rated_count`, `easy`, `medium`, `hard`, `needs_revision`, `flip_count`, `shuffled`, `review_again` |
 | `FLASHCARDS_STUDY_ABANDONED` | Viewer closed with unsaved ratings | `set_id`, `rated_count`, `index` |

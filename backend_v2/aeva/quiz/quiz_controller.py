@@ -8,6 +8,8 @@ from flask_smorest import Blueprint
 
 from aeva.common.decorators import user_required
 from aeva.common.schema import ResponseEnvelopeSchema, UserData
+from aeva.generation.generation_service import GenerationService
+from aeva.generation.schema.generation_schema import QuizGenerateSchema
 from aeva.quiz.quiz_service import QuizService
 from aeva.quiz.schema.quiz_schema import (
     ExamConfigUpdateSchema,
@@ -16,6 +18,7 @@ from aeva.quiz.schema.quiz_schema import (
 )
 
 if TYPE_CHECKING:
+    from aeva.generation.schema.generation_schema import QuizGenerateData
     from aeva.quiz.schema.quiz_schema import (
         ExamConfigUpdateData,
         QuizAnalyzeData,
@@ -41,6 +44,19 @@ class QuizListEndpoint(MethodView):
         return QuizService().list_quizzes(
             current_user.id, request.args.get("space_id")
         )
+
+
+class QuizGenerateEndpoint(MethodView):
+    """Create a quiz directly from the Quizzes page (no chat needed)."""
+
+    @staticmethod
+    @blueprint.arguments(QuizGenerateSchema)
+    @blueprint.response(200)
+    @user_required
+    def post(current_user: UserData, request_data: object) -> dict[str, Any]:
+        """Generate a quiz from a topic, files or a note and save it."""
+        data = cast("QuizGenerateData", request_data)
+        return GenerationService().create_quiz(current_user.id, data)
 
 
 class QuizExamPatternsEndpoint(MethodView):
@@ -171,7 +187,12 @@ blueprint.add_url_rule(
     view_func=QuizListEndpoint,
     endpoint="quiz_list",
 )
-# Registered before "/<quiz_id>" so this static path isn't captured as an id.
+# Registered before "/<quiz_id>" so these static paths aren't captured as ids.
+blueprint.add_url_rule(
+    "/generate",
+    view_func=QuizGenerateEndpoint,
+    endpoint="quiz_generate",
+)
 blueprint.add_url_rule(
     "/exam-patterns",
     view_func=QuizExamPatternsEndpoint,

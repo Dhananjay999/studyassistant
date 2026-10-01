@@ -91,6 +91,7 @@ export enum AnalyticsEvent {
   // ---- Quiz --------------------------------------------------------------
   QUIZ_SETUP_REQUESTED = "QUIZ_SETUP_REQUESTED",
   QUIZ_GENERATION_REQUESTED = "QUIZ_GENERATION_REQUESTED",
+  QUIZ_CREATE_FAILED = "QUIZ_CREATE_FAILED",
   QUIZ_OPENED = "QUIZ_OPENED",
   QUIZ_STARTED = "QUIZ_STARTED",
   QUIZ_QUESTION_VIEWED = "QUIZ_QUESTION_VIEWED",
@@ -104,9 +105,12 @@ export enum AnalyticsEvent {
   QUIZ_EXPORTED = "QUIZ_EXPORTED",
   QUIZ_SHARED = "QUIZ_SHARED",
   QUIZ_EXAM_CONFIG_UPDATED = "QUIZ_EXAM_CONFIG_UPDATED",
+  QUIZ_FULLSCREEN_TOGGLED = "QUIZ_FULLSCREEN_TOGGLED",
 
   // ---- Flashcards --------------------------------------------------------
+  FLASHCARDS_SETUP_REQUESTED = "FLASHCARDS_SETUP_REQUESTED",
   FLASHCARDS_GENERATION_REQUESTED = "FLASHCARDS_GENERATION_REQUESTED",
+  FLASHCARDS_CREATE_FAILED = "FLASHCARDS_CREATE_FAILED",
   FLASHCARDS_STUDY_STARTED = "FLASHCARDS_STUDY_STARTED",
   FLASHCARDS_STUDY_COMPLETED = "FLASHCARDS_STUDY_COMPLETED",
   FLASHCARDS_STUDY_ABANDONED = "FLASHCARDS_STUDY_ABANDONED",
@@ -163,6 +167,11 @@ export enum AnalyticsEvent {
 /* ------------------------------ shared types ------------------------------ */
 
 export type ErrorKind = "offline" | "high_demand" | "generic";
+/** Control that opened a Quizzes/Flashcards-page creation panel. */
+export type CreateEntry = "header" | "empty_state";
+/** Material a Quizzes/Flashcards-page creation is built from. */
+export type CreateMaterial = "topic" | "files" | "note";
+
 export interface ErrorKindProps {
   error_kind: ErrorKind;
 }
@@ -719,7 +728,9 @@ export interface EventPropsMap {
   [AnalyticsEvent.QUIZ_SETUP_REQUESTED]: {
     chat_session_id: string | null;
     media_available: boolean;
-    source: "assistant" | "slash";
+    source: "assistant" | "slash" | "quizzes_page";
+    /** Which Quizzes-page control opened the panel. */
+    entry?: CreateEntry;
   };
   [AnalyticsEvent.QUIZ_GENERATION_REQUESTED]: {
     question_count: number;
@@ -730,6 +741,11 @@ export interface EventPropsMap {
     has_topic: boolean;
     has_instructions: boolean;
     source: string;
+    /** What a Quizzes-page quiz is built from (absent for Chat). */
+    material?: CreateMaterial;
+  };
+  [AnalyticsEvent.QUIZ_CREATE_FAILED]: ErrorKindProps & {
+    material: CreateMaterial;
   };
   [AnalyticsEvent.QUIZ_OPENED]: {
     quiz_id: string;
@@ -773,15 +789,30 @@ export interface EventPropsMap {
     attempt_id?: string;
     channel: string;
   };
+  [AnalyticsEvent.QUIZ_FULLSCREEN_TOGGLED]: {
+    quiz_id: string;
+    enabled: boolean;
+  };
   [AnalyticsEvent.QUIZ_EXAM_CONFIG_UPDATED]: {
     quiz_id: string;
     timer_seconds: number | null;
     negative_marking: boolean;
   };
 
+  [AnalyticsEvent.FLASHCARDS_SETUP_REQUESTED]: {
+    source: "flashcards_page";
+    entry: CreateEntry;
+  };
   [AnalyticsEvent.FLASHCARDS_GENERATION_REQUESTED]: {
     chat_session_id: string | null;
     source: string;
+    /** What a Flashcards-page set is built from (absent for Chat). */
+    material?: CreateMaterial;
+    count?: number;
+    has_instructions?: boolean;
+  };
+  [AnalyticsEvent.FLASHCARDS_CREATE_FAILED]: ErrorKindProps & {
+    material: CreateMaterial;
   };
   [AnalyticsEvent.FLASHCARDS_STUDY_STARTED]: {
     set_id: string;

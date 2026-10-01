@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { GraduationCap, Layers } from "lucide-react";
+import { useMutationState } from "@tanstack/react-query";
+import { GraduationCap, Layers, Plus } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
 import { GlassCard } from "@/components/common/GlassCard";
@@ -9,8 +10,14 @@ import { Progress } from "@/components/ui/progress";
 import { Seo } from "@/components/common/Seo";
 import { ListToolbar } from "@/components/common/list";
 import { FlashcardViewer } from "@/components/chat/FlashcardViewer";
+import { CreateFlashcardsPanel } from "@/components/flashcard/CreateFlashcardsPanel";
+import { LibraryEmptyState } from "@/components/create/LibraryEmptyState";
+import { PendingCreationCard } from "@/components/create/PendingCreationCard";
 import { BookmarkButton } from "@/components/BookmarkButton";
-import { useFlashcardSets } from "@/hooks/api";
+import { mk, useFlashcardSets } from "@/hooks/api";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import type { CreateEntry } from "@/lib/analytics/events";
+import { describeSource } from "@/lib/generationSource";
 import { useListQuery } from "@/hooks/useListQuery";
 import { useTabHosted } from "@/components/layout/tabPanel";
 import {
@@ -19,7 +26,7 @@ import {
   byDateDesc,
   type ListConfig,
 } from "@/lib/listQuery";
-import type { FlashcardListItem } from "@/types";
+import type { FlashcardGenerateRequest, FlashcardListItem } from "@/types";
 
 /** Sort/filter config for the flashcard-sets list. */
 const FLASHCARD_CONFIG: ListConfig<FlashcardListItem> = {
@@ -57,6 +64,21 @@ export default function FlashcardsPage() {
   const { data: sets = [], isLoading } = useFlashcardSets();
   const [activeSet, setActiveSet] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+
+  // Direct creation: the panel, plus decks still generating from it (kept in
+  // the mutation cache, so they survive the panel closing).
+  const [createOpen, setCreateOpen] = useState(false);
+  const pending = useMutationState({
+    filters: { mutationKey: mk.generateFlashcards, status: "pending" },
+    select: (m) => m.state.variables as FlashcardGenerateRequest,
+  });
+  const openCreate = (entry: CreateEntry) => {
+    analytics.track(AnalyticsEvent.FLASHCARDS_SETUP_REQUESTED, {
+      source: "flashcards_page",
+      entry,
+    });
+    setCreateOpen(true);
+  };
 
   // Instant client-side search / sort / filter. Deep card-content search is
   // available from the global command palette (Cmd/Ctrl+F).
@@ -97,15 +119,14 @@ export default function FlashcardsPage() {
       <div className="p-4">
         {isLoading ? (
           <CardGridSkeleton />
-        ) : sets.length === 0 ? (
-          <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-20 text-center">
-            <Layers className="mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="font-medium">No flashcards yet</p>
-            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Use “Create Flashcards” on any answer, or type /flashcards in a
-              chat, and your sets will appear here.
-            </p>
-          </div>
+        ) : sets.length === 0 && pending.length === 0 ? (
+          <LibraryEmptyState
+            icon={Layers}
+            title="Your flashcard library is empty"
+            body="Create your first flashcard set and make revision easier."
+            cta="Create your first flashcards"
+            onCreate={() => openCreate("empty_state")}
+          />
         ) : (
           <>
             <ListToolbar
@@ -113,8 +134,18 @@ export default function FlashcardsPage() {
               config={FLASHCARD_CONFIG}
               query={listQuery}
               placeholder="Search flashcards by title or topic…"
+              extra={
+                <Button
+                  variant="brand"
+                  onClick={() => openCreate("header")}
+                  className="ml-auto gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create flashcards
+                </Button>
+              }
             />
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && pending.length === 0 ? (
               <p className="py-16 text-center text-sm text-muted-foreground">
                 No flashcard sets match your search or filters.
               </p>
@@ -124,6 +155,13 @@ export default function FlashcardsPage() {
                 data-analytics-private
                 data-analytics-section="flashcards_list"
               >
+                {pending.map((req, i) => (
+                  <PendingCreationCard
+                    key={`pending-${i}`}
+                    title="Creating your flashcards…"
+                    detail={`On ${describeSource(req)}`}
+                  />
+                ))}
                 {filtered.map((s) => {
                   const pct = s.card_count
                     ? Math.round((s.studied / s.card_count) * 100)
@@ -172,6 +210,8 @@ export default function FlashcardsPage() {
           </>
         )}
       </div>
+
+      <CreateFlashcardsPanel open={createOpen} onOpenChange={setCreateOpen} />
 
       <FlashcardViewer
         setId={activeSet}

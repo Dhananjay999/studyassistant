@@ -17,6 +17,8 @@ import type {
   LearningProfileInput,
   MediaItem,
   FlashcardAnalytics,
+  FlashcardGenerateRequest,
+  FlashcardGenerateResult,
   FlashcardListItem,
   FlashcardSetDetail,
   Message,
@@ -26,6 +28,8 @@ import type {
   QuizContent,
   QuizEvaluation,
   QuizExportContent,
+  QuizGenerateRequest,
+  QuizGenerateResult,
   QuizListItem,
   QuizSubmitResult,
   ResolvedShare,
@@ -52,6 +56,8 @@ import { errorKind } from "@/lib/errorMessage";
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const TIMEOUT = Number(import.meta.env.VITE_API_TIMEOUT) || 30000;
+// Direct quiz/flashcard creation runs a full LLM generation in one request.
+const GENERATION_TIMEOUT = 180_000;
 
 export const ENDPOINTS = {
   AUTH_ME: "/auth/me",
@@ -75,6 +81,7 @@ export const ENDPOINTS = {
   ASSISTANT_STREAM: "/assistant/stream",
   QUIZZES: "/quiz/",
   QUIZ_EXAM_PATTERNS: "/quiz/exam-patterns",
+  QUIZ_GENERATE: "/quiz/generate",
   QUIZ: (id: string) => `/quiz/${id}`,
   QUIZ_EXPORT: (id: string) => `/quiz/${id}/export`,
   SHARES: "/shares/",
@@ -93,6 +100,7 @@ export const ENDPOINTS = {
   COLLECTION: (id: string) => `/bookmarks/collections/${id}`,
   SEARCH: "/search/",
   FLASHCARDS: "/flashcards/",
+  FLASHCARDS_GENERATE: "/flashcards/generate",
   FLASHCARD: (id: string) => `/flashcards/${id}`,
   FLASHCARD_STUDY: (id: string) => `/flashcards/${id}/study`,
   FLASHCARD_STUDY_BATCH: (id: string) => `/flashcards/${id}/study/batch`,
@@ -135,6 +143,8 @@ function authHeaders(json = true): Record<string, string> {
 // logged-out visitor toward login on a public share page.
 interface RequestExtras {
   public?: boolean;
+  /** Overrides the default request timeout (ms) for slow endpoints. */
+  timeoutMs?: number;
 }
 
 // Analytics: collapse ids so `API_ERROR` groups by route, never by record.
@@ -174,7 +184,10 @@ async function request<T>(
   extras: RequestExtras = {},
 ): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT);
+  const timer = setTimeout(
+    () => controller.abort(),
+    extras.timeoutMs ?? TIMEOUT,
+  );
   const method = (options.method ?? "GET").toUpperCase();
   try {
     const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -480,6 +493,14 @@ export const attachMedia = (sessionId: string, mediaIds: string[]) =>
 export const listQuizzes = () =>
   unwrap<QuizListItem[]>(ENDPOINTS.QUIZZES);
 
+/** Create a quiz from the Quizzes page (same generator Chat uses). */
+export const generateQuiz = (body: QuizGenerateRequest) =>
+  unwrap<QuizGenerateResult>(
+    ENDPOINTS.QUIZ_GENERATE,
+    { method: "POST", body: JSON.stringify(body) },
+    { timeoutMs: GENERATION_TIMEOUT },
+  );
+
 export const listExamPatterns = () =>
   unwrap<ExamPattern[]>(ENDPOINTS.QUIZ_EXAM_PATTERNS);
 
@@ -649,6 +670,14 @@ export const deleteCollection = (id: string) =>
 
 export const listFlashcardSets = () =>
   unwrap<FlashcardListItem[]>(ENDPOINTS.FLASHCARDS);
+
+/** Create a flashcard set from the Flashcards page (same generator as Chat). */
+export const generateFlashcards = (body: FlashcardGenerateRequest) =>
+  unwrap<FlashcardGenerateResult>(
+    ENDPOINTS.FLASHCARDS_GENERATE,
+    { method: "POST", body: JSON.stringify(body) },
+    { timeoutMs: GENERATION_TIMEOUT },
+  );
 
 export const getFlashcardSet = (id: string) =>
   unwrap<FlashcardSetDetail>(ENDPOINTS.FLASHCARD(id));

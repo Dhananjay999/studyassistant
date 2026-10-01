@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { GraduationCap, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,9 @@ export function QuizSetupForm({
   onGenerate,
   className,
   layout = "default",
+  leading,
+  hideTopic = false,
+  canGenerate = true,
 }: {
   initialTopic?: string;
   initialCount?: number | null;
@@ -64,6 +67,12 @@ export function QuizSetupForm({
   /** "sheet" fills its container: fields scroll, Generate pins to the bottom as
    * a sticky footer (used inside the mobile bottom sheet). */
   layout?: "default" | "sheet";
+  /** Rendered above the settings — the Quizzes page's source picker. */
+  leading?: ReactNode;
+  /** Hide the Topic field when `leading` already collects the material. */
+  hideTopic?: boolean;
+  /** Extra gate on Generate (e.g. the host's source is incomplete). */
+  canGenerate?: boolean;
 }) {
   const { data: config } = useAppConfig();
   const maxQuestions = config?.max_quiz_questions ?? DEFAULT_MAX;
@@ -118,7 +127,7 @@ export function QuizSetupForm({
   const selectMixed = () => setTypes([]);
 
   const submit = () => {
-    if (!countValid) return;
+    if (!countValid || !canGenerate) return;
     onGenerate({
       topic: topic.trim() || undefined,
       question_count: countNum,
@@ -133,7 +142,7 @@ export function QuizSetupForm({
   const submitButton = (
     <Button
       onClick={submit}
-      disabled={busy || !countValid}
+      disabled={busy || !countValid || !canGenerate}
       className="w-full gap-2"
     >
       <Sparkles className="h-4 w-4" />
@@ -143,15 +152,18 @@ export function QuizSetupForm({
 
   const fields = (
     <>
-      <div className="space-y-1.5">
-        <Label className="text-xs">Topic</Label>
-        <Input
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          placeholder="e.g. Photosynthesis"
-          className="h-9"
-        />
-      </div>
+      {leading}
+      {!hideTopic && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Topic</Label>
+          <Input
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="e.g. Photosynthesis"
+            className="h-9"
+          />
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label className="text-xs">Questions</Label>

@@ -113,6 +113,7 @@ class ToolContext:
     """Runtime context passed to every tool execution."""
 
     user_id: str
+    # Empty when a generator runs outside Chat (Quizzes / Flashcards pages).
     session_id: str
     message: str
     enriched_message: str

@@ -8,8 +8,10 @@ import type {
   ConfidenceInput,
   CreateBookmarkInput,
   ExamConfig,
+  FlashcardGenerateRequest,
   LearningProfileInput,
   MediaItem,
+  QuizGenerateRequest,
   Session,
   StudyRating,
 } from "@/types";
@@ -44,6 +46,13 @@ export const qk = {
   revisionDashboard: ["revision", "dashboard"] as const,
   revisionHome: ["revision", "home"] as const,
   config: ["config"] as const,
+};
+
+/** Mutation keys for direct creation, so a library page can render in-flight
+ * generations (via `useMutationState`) even after its panel has closed. */
+export const mk = {
+  generateQuiz: ["generate-quiz"] as const,
+  generateFlashcards: ["generate-flashcards"] as const,
 };
 
 /* --------------------------------- config --------------------------------- */
@@ -286,6 +295,20 @@ export function useAnalyzeQuiz() {
   });
 }
 
+/** Create a quiz from the Quizzes page. Invalidation lives here (not in a
+ * `mutate` callback) so the library refreshes even if the page unmounted. */
+export function useGenerateQuiz() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: mk.generateQuiz,
+    mutationFn: (body: QuizGenerateRequest) => api.generateQuiz(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.quizzes });
+      qc.invalidateQueries({ queryKey: qk.spaces });
+    },
+  });
+}
+
 export function useQuizzes() {
   return useQuery({ queryKey: qk.quizzes, queryFn: api.listQuizzes });
 }
@@ -334,6 +357,20 @@ export function useFlashcardSets() {
   return useQuery({
     queryKey: qk.flashcards,
     queryFn: api.listFlashcardSets,
+  });
+}
+
+/** Create a flashcard set from the Flashcards page (see useGenerateQuiz). */
+export function useGenerateFlashcards() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: mk.generateFlashcards,
+    mutationFn: (body: FlashcardGenerateRequest) =>
+      api.generateFlashcards(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.flashcards });
+      qc.invalidateQueries({ queryKey: qk.spaces });
+    },
   });
 }
 

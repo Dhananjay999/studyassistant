@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { History, Loader2, Play } from "lucide-react";
+import { History, Loader2, Maximize2, Minimize2, Play } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import { ExamSummary } from "@/components/quiz/ExamSummary";
 import { useQuizAttempt, useQuizAttempts } from "@/hooks/api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useBackClose } from "@/hooks/useBackClose";
+import { useFullscreen } from "@/hooks/useFullscreen";
 import { useTabSwipe } from "@/hooks/useTabSwipe";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,30 @@ export function QuizDrawer({
   // True once the entry screen is chosen for this open (gates the loader).
   const [inited, setInited] = useState(false);
   const confirm = useConfirm();
+
+  // Desktop exam feel: while taking a quiz the student can go full screen
+  // (browser fullscreen + the dialog filling the screen). We only ever exit
+  // a fullscreen we entered ourselves.
+  const {
+    supported: fullscreenSupported,
+    isFullscreen,
+    enter: enterFullscreen,
+    exit: exitFullscreen,
+  } = useFullscreen();
+  const canFullscreen = !isMobile && fullscreenSupported;
+  const ownsFullscreenRef = useRef(false);
+  const examFullscreen = isFullscreen && view === "run";
+  useEffect(() => {
+    if (!isFullscreen) ownsFullscreenRef.current = false;
+  }, [isFullscreen]);
+  // Leave fullscreen once the attempt ends (submitted → report) or the
+  // dashboard closes.
+  useEffect(() => {
+    if ((!open || view !== "run") && ownsFullscreenRef.current) {
+      ownsFullscreenRef.current = false;
+      exitFullscreen();
+    }
+  }, [open, view, exitFullscreen]);
 
   // Confirmation before abandoning an in-progress attempt. Shared by the close
   // button and the device back gesture.
@@ -194,6 +219,20 @@ export function QuizDrawer({
     setView(takeView);
   };
 
+  const toggleFullscreen = () => {
+    const enabled = !isFullscreen;
+    analytics.track(AnalyticsEvent.QUIZ_FULLSCREEN_TOGGLED, {
+      quiz_id: quizId,
+      enabled,
+    });
+    if (enabled) {
+      ownsFullscreenRef.current = true;
+      enterFullscreen();
+    } else {
+      exitFullscreen();
+    }
+  };
+
   // Guard against losing progress: closing mid-attempt asks first.
   const requestClose = async (next: boolean) => {
     if (!next && view === "run") {
@@ -214,7 +253,7 @@ export function QuizDrawer({
       <DialogContent
         className={cn(
           "flex flex-col gap-0 overflow-hidden p-0",
-          isMobile
+          isMobile || examFullscreen
             ? "h-dvh w-screen max-w-none rounded-none border-0"
             : "h-[85vh] w-[min(960px,95vw)] max-w-none rounded-2xl",
         )}
@@ -274,8 +313,26 @@ export function QuizDrawer({
           </>
         ) : view === "run" ? (
           <>
-            <header className="border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
-              <h2 className="font-display text-lg font-bold">{quiz.title}</h2>
+            <header className="flex items-center justify-between gap-3 border-b border-border/50 px-5 pr-12 pt-[calc(env(safe-area-inset-top)+1rem)] pb-4">
+              <h2 className="min-w-0 truncate font-display text-lg font-bold">
+                {quiz.title}
+              </h2>
+              {canFullscreen && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleFullscreen}
+                  className="shrink-0 gap-1.5"
+                  aria-pressed={isFullscreen}
+                >
+                  {isFullscreen ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                  {isFullscreen ? "Exit full screen" : "Full screen"}
+                </Button>
+              )}
             </header>
             <QuizRunner
               quiz={effectiveQuiz}

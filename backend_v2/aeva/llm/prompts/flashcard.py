@@ -22,6 +22,7 @@ Create study flashcards as Aeva.
 Topic: {TOPIC}
 Card count: {CARD_COUNT}
 Recent context: {RECENT_CONTEXT}
+Additional instructions: {ADDITIONAL_INSTRUCTIONS}
 {SOURCE_CONTEXT}
 Use the attached study material if provided; otherwise generate the cards from the topic. If the topic is vague, infer it from the recent context.
 
@@ -87,6 +88,14 @@ FLASHCARD_GENERATOR_PARAMS: dict = {
         "count": {
             "type": "integer",
             "description": "Number of cards (default 8)",
+        },
+        "additional_instructions": {
+            "type": "string",
+            "description": (
+                "Extra free-text guidance for the cards (focus areas, "
+                "style, level of detail). Only set when the student "
+                "explicitly provides it."
+            ),
         },
     },
     "required": ["topic"],

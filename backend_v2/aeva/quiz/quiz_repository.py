@@ -20,7 +20,7 @@ class QuizRepository:
     def create(
         self,
         user_id: str,
-        session_id: str,
+        session_id: str | None,
         quiz_data: dict[str, Any],
         space_id: str | None = None,
     ) -> dict[str, Any]:

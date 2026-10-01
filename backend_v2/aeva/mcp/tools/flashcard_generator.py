@@ -118,11 +118,13 @@ class FlashcardGeneratorTool(BaseTool):
         )
         tool_trace.flashcard_params(locals())
 
+        instructions = params.get("additional_instructions") or "(none)"
         rendered = prompts.PromptBuilder.build(
             prompts.FLASHCARD_GENERATION_TEMPLATE,
             TOPIC=str(topic),
             CARD_COUNT=str(count),
             RECENT_CONTEXT=ctx.enriched_message,
+            ADDITIONAL_INSTRUCTIONS=str(instructions),
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
             SOURCE_CONTEXT=source_context,
         )
@@ -139,7 +141,8 @@ class FlashcardGeneratorTool(BaseTool):
         ctx.note("Saving your flashcards…")
         fset = self.flashcard_repo.create(
             user_id=ctx.user_id,
-            session_id=ctx.session_id,
+            # Empty for direct (non-chat) creation from the library pages.
+            session_id=ctx.session_id or None,
             data=data,
             source_type=source_type,
             space_id=ctx.space_id,

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useMutationState } from "@tanstack/react-query";
 import {
   BarChart3,
   Clock,
@@ -12,6 +13,7 @@ import {
   ListChecks,
   Loader2,
   Play,
+  Plus,
   Repeat,
   Sparkles,
 } from "lucide-react";
@@ -25,9 +27,15 @@ import { ListToolbar } from "@/components/common/list";
 import { QuizDrawer } from "@/components/chat/QuizDrawer";
 import type { QuizInitialView } from "@/components/chat/QuizDrawer";
 import { BookmarkButton } from "@/components/BookmarkButton";
+import { CreateQuizPanel } from "@/components/quiz/CreateQuizPanel";
+import { LibraryEmptyState } from "@/components/create/LibraryEmptyState";
+import { PendingCreationCard } from "@/components/create/PendingCreationCard";
 import { QuizExportButton } from "@/components/quiz/QuizExportButton";
 import { ShareQuizButton } from "@/components/quiz/ShareQuizButton";
-import { useExamPatterns, useQuizzes } from "@/hooks/api";
+import { mk, useExamPatterns, useQuizzes } from "@/hooks/api";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import type { CreateEntry } from "@/lib/analytics/events";
+import { describeSource } from "@/lib/generationSource";
 import { getQuiz } from "@/lib/api";
 import { useListQuery } from "@/hooks/useListQuery";
 import { useTabHosted } from "@/components/layout/tabPanel";
@@ -48,6 +56,7 @@ import {
   hasExamConfig,
   type ExamPattern,
   type QuizContent,
+  type QuizGenerateRequest,
   type QuizListItem,
 } from "@/types";
 
@@ -117,6 +126,23 @@ export default function QuizzesPage() {
     view: QuizInitialView;
   } | null>(null);
 
+  // Direct creation: the panel, plus quizzes still generating from it (kept
+  // in the mutation cache, so they survive the panel closing).
+  const [createOpen, setCreateOpen] = useState(false);
+  const pending = useMutationState({
+    filters: { mutationKey: mk.generateQuiz, status: "pending" },
+    select: (m) => m.state.variables as QuizGenerateRequest,
+  });
+  const openCreate = (entry: CreateEntry) => {
+    analytics.track(AnalyticsEvent.QUIZ_SETUP_REQUESTED, {
+      chat_session_id: null,
+      media_available: false,
+      source: "quizzes_page",
+      entry,
+    });
+    setCreateOpen(true);
+  };
+
   const config = useMemo(() => buildQuizConfig(patterns), [patterns]);
   // In-memory filters under mobile keep-alive (preserved across tab switches);
   // URL-persisted on desktop. See BookmarksPage for the rationale.
@@ -164,14 +190,14 @@ export default function QuizzesPage() {
       <div className="p-4">
         {isLoading ? (
           <CardGridSkeleton />
-        ) : quizzes.length === 0 ? (
-          <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-20 text-center">
-            <ListChecks className="mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="font-medium">No quizzes yet</p>
-            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Generate a quiz from any chat answer and it will show up here.
-            </p>
-          </div>
+        ) : quizzes.length === 0 && pending.length === 0 ? (
+          <LibraryEmptyState
+            icon={ListChecks}
+            title="Your quiz library is empty"
+            body="Create your first quiz and start practicing with Aeva."
+            cta="Create your first quiz"
+            onCreate={() => openCreate("empty_state")}
+          />
         ) : (
           <>
             <ListToolbar
@@ -179,8 +205,18 @@ export default function QuizzesPage() {
               config={config}
               query={listQuery}
               placeholder="Search quizzes by title or topic…"
+              extra={
+                <Button
+                  variant="brand"
+                  onClick={() => openCreate("header")}
+                  className="ml-auto gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create quiz
+                </Button>
+              }
             />
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && pending.length === 0 ? (
               <p className="py-16 text-center text-sm text-muted-foreground">
                 No quizzes match your search or filters.
               </p>
@@ -190,6 +226,13 @@ export default function QuizzesPage() {
                 data-analytics-private
                 data-analytics-section="quizzes_list"
               >
+                {pending.map((req, i) => (
+                  <PendingCreationCard
+                    key={`pending-${i}`}
+                    title="Creating your quiz…"
+                    detail={`On ${describeSource(req)}`}
+                  />
+                ))}
                 {filtered.map((q) => (
                   <QuizGridCard
                     key={q.id}
@@ -207,6 +250,8 @@ export default function QuizzesPage() {
           </>
         )}
       </div>
+
+      <CreateQuizPanel open={createOpen} onOpenChange={setCreateOpen} />
 
       <QuizDrawer
         quiz={quiz}

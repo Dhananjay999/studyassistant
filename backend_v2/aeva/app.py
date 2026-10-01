@@ -297,6 +297,9 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["QUIZ_MAX_QUESTIONS"] = int(
         os.environ.get("QUIZ_MAX_QUESTIONS", "10")
     )
+    app.config["FLASHCARD_MAX_CARDS"] = int(
+        os.environ.get("FLASHCARD_MAX_CARDS", "20")
+    )
 
     # AI Revision Mode (spaced repetition). Interval ladder + signal
     # thresholds; the quiz thresholds mirror weak(<60)/strong(>=80) used by
@@ -534,6 +537,7 @@ def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
         """
         return {
             "max_quiz_questions": app.config["QUIZ_MAX_QUESTIONS"],
+            "max_flashcard_cards": app.config["FLASHCARD_MAX_CARDS"],
             "features": feature_flag_service.get_flags(),
         }
 
