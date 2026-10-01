@@ -60,7 +60,7 @@ Analytics:
 
 Settings & account:
 - Sign in with Google. Light and dark themes. Works on mobile and desktop.
-- Settings → Learning Profile: preferred language (English / Hindi / Hinglish), education level, exam target (JEE/NEET/Boards/…), explanation style, favorite subjects, teaching extras, and custom instructions — these persist across all chats. Saying "from now on talk in Hinglish" in chat also saves the language permanently.
+- Settings → Learning Profile: learning context (school class & board, college program & year, target exam like JEE/NEET/UPSC, or a skill), learning goal, focus areas, explanation style, Aeva's response language (English / Hindi / Hinglish or any other — it only changes Aeva's replies, not the app's language), persona, teaching extras, and custom instructions — these persist across all chats. Saying "from now on talk in Hinglish" in chat also saves the language permanently.
 - Onboarding can be redone anytime via "Edit step-by-step" in the Learning Profile."""
 
 PRODUCT_INFO_TEMPLATE = PromptTemplate(

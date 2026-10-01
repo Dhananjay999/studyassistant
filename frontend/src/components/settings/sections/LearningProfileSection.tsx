@@ -18,47 +18,50 @@ import {
   AI_PERSONALITIES,
   COMMUNICATION_STYLES,
   CUSTOM_INSTRUCTION_EXAMPLES,
-  EDUCATION_LEVELS,
-  EXAM_TARGETS,
-  EXPLANATION_STYLES,
-  FAVORITE_SUBJECTS,
-  LEARNING_GOALS,
   LEARNING_TRAIT_OPTIONS,
   PREFERRED_DEPTHS,
-  PREFERRED_LANGUAGES,
 } from "@/lib/learningProfile";
+import {
+  CUSTOM_MAX as LANGUAGE_MAX,
+  describeContext,
+  LANGUAGES,
+  LANGUAGE_EXAMPLES,
+  LANGUAGE_NOTE,
+  OTHER_LABEL,
+  STYLES,
+} from "@/lib/onboarding";
 import type { LearningProfile, LearningProfileInput } from "@/types";
 
 const CUSTOM_MAX = 1000;
 
-const OTHER = "Other";
+const OTHER = OTHER_LABEL;
+const LANGUAGE_LABELS = LANGUAGES.map((o) => o.label);
+const STYLE_LABELS = STYLES.map((o) => o.label);
 
+/**
+ * Fields this form edits directly. The learning context, goal, focus areas
+ * and exam depend on each other, so they are only changed through the
+ * step-by-step flow (same questions and options as onboarding) and are
+ * passed through untouched on save.
+ */
 interface Draft {
-  level: string;
-  otherLevel: string;
   language: string;
+  otherLanguage: string;
   style: string;
-  subjects: string[];
-  goal: string;
   personality: string;
   commStyle: string;
   instructions: string;
-  examTarget: string;
   traits: string[];
   depth: string;
 }
 
 const EMPTY: Draft = {
-  level: "",
-  otherLevel: "",
   language: "",
+  otherLanguage: "",
   style: "",
-  subjects: [],
-  goal: "",
   personality: "",
   commStyle: "",
   instructions: "",
-  examTarget: "",
   traits: [],
   depth: "",
 };
@@ -66,19 +69,17 @@ const EMPTY: Draft = {
 /** Seed editable draft state from a saved profile row. */
 function toDraft(profile: LearningProfile | undefined): Draft {
   if (!profile) return EMPTY;
-  const saved = profile.education_level ?? "";
-  const known = (EDUCATION_LEVELS as readonly string[]).includes(saved);
+  const savedLanguage = profile.response_language?.trim() ?? "";
+  const knownLanguage = LANGUAGE_LABELS.find(
+    (l) => l.toLowerCase() === savedLanguage.toLowerCase(),
+  );
   return {
-    level: saved ? (known ? saved : OTHER) : "",
-    otherLevel: saved && !known ? saved : "",
-    language: profile.preferred_language ?? "",
+    language: savedLanguage ? (knownLanguage ?? OTHER) : "",
+    otherLanguage: savedLanguage && !knownLanguage ? savedLanguage : "",
     style: profile.explanation_style ?? "",
-    subjects: profile.favorite_subjects ?? [],
-    goal: profile.learning_goal ?? "",
     personality: profile.ai_personality ?? "",
     commStyle: profile.communication_style ?? "",
     instructions: profile.custom_instructions ?? "",
-    examTarget: profile.exam_target ?? "",
     traits: LEARNING_TRAIT_OPTIONS.filter(
       (t) => profile.learning_traits?.[t.key] === true,
     ).map((t) => t.key),
@@ -89,24 +90,28 @@ function toDraft(profile: LearningProfile | undefined): Draft {
   };
 }
 
-function toInput(draft: Draft): LearningProfileInput {
-  const resolvedLevel =
-    draft.level === OTHER ? draft.otherLevel.trim() : draft.level;
+/** Full PUT payload: draft fields + the step-by-step answers unchanged
+ * (pass `null` to clear those too, as Reset does). */
+function toInput(
+  draft: Draft,
+  profile: LearningProfile | null | undefined,
+): LearningProfileInput {
+  const language =
+    draft.language === OTHER ? draft.otherLanguage.trim() : draft.language;
   const traits: Record<string, boolean | string> = {};
   for (const t of LEARNING_TRAIT_OPTIONS) {
     if (draft.traits.includes(t.key)) traits[t.key] = true;
   }
   if (draft.depth) traits.preferred_depth = draft.depth;
   return {
-    education_level: resolvedLevel || null,
-    preferred_language: draft.language || null,
+    context: profile?.context ?? {},
+    goal: profile?.goal ?? null,
+    focus_areas: profile?.focus_areas ?? [],
+    response_language: language || null,
     explanation_style: draft.style || null,
-    favorite_subjects: draft.subjects,
-    learning_goal: draft.goal || null,
     ai_personality: draft.personality || null,
     communication_style: draft.commStyle || null,
     custom_instructions: draft.instructions.trim() || null,
-    exam_target: draft.examTarget || null,
     learning_traits: traits,
   };
 }
@@ -114,17 +119,16 @@ function toInput(draft: Draft): LearningProfileInput {
 /** True when at least one field carries a value (drives the status badge). */
 function hasAnyValue(input: LearningProfileInput): boolean {
   return Boolean(
-    input.education_level ||
-      input.preferred_language ||
+    (input.context && Object.keys(input.context).length > 0) ||
+      input.response_language ||
       input.explanation_style ||
-      input.learning_goal ||
+      input.goal ||
       input.ai_personality ||
       input.communication_style ||
       input.custom_instructions ||
-      input.exam_target ||
       (input.learning_traits &&
         Object.keys(input.learning_traits).length > 0) ||
-      (input.favorite_subjects && input.favorite_subjects.length > 0),
+      (input.focus_areas && input.focus_areas.length > 0),
   );
 }
 
@@ -151,7 +155,7 @@ export function LearningProfileSection() {
 
   const configured =
     profile?.personalization_status === "completed" &&
-    hasAnyValue(toInput(saved));
+    hasAnyValue(toInput(saved, profile));
 
   const dirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(saved),
@@ -166,14 +170,6 @@ export function LearningProfileSection() {
 
   const single = (key: keyof Draft, value: string) =>
     setDraft((d) => ({ ...d, [key]: d[key] === value ? "" : value }));
-
-  const toggleSubject = (subject: string) =>
-    setDraft((d) => ({
-      ...d,
-      subjects: d.subjects.includes(subject)
-        ? d.subjects.filter((s) => s !== subject)
-        : [...d.subjects, subject],
-    }));
 
   const toggleTrait = (label: string) => {
     const key = LEARNING_TRAIT_OPTIONS.find((t) => t.label === label)?.key;
@@ -199,7 +195,7 @@ export function LearningProfileSection() {
 
   const save = async () => {
     try {
-      const input = toInput(draft);
+      const input = toInput(draft, profile);
       await saveMutation.mutateAsync(input);
       analytics.track(AnalyticsEvent.LEARNING_PROFILE_SAVED, {
         fields_set: Object.values(input).filter((v) =>
@@ -216,7 +212,7 @@ export function LearningProfileSection() {
 
   const reset = async () => {
     try {
-      await saveMutation.mutateAsync(toInput(EMPTY));
+      await saveMutation.mutateAsync(toInput(EMPTY, null));
       analytics.track(AnalyticsEvent.LEARNING_PROFILE_RESET);
       await refreshUser();
       setDraft(EMPTY);
@@ -230,6 +226,13 @@ export function LearningProfileSection() {
   };
 
   const busy = saveMutation.isPending;
+
+  // Context-dependent answers are edited in the guided flow; leave the
+  // manual form first so its draft can't overwrite what the flow saves.
+  const openGuided = () => {
+    setEditing(false);
+    setGuidedOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -258,7 +261,7 @@ export function LearningProfileSection() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setGuidedOpen(true)}
+          onClick={openGuided}
           className="w-full gap-1.5 sm:w-auto"
         >
           <Sparkles className="h-4 w-4 text-brand-1" />
@@ -286,66 +289,68 @@ export function LearningProfileSection() {
       ) : (
         <div className="space-y-6">
           <SettingsField
-            title="Education Level"
-            hint="The single most useful detail for personalization."
+            title="Learning Context, Goal & Focus"
+            hint="These depend on each other, so they're updated step-by-step."
           >
-            <ChipSelect
-              options={[...EDUCATION_LEVELS, OTHER]}
-              selected={[draft.level]}
-              onToggle={(o) => single("level", o)}
-            />
-            {draft.level === OTHER && (
-              <Input
-                value={draft.otherLevel}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, otherLevel: e.target.value }))
-                }
-                placeholder="Tell us what you're studying"
-                className="mt-3"
-              />
+            <div className="rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-sm">
+              {CONTEXT_FIELDS.map((field) => {
+                const value = profile ? field.get(profile) : "";
+                return (
+                  <div key={field.label} className="flex justify-between gap-4 py-1">
+                    <span className="text-muted-foreground">{field.label}</span>
+                    <span className="text-right font-medium">
+                      {value || <span className="text-muted-foreground">—</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {dirty ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Save or cancel your other changes first to edit these.
+              </p>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openGuided}
+                className="mt-3 gap-1.5"
+              >
+                <Sparkles className="h-4 w-4 text-brand-1" />
+                Edit step-by-step
+              </Button>
             )}
           </SettingsField>
 
-          <SettingsField
-            title="Exam Target"
-            hint="Aeva adds exam-level insights, traps, and practice for this goal."
-          >
+          <SettingsField title="Response Language" hint={LANGUAGE_NOTE}>
             <ChipSelect
-              options={EXAM_TARGETS}
-              selected={[draft.examTarget]}
-              onToggle={(o) => single("examTarget", o)}
-            />
-          </SettingsField>
-
-          <SettingsField title="Preferred Language">
-            <ChipSelect
-              options={PREFERRED_LANGUAGES}
+              options={[...LANGUAGE_LABELS, OTHER]}
               selected={[draft.language]}
               onToggle={(o) => single("language", o)}
             />
+            {draft.language === OTHER && (
+              <>
+                <Input
+                  value={draft.otherLanguage}
+                  maxLength={LANGUAGE_MAX}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, otherLanguage: e.target.value }))
+                  }
+                  placeholder="Type your preferred language…"
+                  className="mt-3"
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {LANGUAGE_EXAMPLES}
+                </p>
+              </>
+            )}
           </SettingsField>
 
           <SettingsField title="Explanation Style">
             <ChipSelect
-              options={EXPLANATION_STYLES}
+              options={STYLE_LABELS}
               selected={[draft.style]}
               onToggle={(o) => single("style", o)}
-            />
-          </SettingsField>
-
-          <SettingsField title="Favorite Subjects" hint="Pick as many as you like.">
-            <ChipSelect
-              options={FAVORITE_SUBJECTS}
-              selected={draft.subjects}
-              onToggle={toggleSubject}
-            />
-          </SettingsField>
-
-          <SettingsField title="Learning Goal">
-            <ChipSelect
-              options={LEARNING_GOALS}
-              selected={[draft.goal]}
-              onToggle={(o) => single("goal", o)}
             />
           </SettingsField>
 
@@ -488,13 +493,19 @@ export function LearningProfileSection() {
   );
 }
 
-const SUMMARY_FIELDS: ReadonlyArray<{
-  label: string;
-  get: (p: LearningProfile) => string;
-}> = [
-  { label: "Education Level", get: (p) => p.education_level ?? "" },
-  { label: "Exam Target", get: (p) => p.exam_target ?? "" },
-  { label: "Preferred Language", get: (p) => p.preferred_language ?? "" },
+type SummaryField = { label: string; get: (p: LearningProfile) => string };
+
+/** Answers owned by the step-by-step flow (shown read-only in the form). */
+const CONTEXT_FIELDS: ReadonlyArray<SummaryField> = [
+  { label: "Learning Context", get: (p) => describeContext(p.context) },
+  { label: "Exam", get: (p) => p.context?.exam ?? "" },
+  { label: "Learning Goal", get: (p) => p.goal ?? "" },
+  { label: "Focus Areas", get: (p) => p.focus_areas.join(", ") },
+];
+
+const SUMMARY_FIELDS: ReadonlyArray<SummaryField> = [
+  ...CONTEXT_FIELDS,
+  { label: "Response Language", get: (p) => p.response_language ?? "" },
   {
     label: "Teaching Extras",
     get: (p) =>
@@ -510,8 +521,6 @@ const SUMMARY_FIELDS: ReadonlyArray<{
         : "",
   },
   { label: "Explanation Style", get: (p) => p.explanation_style ?? "" },
-  { label: "Favorite Subjects", get: (p) => p.favorite_subjects.join(", ") },
-  { label: "Learning Goal", get: (p) => p.learning_goal ?? "" },
   { label: "Personality", get: (p) => p.ai_personality ?? "" },
   { label: "Communication Style", get: (p) => p.communication_style ?? "" },
   { label: "Custom Instructions", get: (p) => p.custom_instructions ?? "" },

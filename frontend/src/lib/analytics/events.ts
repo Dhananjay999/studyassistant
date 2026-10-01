@@ -40,7 +40,9 @@ export enum AnalyticsEvent {
 
   // ---- Onboarding --------------------------------------------------------
   ONBOARDING_STARTED = "ONBOARDING_STARTED",
+  ONBOARDING_STEP_VIEWED = "ONBOARDING_STEP_VIEWED",
   ONBOARDING_STEP_COMPLETED = "ONBOARDING_STEP_COMPLETED",
+  ONBOARDING_BACK = "ONBOARDING_BACK",
   ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED",
   ONBOARDING_SKIPPED = "ONBOARDING_SKIPPED",
   ONBOARDING_SAVE_FAILED = "ONBOARDING_SAVE_FAILED",
@@ -524,17 +526,44 @@ export interface EventPropsMap {
     duration_ms: number;
   };
 
-  [AnalyticsEvent.ONBOARDING_STARTED]: { mode: "first_run" | "edit" };
+  [AnalyticsEvent.ONBOARDING_STARTED]: {
+    mode: "first_run" | "edit";
+    /** First run picked up a draft saved before a refresh/close. */
+    resumed?: boolean;
+  };
+  /** A question screen was shown (first run). `branch` = learning context id
+   * or "none"; `visible_total` = questions on the current branch. */
+  [AnalyticsEvent.ONBOARDING_STEP_VIEWED]: {
+    step: string;
+    step_index: number;
+    branch: string;
+    visible_total: number;
+  };
   [AnalyticsEvent.ONBOARDING_STEP_COMPLETED]: {
     step: string;
     step_index: number;
     skipped: boolean;
     selection_count?: number;
+    branch?: string;
+    /** Option id ("other" for a custom value); never free text. */
+    selected_id?: string;
+    /** Earlier answer's option id when an answered step was changed. */
+    previous_id?: string;
+    changed?: boolean;
+    has_custom_value?: boolean;
+  };
+  [AnalyticsEvent.ONBOARDING_BACK]: {
+    step: string;
+    step_index: number;
+    branch: string;
   };
   [AnalyticsEvent.ONBOARDING_COMPLETED]: {
     steps_answered: number;
     has_exam_target: boolean;
     subject_count: number;
+    branch?: string;
+    steps_visible?: number;
+    has_custom_language?: boolean;
   };
   [AnalyticsEvent.ONBOARDING_SKIPPED]: {
     at_step_index: number;

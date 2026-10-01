@@ -23,12 +23,15 @@ import sys
 from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
+from aeva.learning_profile import profile_document
+
 logger = logging.getLogger(__name__)
 
 # A value no real record holds; it marks where a builder puts a field.
 _PROBE = "⁣aeva-trace-probe⁣"
 
 _STATUS = "personalization_status"
+_DOCUMENT = profile_document.COLUMN
 _COMPLETED = "completed"
 
 # Guards: nested records are followed this deep, and a record with more
@@ -158,7 +161,10 @@ def _explain_profile(
     """Why the learning-profile fragment was (not) added, line by line."""
     if not profile:
         return _part(part, label, text, "No profile row was found.", [])
-    frame = _frame(builder, {_STATUS: _COMPLETED, "preferred_language": _PROBE})
+    frame = _frame(
+        builder,
+        {_STATUS: _COMPLETED, _DOCUMENT: {"response_language": _PROBE}},
+    )
     body = _body(text, frame)
     if not isinstance(profile, Mapping) or frame is None:
         return _part(
@@ -188,10 +194,10 @@ def _explain_profile(
             label,
             text,
             "Onboarding is not completed (personalization_status="
-            f"{status!r}), so only the preferred language applies."
+            f"{status!r}), so only the response language applies."
             if text
             else "Onboarding is not completed (personalization_status="
-            f"{status!r}) and no preferred language is set.",
+            f"{status!r}) and no response language is set.",
             lines,
             [
                 {

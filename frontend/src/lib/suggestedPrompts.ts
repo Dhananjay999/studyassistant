@@ -24,6 +24,7 @@ import {
   Repeat,
   type LucideIcon,
 } from "lucide-react";
+import { describeContext } from "@/lib/onboarding";
 import type { LearningProfile } from "@/types";
 
 export interface SuggestedPrompt {
@@ -434,21 +435,22 @@ export function buildSuggestedPrompts(
   }
 
   const pool: SuggestedPrompt[] = [];
-  pool.push(...subjectPrompts(profile.favorite_subjects ?? []));
-  if (profile.education_level) {
-    pool.push(...collectGroups(profile.education_level, LEVEL_GROUPS));
+  pool.push(...subjectPrompts(profile.focus_areas ?? []));
+  const level = describeContext(profile.context);
+  if (level) {
+    pool.push(...collectGroups(level, LEVEL_GROUPS));
   }
-  if (profile.learning_goal) {
-    pool.push(...collectGroups(profile.learning_goal, GOAL_GROUPS));
+  if (profile.goal) {
+    pool.push(...collectGroups(profile.goal, GOAL_GROUPS));
   }
   // Profile-aware universal prompts (study plan, revision strategy, tutor).
   pool.push(...shuffle(PERSONAL).slice(0, 2));
 
   // Light language flavor: surface a localized variant so a Hindi/Hinglish
   // learner occasionally gets a fully-formed prompt in their language.
-  const lang = profile.preferred_language;
+  const lang = profile.response_language;
   if (lang && lang !== "English") {
-    const subject = (profile.favorite_subjects ?? [])[0];
+    const subject = (profile.focus_areas ?? [])[0];
     pool.push(
       idea(
         subject

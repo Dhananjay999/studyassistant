@@ -398,7 +398,10 @@ class TestLinkAndMessages:
         turn_trace.context_loaded(
             _ctx(),
             {"id": SESSION, "title": "T", "study_spaces": None},
-            {"full_name": "Asha", "preferred_language": "Hindi"},
+            {
+                "full_name": "Asha",
+                "learning_profile": {"response_language": "Hindi"},
+            },
             [{"role": "user", "content": "hi"}],
             "Student's name: Asha.",
             "what is osmosis?",
@@ -409,7 +412,7 @@ class TestLinkAndMessages:
         context = next(s for s in saved["spans"] if s["name"] == "load_context")
         assert context["kind"] == "context"
         assert context["output"]["history_messages"] == 1
-        assert context["output"]["preferred_language"] == "Hindi"
+        assert context["output"]["response_language"] == "Hindi"
         assert context["output"]["clarification_resume"] is None
         assert [
             p["part"] for p in context["output"]["personalization_parts"]

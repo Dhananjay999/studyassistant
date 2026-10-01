@@ -30,6 +30,7 @@ from collections.abc import Callable, Generator
 from typing import Any, ParamSpec, TypeVar
 
 from aeva import tracing
+from aeva.learning_profile import profile_document
 from aeva.tracing.services import prompt_trace
 
 logger = logging.getLogger(__name__)
@@ -529,7 +530,9 @@ def _context_loaded(
             ),
         },
         "is_debug_user": is_debug_user,
-        "preferred_language": (profile or {}).get("preferred_language"),
+        "response_language": profile_document.read(profile)[
+            "response_language"
+        ],
         # Set when the message asked to switch language for good.
         "standing_language_request": standing,
         "history_messages": len(history),

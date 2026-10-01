@@ -1683,12 +1683,17 @@ class TestRoutingDecisions:
 
         out = _one(saved["spans"], "load_context")["output"]
         assert out["standing_language_request"] == "Hinglish"
-        assert out["preferred_language"] == "Hinglish"
+        assert out["response_language"] == "Hinglish"
         assert "Hinglish" in out["personalization"]
         assert (
             "update_learning_profile",
             USER,
-            {"preferred_language": "Hinglish"},
+            {
+                "learning_profile": {
+                    "response_language": "Hinglish",
+                    "version": 2,
+                }
+            },
         ) in supabase.calls
 
     def test_source_content_is_part_of_the_loaded_context(self, app, saved):

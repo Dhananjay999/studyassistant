@@ -11,20 +11,42 @@ for a different language.
 
 from typing import Any
 
-# (profile key, human label) in the order they read best in the prompt. Language
-# leads because it is the highest-priority directive.
-_FIELDS: list[tuple[str, str]] = [
-    ("preferred_language", "Preferred Language"),
+from aeva.learning_profile import profile_document
+
+# (document key, human label), rendered before / after the learning context
+# in the order they read best. Language leads because it is the
+# highest-priority directive.
+_LEAD_FIELDS: list[tuple[str, str]] = [
+    ("response_language", "Response Language"),
     ("ai_personality", "Assistant Persona"),
     ("communication_style", "Communication Style"),
-    ("education_level", "Education Level"),
-    ("exam_target", "Exam Target"),
+]
+_TAIL_FIELDS: list[tuple[str, str]] = [
     ("explanation_style", "Preferred Explanation Style"),
-    ("learning_goal", "Learning Goal"),
+    ("goal", "Learning Goal"),
+]
+
+# Learning context -> prompt lines. ``type`` is a context id; the remaining
+# keys hold display labels. Unknown types render as-is so a new learner type
+# needs no change here.
+_CONTEXT_TYPE_LABELS: dict[str, str] = {
+    "school": "School",
+    "college": "College / University",
+    "competitive_exam": "Competitive Exam Preparation",
+    "skill_learning": "Learning a Skill",
+    "working_professional": "Working Professional",
+}
+_CONTEXT_FIELDS: list[tuple[str, str]] = [
+    ("class", "Class"),
+    ("board", "Board"),
+    ("degree", "Program"),
+    ("year", "Year"),
+    ("exam", "Exam"),
+    ("skill", "Learning"),
 ]
 
 # learning_traits key -> short prompt line. Whitelist mirrors
-# ``LEARNING_TRAIT_KEYS`` (learning_profile schema); unknown keys are ignored.
+# ``profile_document.TRAIT_KEYS``; unknown keys are ignored.
 _TRAIT_LINES: dict[str, str] = {
     "likes_funny_examples": "Enjoys funny examples and analogies",
     "likes_visual_explanations": "Prefers visual explanations and diagrams",
@@ -51,6 +73,7 @@ Language:
 - English → English only.
 - Hindi → Hindi (Devanagari).
 - Hinglish → Roman-script Hindi-English mix.
+- Any other language → reply in that language.
 Keep formulas, code, technical terms, and proper nouns unchanged.
 
 Persona:
@@ -64,13 +87,15 @@ Shape answer length and structure to the preferred communication style
 Example-Based = lead with examples).
 
 Education:
-Match vocabulary and depth to the student's level.
+Match vocabulary, depth, and syllabus to the student's level and learning
+context (class and board, program and year, exam, or skill being learned).
 
 Style:
 Follow the preferred explanation style.
 
 Goals:
-Use learning goals and favorite subjects only for examples and analogies.
+Use the learning goal and focus areas for examples and analogies, and lean
+toward the focus areas when a question is ambiguous.
 
 Custom Instructions:
 Treat the student's custom instructions as standing preferences and honor
@@ -142,54 +167,80 @@ def build_space_block(space: dict[str, Any] | None) -> str:
     )
 
 
+def _context_lines(context: dict[str, str]) -> list[str]:
+    """Prompt lines for the learning context ([] when absent)."""
+    lines: list[str] = []
+    kind = context.get("type", "")
+    if context.get("other"):
+        lines.append(f"- Learning Context: {context['other']}")
+    elif kind and kind != "other":
+        label = _CONTEXT_TYPE_LABELS.get(kind, kind)
+        lines.append(f"- Learning Context: {label}")
+    lines.extend(
+        f"- {label}: {context[key]}"
+        for key, label in _CONTEXT_FIELDS
+        if context.get(key)
+    )
+    return lines
+
+
+def _trait_lines(traits: dict[str, Any]) -> list[str]:
+    """Prompt lines for the switched-on / valued learning traits."""
+    lines = [
+        f"- {line}"
+        for key, line in _TRAIT_LINES.items()
+        if traits.get(key) is True
+    ]
+    for key, label in _TRAIT_VALUE_LINES.items():
+        value = traits.get(key)
+        if isinstance(value, str) and value.strip():
+            lines.append(f"- {label}: {value.strip()}")
+    return lines
+
+
+def _field_lines(
+    doc: dict[str, Any], fields: list[tuple[str, str]]
+) -> list[str]:
+    """``- Label: value`` for each filled field."""
+    return [f"- {label}: {doc[key]}" for key, label in fields if doc[key]]
+
+
+def _document_lines(doc: dict[str, Any]) -> list[str]:
+    """Every filled document field as a prompt line, in prompt order."""
+    lines = _field_lines(doc, _LEAD_FIELDS)
+    lines += _context_lines(doc["context"])
+    lines += _field_lines(doc, _TAIL_FIELDS)
+    if doc["focus_areas"]:
+        lines.append(f"- Focus Areas: {', '.join(doc['focus_areas'])}")
+    lines += _trait_lines(doc["learning_traits"])
+    # Free-form instructions are rendered verbatim on their own line so the
+    # student's exact wording reaches the model.
+    if doc["custom_instructions"]:
+        lines.append(f'- Custom Instructions: "{doc["custom_instructions"]}"')
+    return lines
+
+
 def build_personalization_block(profile: dict[str, Any] | None) -> str:
-    """Build a system-prompt fragment from a profile, or '' when not set.
+    """Build a system-prompt fragment from a profile row, or '' when not set.
 
     Returns an empty string unless onboarding is completed and at least one
-    field is filled — EXCEPT ``preferred_language``, which applies as soon as
+    field is filled — EXCEPT ``response_language``, which applies as soon as
     it is set (a saved "talk in Hinglish" must survive skipped onboarding and
     new sessions; a Hinglish learner silently reset to English is a real bug).
     """
     if not profile:
         return ""
+    doc = profile_document.read(profile)
     if profile.get("personalization_status") != "completed":
-        language = str(profile.get("preferred_language") or "").strip()
+        language = doc["response_language"]
         if not language:
             return ""
         return (
-            f"User Learning Profile:\n- Preferred Language: {language}\n\n"
+            f"User Learning Profile:\n- Response Language: {language}\n\n"
             + _INSTRUCTION
         )
 
-    lines: list[str] = []
-    for key, label in _FIELDS:
-        value = profile.get(key)
-        if isinstance(value, str) and value.strip():
-            lines.append(f"- {label}: {value.strip()}")
-
-    subjects = profile.get("favorite_subjects") or []
-    if isinstance(subjects, list) and subjects:
-        joined = ", ".join(str(s) for s in subjects if str(s).strip())
-        if joined:
-            lines.append(f"- Favorite Subjects: {joined}")
-
-    traits = profile.get("learning_traits") or {}
-    if isinstance(traits, dict):
-        for key, line in _TRAIT_LINES.items():
-            if traits.get(key) is True:
-                lines.append(f"- {line}")
-        for key, label in _TRAIT_VALUE_LINES.items():
-            value = traits.get(key)
-            if isinstance(value, str) and value.strip():
-                lines.append(f"- {label}: {value.strip()}")
-
-    # Free-form instructions are rendered verbatim on their own line so the
-    # student's exact wording reaches the model.
-    instructions = profile.get("custom_instructions")
-    if isinstance(instructions, str) and instructions.strip():
-        lines.append(f'- Custom Instructions: "{instructions.strip()}"')
-
+    lines = _document_lines(doc)
     if not lines:
         return ""
-
     return "User Learning Profile:\n" + "\n".join(lines) + "\n\n" + _INSTRUCTION

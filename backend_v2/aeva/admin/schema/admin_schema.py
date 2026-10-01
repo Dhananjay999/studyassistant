@@ -43,17 +43,14 @@ class EditProfileSchema(Schema):
     """Admin edit of non-sensitive profile/personalization fields.
 
     Loads to a plain dict of ONLY the provided fields (partial update).
-    Email/id/auth data are deliberately not editable here.
+    Email/id/auth data are deliberately not editable here. Apart from
+    ``full_name``, the fields are learning-profile document fields; the
+    learning context is set through the learner's own onboarding flow.
     """
 
     full_name = fields.Str(validate=validate.Length(max=120), allow_none=True)
-    education_level = fields.Str(
-        validate=validate.Length(max=80), allow_none=True
-    )
-    learning_goal = fields.Str(
-        validate=validate.Length(max=200), allow_none=True
-    )
-    preferred_language = fields.Str(
+    goal = fields.Str(validate=validate.Length(max=120), allow_none=True)
+    response_language = fields.Str(
         validate=validate.Length(max=60), allow_none=True
     )
     explanation_style = fields.Str(
@@ -68,8 +65,8 @@ class EditProfileSchema(Schema):
     custom_instructions = fields.Str(
         validate=validate.Length(max=1000), allow_none=True
     )
-    favorite_subjects = fields.List(
-        fields.Str(validate=validate.Length(max=60)),
+    focus_areas = fields.List(
+        fields.Str(validate=validate.Length(max=40)),
         validate=validate.Length(max=20),
     )
 

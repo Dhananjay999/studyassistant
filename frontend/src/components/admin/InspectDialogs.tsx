@@ -32,6 +32,7 @@ import {
   useEditProfile,
 } from "@/hooks/adminApi";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/adminFormat";
+import { describeContext } from "@/lib/onboarding";
 import { formatDuration } from "@/lib/quizFormat";
 import { cn } from "@/lib/utils";
 import type {
@@ -428,9 +429,8 @@ const PROFILE_FIELDS: Array<{
   label: string;
 }> = [
   { key: "full_name", label: "Name" },
-  { key: "education_level", label: "Class / Education level" },
-  { key: "learning_goal", label: "Exam / Learning goal" },
-  { key: "preferred_language", label: "Preferred language" },
+  { key: "goal", label: "Learning goal" },
+  { key: "response_language", label: "Response language" },
   { key: "explanation_style", label: "Explanation style" },
   { key: "ai_personality", label: "AI personality" },
   { key: "communication_style", label: "Communication style" },
@@ -458,18 +458,14 @@ export function ProfileEditDialog({
     const learning = profile.learning_profile;
     setValues({
       full_name: profile.full_name ?? "",
-      education_level: learning.education_level ?? "",
-      learning_goal: learning.learning_goal ?? "",
-      preferred_language: learning.preferred_language ?? "",
+      goal: learning.goal ?? "",
+      response_language: learning.response_language ?? "",
       explanation_style: learning.explanation_style ?? "",
-      ai_personality: (learning.ai_personality as string | null) ?? "",
-      communication_style:
-        (learning.communication_style as string | null) ?? "",
+      ai_personality: learning.ai_personality ?? "",
+      communication_style: learning.communication_style ?? "",
     });
-    setSubjects(learning.favorite_subjects.join(", "));
-    setInstructions(
-      (learning.custom_instructions as string | null) ?? "",
-    );
+    setSubjects(learning.focus_areas.join(", "));
+    setInstructions(learning.custom_instructions ?? "");
   }, [open, profile]);
 
   const save = () => {
@@ -478,9 +474,9 @@ export function ProfileEditDialog({
       patch[key] = (values[key]?.trim() || null) as never;
     }
     patch.custom_instructions = instructions.trim() || null;
-    patch.favorite_subjects = subjects
+    patch.focus_areas = subjects
       .split(",")
-      .map((s) => s.trim())
+      .map((s) => s.trim().slice(0, 40))
       .filter(Boolean)
       .slice(0, 20);
     edit.mutate(
@@ -517,7 +513,7 @@ export function ProfileEditDialog({
         ))}
         <div className="space-y-1">
           <Label htmlFor="pf-subjects" className="text-xs">
-            Favorite subjects (comma-separated)
+            Focus areas (comma-separated)
           </Label>
           <Input
             id="pf-subjects"
@@ -538,8 +534,10 @@ export function ProfileEditDialog({
           />
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Email and identity fields aren't editable. Every save is recorded
-          in the audit log.
+          Learning context:{" "}
+          {describeContext(profile.learning_profile.context) || "not set"}{" "}
+          (set by the user in onboarding or Settings). Email and identity
+          fields aren't editable. Every save is recorded in the audit log.
         </p>
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
           <Button variant="ghost" className="h-11 sm:h-10" onClick={onClose}>

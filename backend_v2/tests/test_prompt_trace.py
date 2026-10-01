@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from aeva.learning_profile import profile_document
 from aeva.llm import prompts
 from aeva.llm.prompts import personalization
 from aeva.tracing.services import prompt_trace
@@ -16,17 +17,21 @@ from aeva.tracing.services import prompt_trace
 PROFILE = {
     "full_name": "Asha",
     "personalization_status": "completed",
-    "preferred_language": "Hinglish",
-    "ai_personality": "Study Buddy",
-    "education_level": " Class 12 ",
-    "favorite_subjects": ["Biology", "Chemistry"],
-    "learning_traits": {
-        "likes_funny_examples": True,
-        "likes_visual_explanations": False,
-        "preferred_depth": "deep",
+    "learning_profile": {
+        "version": 2,
+        "response_language": "Hinglish",
+        "ai_personality": "Study Buddy",
+        "context": {"type": "school", "class": " Class 12 "},
+        "focus_areas": ["Biology", "Chemistry"],
+        "learning_traits": {
+            "likes_funny_examples": True,
+            "likes_visual_explanations": False,
+            "preferred_depth": "deep",
+        },
+        "custom_instructions": "Keep it short",
     },
-    "custom_instructions": "Keep it short",
 }
+DOC = "profile.learning_profile"
 SPACE = {
     "name": "Cells",
     "subject": "Biology",
@@ -98,38 +103,39 @@ class TestExplain:
         profile = _parts(PROFILE, SPACE)["learning_profile"]
         assert profile["lines"] == [
             {
-                "source": "profile.preferred_language",
-                "line": "- Preferred Language: Hinglish",
+                "source": f"{DOC}.response_language",
+                "line": "- Response Language: Hinglish",
             },
             {
-                "source": "profile.ai_personality",
+                "source": f"{DOC}.ai_personality",
                 "line": "- Assistant Persona: Study Buddy",
             },
             {
-                "source": "profile.education_level",
-                "line": "- Education Level: Class 12",
+                "source": f"{DOC}.context.type",
+                "line": "- Learning Context: School",
+            },
+            {"source": f"{DOC}.context.class", "line": "- Class: Class 12"},
+            {
+                "source": f"{DOC}.focus_areas",
+                "line": "- Focus Areas: Biology, Chemistry",
             },
             {
-                "source": "profile.favorite_subjects",
-                "line": "- Favorite Subjects: Biology, Chemistry",
-            },
-            {
-                "source": "profile.learning_traits.likes_funny_examples",
+                "source": f"{DOC}.learning_traits.likes_funny_examples",
                 "line": "- Enjoys funny examples and analogies",
             },
             {
-                "source": "profile.learning_traits.preferred_depth",
+                "source": f"{DOC}.learning_traits.preferred_depth",
                 "line": "- Preferred Depth: deep",
             },
             {
-                "source": "profile.custom_instructions",
+                "source": f"{DOC}.custom_instructions",
                 "line": '- Custom Instructions: "Keep it short"',
             },
         ]
         # A trait that exists but is off is reported as not added.
         assert profile["ignored"] == [
             {
-                "source": "profile.learning_traits.likes_visual_explanations",
+                "source": f"{DOC}.learning_traits.likes_visual_explanations",
                 "reason": "This trait is not switched on.",
             }
         ]
@@ -153,39 +159,42 @@ class TestExplain:
     def test_switched_off_traits_are_listed_in_builder_order(self):
         profile = {
             "personalization_status": "completed",
-            "preferred_language": "Hindi",
-            "learning_traits": {
-                "wants_concept_check_questions": False,
-                "unknown_trait": False,
-                "likes_funny_examples": "yes",
-                "preferred_depth": "",
+            "learning_profile": {
+                "response_language": "Hindi",
+                "learning_traits": {
+                    "wants_concept_check_questions": False,
+                    "unknown_trait": False,
+                    "likes_funny_examples": "yes",
+                    "preferred_depth": "",
+                },
             },
         }
         ignored = _parts(profile, None)["learning_profile"]["ignored"]
         assert [item["source"] for item in ignored] == [
-            "profile.learning_traits.likes_funny_examples",
-            "profile.learning_traits.wants_concept_check_questions",
+            f"{DOC}.learning_traits.likes_funny_examples",
+            f"{DOC}.learning_traits.wants_concept_check_questions",
         ]
 
     def test_onboarding_not_completed_keeps_only_the_language(self):
         pending = {**PROFILE, "personalization_status": "pending"}
         profile = _parts(pending, None)["learning_profile"]
         assert profile["included"] is True
-        assert "only the preferred language applies" in profile["reason"]
+        assert "only the response language applies" in profile["reason"]
         assert "'pending'" in profile["reason"]
         assert profile["lines"] == [
             {
-                "source": "profile.preferred_language",
-                "line": "- Preferred Language: Hinglish",
+                "source": f"{DOC}.response_language",
+                "line": "- Response Language: Hinglish",
             }
         ]
         assert [item["source"] for item in profile["ignored"]] == [
-            "profile.ai_personality",
-            "profile.education_level",
-            "profile.favorite_subjects",
-            "profile.learning_traits.likes_funny_examples",
-            "profile.learning_traits.preferred_depth",
-            "profile.custom_instructions",
+            f"{DOC}.ai_personality",
+            f"{DOC}.context.type",
+            f"{DOC}.context.class",
+            f"{DOC}.focus_areas",
+            f"{DOC}.learning_traits.likes_funny_examples",
+            f"{DOC}.learning_traits.preferred_depth",
+            f"{DOC}.custom_instructions",
         ]
         assert {item["reason"] for item in profile["ignored"]} == {
             "Onboarding is not completed."
@@ -193,28 +202,32 @@ class TestExplain:
         block = prompts.build_personalization_block(pending)
         assert all(item["line"] not in block for item in profile["ignored"])
 
-    def test_a_language_the_builder_accepts_is_explained_as_it_prints_it(
-        self,
-    ):
-        # Before onboarding the builder prints any truthy language value.
-        profile = {"preferred_language": 5, "personalization_status": None}
+    def test_a_language_is_explained_as_the_builder_prints_it(self):
+        # Before onboarding only the (trimmed) response language applies;
+        # a value that is not text is never printed.
+        profile = {
+            "personalization_status": None,
+            "learning_profile": {"response_language": " Tamil "},
+        }
         part = _parts(profile, None)["learning_profile"]
         assert part["text"].startswith(
-            "User Learning Profile:\n- Preferred Language: 5\n"
+            "User Learning Profile:\n- Response Language: Tamil\n"
         )
         assert part["lines"] == [
             {
-                "source": "profile.preferred_language",
-                "line": "- Preferred Language: 5",
+                "source": f"{DOC}.response_language",
+                "line": "- Response Language: Tamil",
             }
         ]
+        junk = {"learning_profile": {"response_language": 5}}
+        assert _parts(junk, None)["learning_profile"]["included"] is False
 
     def test_nothing_added_says_why(self):
         parts = _parts({"personalization_status": "pending"}, None)
         assert not any(p["included"] for p in parts.values())
         assert all(p["lines"] == [] for p in parts.values())
         assert "no name" in parts["identity"]["reason"]
-        assert "no preferred language" in parts["learning_profile"]["reason"]
+        assert "no response language" in parts["learning_profile"]["reason"]
         assert "not in a Study Space" in parts["study_space"]["reason"]
         assert _parts(None, {"name": "General", "is_default": True})[
             "study_space"
@@ -256,13 +269,21 @@ class TestLearnedFromTheBuilders:
 
     def test_a_field_added_to_the_builder_is_attributed(self, monkeypatch):
         monkeypatch.setattr(
-            personalization,
-            "_FIELDS",
-            [*personalization._FIELDS, ("nickname", "Nickname")],
+            profile_document,
+            "TEXT_FIELDS",
+            (*profile_document.TEXT_FIELDS, "nickname"),
         )
-        profile = {**PROFILE, "nickname": "Ash"}
+        monkeypatch.setattr(
+            personalization,
+            "_TAIL_FIELDS",
+            [*personalization._TAIL_FIELDS, ("nickname", "Nickname")],
+        )
+        profile = {
+            **PROFILE,
+            "learning_profile": {**PROFILE["learning_profile"], "nickname": "Ash"},
+        }
         lines = _parts(profile, None)["learning_profile"]["lines"]
-        assert {"source": "profile.nickname", "line": "- Nickname: Ash"} in (
+        assert {"source": f"{DOC}.nickname", "line": "- Nickname: Ash"} in (
             lines
         )
 
@@ -274,7 +295,7 @@ class TestLearnedFromTheBuilders:
         )
         lines = _parts(PROFILE, None)["learning_profile"]["lines"]
         assert {
-            "source": "profile.learning_traits.likes_funny_examples",
+            "source": f"{DOC}.learning_traits.likes_funny_examples",
             "line": "- Likes jokes",
         } in lines
 
@@ -314,10 +335,14 @@ class TestNeverRaises:
         "profile",
         [
             MagicMock(),
-            {"full_name": MagicMock(), "learning_traits": MagicMock()},
-            {1: "x", None: "y", "preferred_language": ["a"]},
-            {"learning_traits": {"a": {"b": {"c": {"d": {"e": True}}}}}},
-            {"personalization_status": "completed", "favorite_subjects": 7},
+            {"full_name": MagicMock(), "learning_profile": MagicMock()},
+            {"learning_profile": {"learning_traits": MagicMock()}},
+            {1: "x", None: "y", "learning_profile": ["a"]},
+            {"learning_profile": {"context": {"a": {"b": {"c": True}}}}},
+            {
+                "personalization_status": "completed",
+                "learning_profile": {"focus_areas": 7, "context": "x"},
+            },
         ],
     )
     def test_odd_profiles(self, profile):
@@ -368,35 +393,44 @@ _VALUES = [
     "- Assistant Persona: Teacher",
     "A\n- Assistant Persona: B",
 ]
-_PROFILE_KEYS = [
-    "full_name",
-    "preferred_language",
+_DOCUMENT_KEYS = [
+    "response_language",
     "ai_personality",
     "communication_style",
-    "education_level",
-    "exam_target",
     "explanation_style",
-    "learning_goal",
+    "goal",
     "custom_instructions",
-    "email",
+    "unknown_field",
 ]
 
 
-def _random_profile(rnd: random.Random):
-    if rnd.random() < 0.05:
-        return rnd.choice([None, {}])
-    profile = {}
-    for key in _PROFILE_KEYS:
-        if rnd.random() < 0.7:
-            profile[key] = rnd.choice(_VALUES)
-    if rnd.random() < 0.8:
-        profile["personalization_status"] = rnd.choice(
-            ["completed", "completed", "pending", None, "skipped"]
-        )
+def _random_context(rnd: random.Random):
+    context = {
+        "type": rnd.choice(
+            ["school", "college", "other", "homeschool", "", 5, None]
+        ),
+        "class": rnd.choice(_VALUES),
+        "degree": rnd.choice(_VALUES),
+        "exam": rnd.choice(["JEE", " NEET ", "", None]),
+        "other": rnd.choice([None, "", "Gap year", "School"]),
+        "unknown": "x",
+    }
+    items = list(context.items())
+    rnd.shuffle(items)
+    return dict(items[: rnd.randint(0, len(items))])
+
+
+def _random_document(rnd: random.Random):
+    doc = {}
+    for key in _DOCUMENT_KEYS:
+        if rnd.random() < 0.6:
+            doc[key] = rnd.choice(_VALUES)
     if rnd.random() < 0.6:
-        profile["favorite_subjects"] = rnd.choice(
+        doc["focus_areas"] = rnd.choice(
             [None, [], ["Math"], ["Math", " ", "Bio"], "Math", [1, 2]]
         )
+    if rnd.random() < 0.6:
+        doc["context"] = rnd.choice([None, "x", {}, _random_context(rnd)])
     if rnd.random() < 0.7:
         traits = {
             "likes_funny_examples": rnd.choice([True, False, "yes", None]),
@@ -409,7 +443,29 @@ def _random_profile(rnd: random.Random):
         items = list(traits.items())
         rnd.shuffle(items)
         items = items[: rnd.randint(0, len(items))]
-        profile["learning_traits"] = rnd.choice([None, "x", {}, dict(items)])
+        doc["learning_traits"] = rnd.choice([None, "x", {}, dict(items)])
+    if rnd.random() < 0.3:
+        doc["version"] = 2
+    items = list(doc.items())
+    rnd.shuffle(items)
+    return dict(items)
+
+
+def _random_profile(rnd: random.Random):
+    if rnd.random() < 0.05:
+        return rnd.choice([None, {}])
+    profile = {}
+    for key in ("full_name", "email"):
+        if rnd.random() < 0.7:
+            profile[key] = rnd.choice(_VALUES)
+    if rnd.random() < 0.8:
+        profile["personalization_status"] = rnd.choice(
+            ["completed", "completed", "pending", None, "skipped"]
+        )
+    if rnd.random() < 0.9:
+        profile["learning_profile"] = rnd.choice(
+            [_random_document(rnd)] * 4 + [None, "x", []]
+        )
     items = list(profile.items())
     rnd.shuffle(items)
     return dict(items)

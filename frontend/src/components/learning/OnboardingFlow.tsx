@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FocusEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Sparkles } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -8,141 +8,104 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { analytics, AnalyticsEvent } from "@/lib/analytics";
-import { errorKind } from "@/lib/errorMessage";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ChipSelect } from "@/components/learning/ChipSelect";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   useLearningProfile,
   useSaveLearningProfile,
   useSkipPersonalization,
 } from "@/hooks/api";
 import { useSwipe } from "@/hooks/useSwipe";
-import { cn } from "@/lib/utils";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { errorKind } from "@/lib/errorMessage";
 import {
-  EDUCATION_LEVELS,
-  EXAM_TARGETS,
-  EXPLANATION_STYLES,
-  FAVORITE_SUBJECTS,
-  LEARNING_GOALS,
-  PREFERRED_LANGUAGES,
-} from "@/lib/learningProfile";
-import type { LearningProfile } from "@/types";
+  CUSTOM_MAX,
+  EMPTY_ANSWERS,
+  FOCUS_CUSTOM_MAX,
+  OTHER_ID,
+  OTHER_LABEL,
+  STEPS,
+  answerText,
+  branchOf,
+  canContinue,
+  carryOverPreferences,
+  copyFor,
+  fromProfile,
+  isUnanswered,
+  isVisible,
+  optionsFor,
+  personalizationSummary,
+  setCustom,
+  setSingle,
+  stepById,
+  toProfileInput,
+  toggleFocus,
+  visibleSteps,
+  type Answers,
+  type MultiStep,
+  type SingleStep,
+  type StepDef,
+  type StepId,
+} from "@/lib/onboarding";
+import { cn } from "@/lib/utils";
 
-const OTHER = "Other";
+/** Beat between tapping a single-select option and auto-advancing. */
+const ADVANCE_MS = 260;
+const DRAFT_PREFIX = "aeva.onboarding.draft.v1:";
 
-/** Editable answers for the guided flow (the 6 core profile questions). */
 interface Draft {
-  level: string;
-  otherLevel: string;
-  language: string;
-  style: string;
-  subjects: string[];
-  goal: string;
-  examTarget: string;
+  answers: Answers;
+  stepId: StepId;
 }
 
-const EMPTY: Draft = {
-  level: "",
-  otherLevel: "",
-  language: "",
-  style: "",
-  subjects: [],
-  goal: "",
-  examTarget: "",
-};
-
-/** Smart defaults: seed the draft from a saved profile when editing. */
-function toDraft(profile: LearningProfile | undefined | null): Draft {
-  if (!profile) return EMPTY;
-  const saved = profile.education_level ?? "";
-  const known = (EDUCATION_LEVELS as readonly string[]).includes(saved);
-  return {
-    level: saved ? (known ? saved : OTHER) : "",
-    otherLevel: known ? "" : saved,
-    language: profile.preferred_language ?? "",
-    style: profile.explanation_style ?? "",
-    subjects: profile.favorite_subjects ?? [],
-    goal: profile.learning_goal ?? "",
-    examTarget: profile.exam_target ?? "",
-  };
-}
-
-interface StepDef {
-  key:
-    | keyof Pick<Draft, "level" | "language" | "style" | "goal" | "examTarget">
-    | "subjects";
-  emoji: string;
-  title: string;
-  hint?: string;
-  options: readonly string[];
-  multi?: boolean;
-  /** Single-select steps render big option rows; multi renders chips. */
-  allowOther?: boolean;
-}
-
-const STEPS: StepDef[] = [
-  {
-    key: "level",
-    emoji: "🎓",
-    title: "What are you studying?",
-    hint: "This is the most useful detail for tailoring answers.",
-    options: EDUCATION_LEVELS,
-    allowOther: true,
-  },
-  {
-    key: "language",
-    emoji: "🌍",
-    title: "Preferred language?",
-    options: PREFERRED_LANGUAGES,
-  },
-  {
-    key: "style",
-    emoji: "🧠",
-    title: "How should Aeva explain things?",
-    options: EXPLANATION_STYLES,
-  },
-  {
-    key: "subjects",
-    emoji: "📚",
-    title: "Favorite subjects",
-    hint: "Pick as many as you like.",
-    options: FAVORITE_SUBJECTS,
-    multi: true,
-  },
-  {
-    key: "goal",
-    emoji: "🎯",
-    title: "What are you preparing for?",
-    options: LEARNING_GOALS,
-  },
-  {
-    key: "examTarget",
-    emoji: "🏁",
-    title: "Target exam?",
-    hint: "Aeva adds exam-level insights, traps, and practice for this goal.",
-    options: EXAM_TARGETS,
-  },
-];
-
-const TOTAL = STEPS.length;
-
-/** Current display value of a step from the draft. */
-function stepValue(draft: Draft, step: StepDef): string {
-  if (step.key === "subjects") {
-    return draft.subjects.length ? draft.subjects.join(", ") : "";
+/** Saved mid-flow progress (survives refresh); null when absent/invalid. */
+function loadDraft(key: string | null): Draft | null {
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Draft;
+    const a = d?.answers;
+    if (
+      !a ||
+      typeof a.single !== "object" ||
+      typeof a.custom !== "object" ||
+      !Array.isArray(a.focus) ||
+      !visibleSteps(a).some((s) => s.id === d.stepId)
+    ) {
+      return null;
+    }
+    return d;
+  } catch {
+    return null;
   }
-  const v = draft[step.key];
-  return v === OTHER ? draft.otherLevel || OTHER : v;
+}
+
+function saveDraft(key: string | null, draft: Draft | null): void {
+  if (!key) return;
+  try {
+    if (draft) localStorage.setItem(key, JSON.stringify(draft));
+    else localStorage.removeItem(key);
+  } catch {
+    // Storage unavailable (private mode, blocked): resume just won't work.
+  }
 }
 
 /**
- * Guided, mobile-first personalization: one question per screen, a progress
- * bar, big touch-friendly choices, swipe/slide navigation, and per-step Skip.
- * The same component powers first-run onboarding (welcome → questions →
- * celebration) and step-based editing from Settings (`mode="edit"`: opens on
- * a jump-to-any-question overview, prefilled from the saved profile).
+ * Personalization as a short conversation: one question per screen, where
+ * earlier answers decide which questions come next (see `lib/onboarding.ts`
+ * for the flow definition). Back keeps answers; changing one clears what no
+ * longer applies.
+ *
+ * - First run (`mode="onboarding"`): welcome → questions → celebration.
+ *   Every step is skippable and progress is saved locally so a refresh
+ *   resumes.
+ * - Settings (`mode="edit"`): opens on an overview prefilled from the saved
+ *   profile; tap any question to change it. If a change brings up new
+ *   questions (e.g. School → College), those follow before returning to the
+ *   overview. Nothing is written until "Save changes".
  */
 export function OnboardingFlow({
   open,
@@ -155,169 +118,284 @@ export function OnboardingFlow({
   mode?: "onboarding" | "edit";
 }) {
   const editing = mode === "edit";
-  // Screens: welcome (onboarding) / overview (edit) → question index → done.
+  const { user } = useAuth();
+  // Edit mode never persists a draft: closing it simply discards changes.
+  const draftKey = user && !editing ? `${DRAFT_PREFIX}${user.id}` : null;
+
   const [screen, setScreen] = useState<"intro" | "question" | "done">("intro");
-  const [idx, setIdx] = useState(0);
+  const [stepId, setStepIdState] = useState<StepId>("context");
   const [dir, setDir] = useState(1);
-  const [draft, setDraft] = useState<Draft>(EMPTY);
+  const [answers, setAnswersState] = useState<Answers>(EMPTY_ANSWERS);
+  const [saveError, setSaveError] = useState(false);
+
+  // Refs mirror state so the delayed auto-advance never reads stale values.
+  const answersRef = useRef(answers);
+  const stepRef = useRef(stepId);
+  const advanceTimer = useRef<number>();
+  // Option id the current step had when it was entered (change analytics).
+  const enteredWith = useRef<string | undefined>();
+  // Edit mode: questions a change made newly visible or cleared, visited
+  // next before returning to the overview.
+  const pending = useRef(new Set<StepId>());
 
   const { data: profile } = useLearningProfile();
   const saveMutation = useSaveLearningProfile();
   const skipMutation = useSkipPersonalization();
   const busy = saveMutation.isPending || skipMutation.isPending;
 
-  // Prefill once per open so users never re-enter unchanged information.
-  useEffect(() => {
-    if (open) {
-      setDraft(toDraft(profile));
-      setScreen("intro");
-      setIdx(0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  const step = STEPS[idx];
-
-  const goto = (next: number) => {
-    setDir(next >= idx ? 1 : -1);
-    setIdx(next);
-    setScreen("question");
+  const setAnswers = (next: Answers) => {
+    answersRef.current = next;
+    setAnswersState(next);
   };
 
-  const handleSkipAll = async (via: "button" | "dismiss" = "button") => {
-    if (!editing) {
-      analytics.track(AnalyticsEvent.ONBOARDING_SKIPPED, {
-        at_step_index: screen === "question" ? idx : -1,
-        via,
-      });
+  const cancelAdvance = () => window.clearTimeout(advanceTimer.current);
+  useEffect(() => cancelAdvance, []);
+
+  const enter = (id: StepId, direction: number) => {
+    cancelAdvance();
+    setDir(direction);
+    stepRef.current = id;
+    setStepIdState(id);
+    setScreen("question");
+    setSaveError(false);
+  };
+
+  // Edit: prefill from the saved profile. First run: resume a saved draft,
+  // else start on the welcome screen.
+  useEffect(() => {
+    if (!open) return;
+    if (editing) {
+      pending.current.clear();
+      setAnswers(fromProfile(profile));
+      setSaveError(false);
+      setScreen("intro");
+      analytics.track(AnalyticsEvent.ONBOARDING_STARTED, { mode: "edit" });
+      return;
     }
+    const draft = loadDraft(draftKey);
+    if (draft) {
+      setAnswers(draft.answers);
+      enter(draft.stepId, 1);
+      analytics.track(AnalyticsEvent.ONBOARDING_STARTED, {
+        mode: "first_run",
+        resumed: true,
+      });
+    } else {
+      setScreen("intro");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, draftKey, editing]);
+
+  // Persist progress while answering.
+  useEffect(() => {
+    if (open && screen === "question") saveDraft(draftKey, { answers, stepId });
+  }, [open, screen, answers, stepId, draftKey]);
+
+  const step = stepById(stepId);
+  const visible = visibleSteps(answers);
+  const index = Math.max(0, visible.findIndex((s) => s.id === stepId));
+  const isLast = !editing && index === visible.length - 1;
+  const pendingAhead =
+    editing && visible.slice(index + 1).some((s) => pending.current.has(s.id));
+
+  useEffect(() => {
+    if (!open || screen !== "question") return;
+    const a = answersRef.current;
+    const s = stepById(stepId);
+    enteredWith.current = s.kind === "single" ? a.single[s.id] : undefined;
+    if (editing) return;
+    const steps = visibleSteps(a);
+    analytics.track(AnalyticsEvent.ONBOARDING_STEP_VIEWED, {
+      step: stepId,
+      step_index: steps.findIndex((x) => x.id === stepId),
+      branch: branchOf(a),
+      visible_total: steps.length,
+    });
+  }, [open, screen, stepId, editing]);
+
+  const finish = async (a: Answers) => {
+    setSaveError(false);
     try {
-      if (!editing) await skipMutation.mutateAsync();
+      await saveMutation.mutateAsync(toProfileInput(a, profile));
+    } catch (err) {
+      analytics.track(AnalyticsEvent.ONBOARDING_SAVE_FAILED, {
+        error_kind: errorKind(err),
+      });
+      setSaveError(true);
+      return;
+    }
+    const steps = visibleSteps(a);
+    analytics.track(AnalyticsEvent.ONBOARDING_COMPLETED, {
+      steps_answered: steps.filter((s) => !isUnanswered(s, a)).length,
+      has_exam_target: !!a.single.exam,
+      subject_count: a.focus.length,
+      branch: branchOf(a),
+      steps_visible: steps.length,
+      has_custom_language: a.single.language === OTHER_ID,
+    });
+    saveDraft(draftKey, null);
+    setScreen("done");
+  };
+
+  const saveEdits = async () => {
+    setSaveError(false);
+    const a = answersRef.current;
+    try {
+      await saveMutation.mutateAsync(toProfileInput(a, profile));
+    } catch (err) {
+      analytics.track(AnalyticsEvent.ONBOARDING_SAVE_FAILED, {
+        error_kind: errorKind(err),
+      });
+      setSaveError(true);
+      return;
+    }
+    analytics.track(AnalyticsEvent.LEARNING_PROFILE_SAVED, {
+      fields_set: visibleSteps(a).filter((s) => !isUnanswered(s, a)).length,
+    });
+    onDone();
+  };
+
+  /** Advance from the current step; `skipping` bypasses required-answer validation. */
+  const goNext = (skipping = false) => {
+    cancelAdvance();
+    const a = answersRef.current;
+    const s = stepById(stepRef.current);
+    if (!skipping && !canContinue(s, a)) return;
+    const steps = visibleSteps(a);
+    const i = steps.findIndex((x) => x.id === s.id);
+    const selected = s.kind === "single" ? a.single[s.id] : undefined;
+    analytics.track(AnalyticsEvent.ONBOARDING_STEP_COMPLETED, {
+      step: s.id,
+      step_index: i,
+      skipped: isUnanswered(s, a),
+      selection_count: s.kind === "multi" ? a.focus.length : undefined,
+      branch: branchOf(a),
+      selected_id: selected,
+      previous_id:
+        enteredWith.current && enteredWith.current !== selected
+          ? enteredWith.current
+          : undefined,
+      changed: !!enteredWith.current && enteredWith.current !== selected,
+      has_custom_value:
+        s.kind === "multi"
+          ? a.focus.some(
+              (f) => !optionsFor(s, a).some((o) => o.label === f),
+            )
+          : selected === OTHER_ID,
+    });
+    if (editing) {
+      pending.current.delete(s.id);
+      const next = steps.slice(i + 1).find((x) => pending.current.has(x.id));
+      if (next) enter(next.id, 1);
+      else setScreen("intro");
+      return;
+    }
+    if (i < steps.length - 1) enter(steps[i + 1].id, 1);
+    else void finish(a);
+  };
+
+  /** Skip = leave this question unanswered and move on. */
+  const skipStep = () => {
+    const a = answersRef.current;
+    const s = stepById(stepRef.current);
+    setAnswers(
+      s.kind === "multi"
+        ? { ...a, focus: [] }
+        : setSingle(a, s.id, ""),
+    );
+    goNext(true);
+  };
+
+  const back = () => {
+    cancelAdvance();
+    if (editing) {
+      setScreen("intro");
+      return;
+    }
+    const a = answersRef.current;
+    const steps = visibleSteps(a);
+    const i = steps.findIndex((x) => x.id === stepRef.current);
+    analytics.track(AnalyticsEvent.ONBOARDING_BACK, {
+      step: stepRef.current,
+      step_index: i,
+      branch: branchOf(a),
+    });
+    if (i > 0) enter(steps[i - 1].id, -1);
+    else setScreen("intro");
+  };
+
+  /** Set answers; in edit mode, queue questions the change brought up. */
+  const applyChange = (prev: Answers, next: Answers) => {
+    if (editing) {
+      for (const s of visibleSteps(next)) {
+        const fresh = !isVisible(s, prev) || !isUnanswered(s, prev);
+        if (isUnanswered(s, next) && fresh) pending.current.add(s.id);
+      }
+    }
+    setAnswers(next);
+  };
+
+  // Single-select: choosing an option advances after a short beat, so the
+  // flow reads as a conversation rather than select-then-submit.
+  const pick = (s: SingleStep, id: string) => {
+    const a = answersRef.current;
+    const current = a.single[s.id];
+    if (current === id) {
+      if (id !== OTHER_ID) applyChange(a, setSingle(a, s.id, ""));
+      return;
+    }
+    applyChange(a, setSingle(a, s.id, id));
+    cancelAdvance();
+    if (id !== OTHER_ID) {
+      advanceTimer.current = window.setTimeout(() => goNext(), ADVANCE_MS);
+    }
+  };
+
+  const handleSkipAll = async (via: "button" | "dismiss") => {
+    cancelAdvance();
+    analytics.track(AnalyticsEvent.ONBOARDING_SKIPPED, {
+      at_step_index: screen === "question" ? index : -1,
+      via,
+    });
+    saveDraft(draftKey, null);
+    try {
+      await skipMutation.mutateAsync();
     } finally {
       onDone();
     }
   };
 
-  /** Non-empty answers in the draft (analytics). */
-  const answeredCount = () =>
-    [
-      draft.level,
-      draft.language,
-      draft.style,
-      draft.subjects.length ? "x" : "",
-      draft.goal,
-      draft.examTarget,
-    ].filter(Boolean).length;
-
-  const save = async (): Promise<boolean> => {
-    const level = draft.level === OTHER ? draft.otherLevel.trim() : draft.level;
-    try {
-      // The update endpoint writes every field, so pass through the values
-      // this flow doesn't edit (persona, instructions, traits) unchanged —
-      // otherwise a wizard save would silently wipe them.
-      await saveMutation.mutateAsync({
-        education_level: level || null,
-        preferred_language: draft.language || null,
-        explanation_style: draft.style || null,
-        favorite_subjects: draft.subjects,
-        learning_goal: draft.goal || null,
-        exam_target: draft.examTarget || null,
-        ai_personality: profile?.ai_personality ?? null,
-        communication_style: profile?.communication_style ?? null,
-        custom_instructions: profile?.custom_instructions ?? null,
-        learning_traits: profile?.learning_traits ?? {},
-      });
-      return true;
-    } catch (err) {
-      analytics.track(AnalyticsEvent.ONBOARDING_SAVE_FAILED, {
-        error_kind: errorKind(err),
-      });
-      return false; // surfaced via mutation state; stay on the step
-    }
-  };
-
-  const finish = async () => {
-    if (await save()) {
-      if (editing) {
-        analytics.track(AnalyticsEvent.LEARNING_PROFILE_SAVED, {
-          fields_set: answeredCount(),
-        });
-        onDone();
-      } else {
-        analytics.track(AnalyticsEvent.ONBOARDING_COMPLETED, {
-          steps_answered: answeredCount(),
-          has_exam_target: !!draft.examTarget,
-          subject_count: draft.subjects.length,
-        });
-        setScreen("done");
-      }
-    }
-  };
-
-  const next = () => {
-    if (screen === "question") {
-      const value = draft[step.key];
-      const skipped = Array.isArray(value) ? value.length === 0 : !value;
-      analytics.track(AnalyticsEvent.ONBOARDING_STEP_COMPLETED, {
-        step: step.key,
-        step_index: idx,
-        skipped,
-        selection_count:
-          step.key === "subjects" ? draft.subjects.length : undefined,
-      });
-    }
-    if (editing) {
-      setScreen("intro"); // back to the jump overview after each answer
-    } else if (idx < TOTAL - 1) {
-      goto(idx + 1);
-    } else {
-      void finish();
-    }
-  };
-  const back = () => {
-    if (editing || idx === 0) setScreen("intro");
-    else goto(idx - 1);
-  };
-
-  // Single-select: choosing an option advances after a short beat, so the
-  // flow reads as a conversation rather than select-then-submit.
-  const pick = (value: string) => {
-    if (step.key === "subjects") return;
-    setDraft((d) => ({ ...d, [step.key]: d[step.key] === value ? "" : value }));
-    if (value !== OTHER && draft[step.key] !== value) {
-      window.setTimeout(next, 260);
-    }
-  };
-
-  const toggleSubject = (subject: string) =>
-    setDraft((d) => ({
-      ...d,
-      subjects: d.subjects.includes(subject)
-        ? d.subjects.filter((s) => s !== subject)
-        : [...d.subjects, subject],
-    }));
-
   const swipe = useSwipe({
-    onSwipeLeft: () => screen === "question" && !editing && next(),
+    onSwipeLeft: () => screen === "question" && canContinue(step, answers) && goNext(),
     onSwipeRight: () => screen === "question" && back(),
   });
 
-  // Closing via X / Escape / overlay: "skip for now" on first run, plain
-  // close while editing.
+  // Closing via X / Escape / overlay: "skip for now" on first run — except
+  // after a successful save (never downgrade to skipped) or while editing,
+  // where it simply closes and discards changes.
   const onOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && !busy) void handleSkipAll("dismiss");
+    if (nextOpen || busy) return;
+    if (editing || screen === "done") onDone();
+    else void handleSkipAll("dismiss");
   };
 
-  // Edit mode opens straight onto the overview: that is the "start".
-  useEffect(() => {
-    if (open && editing) {
-      analytics.track(AnalyticsEvent.ONBOARDING_STARTED, { mode: "edit" });
-    }
-  }, [open, editing]);
+  const progress = ((index + 1) / Math.max(visible.length, 1)) * 100;
+  const progressLabel =
+    visible.length - index <= 2 ? "Almost there" : "Getting to know you";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-dvh w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 pt-safe pb-safe sm:h-auto sm:min-h-[560px] sm:w-full sm:max-w-md sm:rounded-3xl sm:border">
+      <DialogContent className="flex h-dvh w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 pt-safe pb-safe max-sm:top-0 max-sm:h-[var(--app-height,100dvh)] max-sm:translate-y-0 sm:h-auto sm:min-h-[560px] sm:w-full sm:max-w-md sm:rounded-3xl sm:border">
+        {screen === "intro" && editing && (
+          <Overview
+            answers={answers}
+            busy={busy}
+            saveError={saveError}
+            onJump={(id) => enter(id, 1)}
+            onSave={() => void saveEdits()}
+          />
+        )}
+
         {screen === "intro" && !editing && (
           <Welcome
             busy={busy}
@@ -325,120 +403,76 @@ export function OnboardingFlow({
               analytics.track(AnalyticsEvent.ONBOARDING_STARTED, {
                 mode: "first_run",
               });
-              goto(0);
+              // Fresh start: carry over preferences saved elsewhere (e.g. a
+              // "talk in Hinglish" chat request). Returning here via Back
+              // keeps the answers already given.
+              if (!answersRef.current.single.context) {
+                setAnswers(carryOverPreferences(profile));
+              }
+              enter(STEPS[0].id, 1);
             }}
-            onSkip={() => handleSkipAll("button")}
-          />
-        )}
-
-        {screen === "intro" && editing && (
-          <Overview
-            draft={draft}
-            busy={busy}
-            onJump={goto}
-            onSave={() => void finish()}
+            onSkip={() => void handleSkipAll("button")}
           />
         )}
 
         {screen === "question" && (
           <div className="flex min-h-0 flex-1 flex-col" {...swipe}>
-            {/* Progress header */}
-            <div className="px-5 pb-3 pt-5">
-              <div className="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground">
-                <span>
-                  Step {idx + 1} of {TOTAL}
-                </span>
-                <button
-                  type="button"
-                  className="touch-target -mr-2 px-2 text-muted-foreground"
-                  onClick={next}
-                  disabled={busy}
-                >
-                  Skip
-                </button>
+            {/* Progress header (pr-12 clears the dialog's close button) */}
+            {editing ? (
+              <div className="px-5 pb-3 pr-12 pt-5 text-xs font-medium text-muted-foreground">
+                Your learning profile
               </div>
-              <Progress
-                value={((idx + 1) / TOTAL) * 100}
-                className="h-1.5 [&>div]:transition-all [&>div]:duration-500"
-              />
-            </div>
+            ) : (
+              <div className="px-5 pb-3 pr-12 pt-5">
+                <div className="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground">
+                  <span>{progressLabel}</span>
+                  <button
+                    type="button"
+                    className="touch-target px-2 text-muted-foreground/80 hover:text-muted-foreground"
+                    onClick={skipStep}
+                    disabled={busy}
+                  >
+                    Skip
+                  </button>
+                </div>
+                <Progress
+                  value={progress}
+                  className="h-1.5 [&>div]:transition-all [&>div]:duration-500"
+                />
+              </div>
+            )}
 
             {/* Question */}
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
               <AnimatePresence mode="wait" custom={dir}>
                 <motion.div
-                  key={idx}
+                  key={stepId}
                   initial={{ opacity: 0, x: dir * 40 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: dir * -40 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
                 >
-                  <div className="mb-1 text-4xl" aria-hidden="true">
-                    {step.emoji}
-                  </div>
-                  <DialogTitle className="mt-2 font-display text-xl font-bold">
-                    {step.title}
-                  </DialogTitle>
-                  {step.hint && (
-                    <DialogDescription className="mt-1 text-sm">
-                      {step.hint}
-                    </DialogDescription>
-                  )}
-
-                  <div className="mt-5">
-                    {step.multi ? (
-                      <ChipSelect
-                        options={step.options}
-                        selected={draft.subjects}
-                        onToggle={toggleSubject}
-                        className="gap-2.5 [&>button]:px-4 [&>button]:py-2.5"
-                      />
-                    ) : (
-                      <div className="grid gap-2">
-                        {[...step.options, ...(step.allowOther ? [OTHER] : [])].map(
-                          (option) => {
-                            const active = draft[step.key] === option;
-                            return (
-                              <button
-                                key={option}
-                                type="button"
-                                aria-pressed={active}
-                                onClick={() => pick(option)}
-                                className={cn(
-                                  "flex min-h-12 items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-colors",
-                                  active
-                                    ? "border-brand-1 bg-brand-1/10 text-brand-1"
-                                    : "border-border/70 bg-card/50",
-                                )}
-                              >
-                                {option}
-                                {active && (
-                                  <Sparkles className="h-4 w-4 shrink-0" />
-                                )}
-                              </button>
-                            );
-                          },
-                        )}
-                        {step.allowOther && draft.level === OTHER && (
-                          <Input
-                            autoFocus
-                            value={draft.otherLevel}
-                            onChange={(e) =>
-                              setDraft((d) => ({
-                                ...d,
-                                otherLevel: e.target.value,
-                              }))
-                            }
-                            placeholder="Tell us what you're studying"
-                            className="mt-1 h-12 rounded-xl"
-                          />
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <Question
+                    step={step}
+                    answers={answers}
+                    onPick={pick}
+                    onCustom={(s, text) =>
+                      setAnswers(setCustom(answersRef.current, s.id, text))
+                    }
+                    onToggleFocus={(label) =>
+                      setAnswers(toggleFocus(answersRef.current, label))
+                    }
+                    onSubmit={() => canContinue(step, answersRef.current) && goNext()}
+                  />
                 </motion.div>
               </AnimatePresence>
             </div>
+
+            {saveError && (
+              <p role="alert" className="px-5 pb-2 text-sm text-destructive">
+                Couldn't save your answers. Check your connection and try again.
+              </p>
+            )}
 
             {/* Footer nav */}
             <div className="flex items-center justify-between gap-2 border-t border-border/40 px-5 py-3">
@@ -451,23 +485,25 @@ export function OnboardingFlow({
                 <ChevronLeft className="h-4 w-4" /> Back
               </Button>
               <Button
-                onClick={next}
-                disabled={busy}
+                onClick={() => goNext()}
+                disabled={busy || !canContinue(step, answers)}
                 className={cn(
                   "h-11 flex-1 gap-1 rounded-xl sm:flex-none sm:px-8",
-                  idx === TOTAL - 1 && !editing
-                    ? "bg-brand-gradient text-white shadow-glow"
-                    : "",
+                  isLast ? "bg-brand-gradient text-white shadow-glow" : "",
                 )}
               >
                 {busy
                   ? "Saving…"
                   : editing
-                    ? "Done"
-                    : idx === TOTAL - 1
-                      ? "Finish"
+                    ? pendingAhead
+                      ? "Next"
+                      : "Done"
+                    : isLast
+                      ? saveError
+                        ? "Try again"
+                        : "Finish"
                       : "Next"}
-                {!busy && idx < TOTAL - 1 && !editing && (
+                {!busy && (pendingAhead || (!editing && !isLast)) && (
                   <ChevronRight className="h-4 w-4" />
                 )}
               </Button>
@@ -475,9 +511,294 @@ export function OnboardingFlow({
           </div>
         )}
 
-        {screen === "done" && <Celebration onStart={onDone} />}
+        {screen === "done" && (
+          <Celebration summary={personalizationSummary(answers)} onStart={onDone} />
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Keep a focused custom input above the on-screen keyboard. */
+const revealOnFocus = (e: FocusEvent<HTMLInputElement>) => {
+  const el = e.currentTarget;
+  window.setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+};
+
+function Question({
+  step,
+  answers,
+  onPick,
+  onCustom,
+  onToggleFocus,
+  onSubmit,
+}: {
+  step: StepDef;
+  answers: Answers;
+  onPick: (step: SingleStep, id: string) => void;
+  onCustom: (step: SingleStep, text: string) => void;
+  onToggleFocus: (label: string) => void;
+  onSubmit: () => void;
+}) {
+  const copy = copyFor(step, answers);
+  return (
+    <>
+      <div className="mb-1 text-4xl" aria-hidden="true">
+        {copy.emoji}
+      </div>
+      <DialogTitle className="mt-2 font-display text-xl font-bold">
+        {copy.title}
+      </DialogTitle>
+      {copy.hint && (
+        <DialogDescription className="mt-1 text-sm">{copy.hint}</DialogDescription>
+      )}
+      <div className="mt-5">
+        {step.kind === "single" ? (
+          <SingleOptions
+            step={step}
+            answers={answers}
+            onPick={onPick}
+            onCustom={onCustom}
+            onSubmit={onSubmit}
+          />
+        ) : (
+          <FocusOptions step={step} answers={answers} onToggle={onToggleFocus} />
+        )}
+      </div>
+      {step.footnote && (
+        <p className="mt-4 rounded-xl border border-border/60 bg-muted/40 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+          {step.footnote}
+        </p>
+      )}
+    </>
+  );
+}
+
+function SingleOptions({
+  step,
+  answers,
+  onPick,
+  onCustom,
+  onSubmit,
+}: {
+  step: SingleStep;
+  answers: Answers;
+  onPick: (step: SingleStep, id: string) => void;
+  onCustom: (step: SingleStep, text: string) => void;
+  onSubmit: () => void;
+}) {
+  const options = [
+    ...optionsFor(step, answers),
+    ...(step.other ? [{ id: OTHER_ID, label: OTHER_LABEL }] : []),
+  ];
+  const value = answers.single[step.id];
+  const custom = answers.custom[step.id] ?? "";
+  return (
+    <div className="grid gap-2">
+      {options.map((option) => {
+        const active = value === option.id;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onPick(step, option.id)}
+            className={cn(
+              "flex min-h-12 items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-colors",
+              active
+                ? "border-brand-1 bg-brand-1/10 text-brand-1"
+                : "border-border/70 bg-card/50",
+            )}
+          >
+            {option.label}
+            {active && <Sparkles className="h-4 w-4 shrink-0" />}
+          </button>
+        );
+      })}
+      {step.other && value === OTHER_ID && (
+        <div className="mt-1">
+          <Input
+            autoFocus
+            value={custom}
+            maxLength={CUSTOM_MAX}
+            onChange={(e) => onCustom(step, e.target.value)}
+            onFocus={revealOnFocus}
+            onKeyDown={(e) => e.key === "Enter" && onSubmit()}
+            placeholder={step.other.placeholder}
+            enterKeyHint="next"
+            className="h-12 rounded-xl"
+          />
+          <p className="mt-1.5 px-1 text-xs text-muted-foreground">
+            {step.other.examples ??
+              (custom.trim() ? "" : "Add a few words to continue, or tap Skip.")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FocusOptions({
+  step,
+  answers,
+  onToggle,
+}: {
+  step: MultiStep;
+  answers: Answers;
+  onToggle: (label: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState("");
+  const [limitHit, setLimitHit] = useState(false);
+
+  const labels = optionsFor(step, answers).map((o) => o.label);
+  // User-added topics render as chips alongside the curated ones.
+  const custom = answers.focus.filter((f) => !labels.includes(f));
+  const full = answers.focus.length >= step.max;
+
+  const toggle = (label: string) => {
+    const selected = answers.focus.includes(label);
+    setLimitHit(!selected && full);
+    onToggle(label);
+  };
+
+  const add = () => {
+    const label = text.trim();
+    if (!label) return;
+    const existing = [...labels, ...answers.focus].find(
+      (l) => l.toLowerCase() === label.toLowerCase(),
+    );
+    if (!existing || !answers.focus.includes(existing)) toggle(existing ?? label);
+    setText("");
+    setAdding(false);
+  };
+
+  return (
+    <div>
+      <ChipSelect
+        options={[...labels, ...custom]}
+        selected={answers.focus}
+        onToggle={toggle}
+        className="gap-2.5 [&>button]:px-4 [&>button]:py-2.5"
+      />
+      <div className="mt-3">
+        {adding ? (
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              value={text}
+              maxLength={FOCUS_CUSTOM_MAX}
+              onChange={(e) => setText(e.target.value)}
+              onFocus={revealOnFocus}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+              placeholder={step.addOwnPlaceholder}
+              enterKeyHint="done"
+              className="h-11 rounded-xl"
+            />
+            <Button
+              type="button"
+              onClick={add}
+              disabled={!text.trim() || full}
+              className="h-11 rounded-xl"
+            >
+              Add
+            </Button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            disabled={full}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-dashed border-border px-4 text-sm font-medium text-muted-foreground disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" /> Add your own
+          </button>
+        )}
+      </div>
+      <p
+        className={cn(
+          "mt-3 text-xs",
+          limitHit ? "text-brand-1" : "text-muted-foreground",
+        )}
+        aria-live="polite"
+      >
+        {limitHit
+          ? `You can pick up to ${step.max} — deselect one to choose another.`
+          : `${answers.focus.length}/${step.max} selected`}
+      </p>
+    </div>
+  );
+}
+
+/** Edit mode's landing: every question on the current branch, tap to change. */
+function Overview({
+  answers,
+  busy,
+  saveError,
+  onJump,
+  onSave,
+}: {
+  answers: Answers;
+  busy: boolean;
+  saveError: boolean;
+  onJump: (id: StepId) => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="px-5 pb-2 pr-12 pt-6">
+        <DialogTitle className="font-display text-xl font-bold">
+          Your learning profile
+        </DialogTitle>
+        <DialogDescription className="mt-1 text-sm">
+          Tap any question to update it.
+        </DialogDescription>
+      </div>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-5 py-3">
+        {visibleSteps(answers).map((s) => {
+          const value = answerText(s, answers);
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onJump(s.id)}
+              className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-border/70 bg-card/50 px-4 py-3 text-left"
+            >
+              <span className="text-2xl" aria-hidden="true">
+                {copyFor(s, answers).emoji}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">{s.label}</span>
+                <span
+                  className={cn(
+                    "mt-0.5 block truncate text-xs",
+                    value ? "text-muted-foreground" : "text-muted-foreground/60",
+                  )}
+                >
+                  {value || "Not set"}
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+          );
+        })}
+      </div>
+      {saveError && (
+        <p role="alert" className="px-5 pb-2 text-sm text-destructive">
+          Couldn't save your changes. Check your connection and try again.
+        </p>
+      )}
+      <div className="border-t border-border/40 px-5 py-3">
+        <Button
+          onClick={onSave}
+          disabled={busy}
+          className="h-12 w-full gap-2 rounded-xl bg-brand-gradient text-white shadow-glow"
+        >
+          <Sparkles className="h-4 w-4" />
+          {busy ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -503,7 +824,7 @@ function Welcome({
         Welcome to StudyAssistant!
       </DialogTitle>
       <DialogDescription className="mx-auto mt-2 max-w-xs text-sm leading-relaxed">
-        Let's personalize Aeva for you — a few quick questions, under a minute,
+        Let Aeva get to know how you learn — a few quick taps, under a minute,
         every step skippable.
       </DialogDescription>
       <div className="mt-8 w-full space-y-2">
@@ -527,72 +848,13 @@ function Welcome({
   );
 }
 
-/** Edit mode's landing: jump straight to any question, then save once. */
-function Overview({
-  draft,
-  busy,
-  onJump,
-  onSave,
+function Celebration({
+  summary,
+  onStart,
 }: {
-  draft: Draft;
-  busy: boolean;
-  onJump: (idx: number) => void;
-  onSave: () => void;
+  summary: string | null;
+  onStart: () => void;
 }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="px-5 pb-2 pt-6">
-        <DialogTitle className="font-display text-xl font-bold">
-          Your learning profile
-        </DialogTitle>
-        <DialogDescription className="mt-1 text-sm">
-          Tap any question to update it.
-        </DialogDescription>
-      </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-3">
-        {STEPS.map((s, i) => {
-          const value = stepValue(draft, s);
-          return (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => onJump(i)}
-              className="flex w-full items-center gap-3 rounded-2xl border border-border/70 bg-card/50 px-4 py-3 text-left"
-            >
-              <span className="text-2xl" aria-hidden="true">
-                {s.emoji}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">{s.title}</span>
-                <span
-                  className={cn(
-                    "mt-0.5 block truncate text-xs",
-                    value ? "text-muted-foreground" : "text-muted-foreground/60",
-                  )}
-                >
-                  {value || "Not set"}
-                </span>
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
-          );
-        })}
-      </div>
-      <div className="border-t border-border/40 px-5 py-3">
-        <Button
-          onClick={onSave}
-          disabled={busy}
-          className="h-12 w-full gap-2 rounded-xl bg-brand-gradient text-white shadow-glow"
-        >
-          <Sparkles className="h-4 w-4" />
-          {busy ? "Saving…" : "Save changes"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function Celebration({ onStart }: { onStart: () => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-8 py-10 text-center">
       <motion.div
@@ -607,8 +869,8 @@ function Celebration({ onStart }: { onStart: () => void }) {
         You're all set!
       </DialogTitle>
       <DialogDescription className="mx-auto mt-2 max-w-xs text-sm leading-relaxed">
-        Aeva is now personalized for your learning style. You can update this
-        anytime in Settings.
+        {summary ?? "Aeva is now personalized for your learning style."} You can
+        update this anytime in Settings.
       </DialogDescription>
       <Button
         onClick={onStart}

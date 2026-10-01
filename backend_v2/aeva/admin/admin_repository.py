@@ -20,6 +20,7 @@ from flask import current_app
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import success_response
 from aeva.feature_flag import feature_flag_service
+from aeva.learning_profile import profile_document
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
@@ -32,14 +33,6 @@ _MATCH_ALL = "id.neq.00000000-0000-0000-0000-000000000000"
 def _chunks(items: list[str], size: int) -> list[list[str]]:
     """Split ids into ``in_``-friendly batches (PostgREST URL length cap)."""
     return [items[i : i + size] for i in range(0, len(items), size)]
-
-# Learning-profile columns cleared by a profile reset.
-_LEARNING_FIELDS = (
-    "education_level",
-    "preferred_language",
-    "explanation_style",
-    "learning_goal",
-)
 
 # Per-user "delete all X" targets -> the table whose user_id rows to drop.
 # Deleting a parent row cascades children via ON DELETE CASCADE FKs.
@@ -512,16 +505,7 @@ class AdminRepository:
             "personalization_status": profile.get("personalization_status")
             or "pending",
             "is_debug_user": bool(profile.get("is_debug_user")),
-            "learning_profile": {
-                "education_level": profile.get("education_level"),
-                "preferred_language": profile.get("preferred_language"),
-                "explanation_style": profile.get("explanation_style"),
-                "favorite_subjects": profile.get("favorite_subjects") or [],
-                "learning_goal": profile.get("learning_goal"),
-                "ai_personality": profile.get("ai_personality"),
-                "communication_style": profile.get("communication_style"),
-                "custom_instructions": profile.get("custom_instructions"),
-            },
+            "learning_profile": profile_document.read(profile),
         }
 
     def _recent(
@@ -563,12 +547,13 @@ class AdminRepository:
     def reset_learning_profile(
         self, admin: str, user_id: str
     ) -> dict[str, Any]:
-        """Clear a user's learning profile back to the pending state."""
+        """Clear a user's whole learning profile back to the pending state."""
         if not self.supabase.get_profile(user_id):
             raise CustomError(ERROR_CODES["NOT_FOUND"])
-        fields: dict[str, Any] = dict.fromkeys(_LEARNING_FIELDS)
-        fields["favorite_subjects"] = []
-        fields["personalization_status"] = "pending"
+        fields: dict[str, Any] = {
+            profile_document.COLUMN: {},
+            "personalization_status": "pending",
+        }
         self.supabase.update_learning_profile(user_id, fields)
         self._audit(admin, "profile.reset", user_id=user_id)
         return success_response(
@@ -578,14 +563,27 @@ class AdminRepository:
     def edit_profile(
         self, admin: str, user_id: str, patch: dict[str, Any]
     ) -> dict[str, Any]:
-        """Edit non-sensitive profile/personalization fields (audited)."""
-        if not self.supabase.get_profile(user_id):
+        """Edit non-sensitive profile/personalization fields (audited).
+
+        ``full_name`` is a profile column; every other field belongs to the
+        learning-profile document and is merged into it.
+        """
+        profile = self.supabase.get_profile(user_id)
+        if not profile:
             raise CustomError(ERROR_CODES["NOT_FOUND"])
         if not patch:
             raise CustomError(ERROR_CODES["VALIDATION_ERROR"])
+        learning = {k: v for k, v in patch.items() if k != "full_name"}
+        update: dict[str, Any] = {
+            k: v for k, v in patch.items() if k == "full_name"
+        }
+        if learning:
+            update[profile_document.COLUMN] = profile_document.with_fields(
+                profile, **learning
+            )
         res = (
             self.client.table("profiles")
-            .update(patch)
+            .update(update)
             .eq("id", user_id)
             .execute()
         )

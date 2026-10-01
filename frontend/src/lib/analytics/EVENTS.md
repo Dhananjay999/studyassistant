@@ -83,9 +83,11 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 
 | Event | When | Properties |
 |---|---|---|
-| `ONBOARDING_STARTED` | Welcome "Start" (first run) or edit dialog opened | `mode: first_run\|edit` |
-| `ONBOARDING_STEP_COMPLETED` | A step advanced (answered or skipped) | `step`, `step_index`, `skipped`, `selection_count?` |
-| ★ `ONBOARDING_COMPLETED` | Profile saved from the wizard | `steps_answered`, `has_exam_target`, `subject_count` |
+| `ONBOARDING_STARTED` | Welcome "Start" / resumed draft (first run) or edit dialog opened | `mode: first_run\|edit`, `resumed?` |
+| `ONBOARDING_STEP_VIEWED` | A first-run question was shown | `step`, `step_index`, `branch`, `visible_total` |
+| `ONBOARDING_STEP_COMPLETED` | A step advanced (answered or skipped) | `step`, `step_index`, `skipped`, `selection_count?`; first run adds `branch`, `selected_id` (option id or `other` — never free text), `previous_id?`, `changed`, `has_custom_value` |
+| `ONBOARDING_BACK` | Back pressed / swiped on a first-run question | `step`, `step_index`, `branch` |
+| ★ `ONBOARDING_COMPLETED` | Profile saved from the wizard | `steps_answered`, `has_exam_target`, `subject_count`, `branch`, `steps_visible`, `has_custom_language` |
 | ★ `ONBOARDING_SKIPPED` | Skip-all button or dialog dismissed | `at_step_index` (−1 on the intro), `via: button\|dismiss` |
 | `ONBOARDING_SAVE_FAILED` | Save rejected | `error_kind` |
 

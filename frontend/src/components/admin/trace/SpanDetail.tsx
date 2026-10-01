@@ -1184,7 +1184,11 @@ function ContextBody({ span }: BodyProps) {
           ],
           ["Space", asText(session?.space_name) ?? asText(session?.space_id)],
           ["Debug user", yesNo(output?.is_debug_user)],
-          ["Preferred language", asText(output?.preferred_language)],
+          [
+            "Response language",
+            // Traces recorded before migration 025 used preferred_language.
+            asText(output?.response_language ?? output?.preferred_language),
+          ],
           ["History messages", countOf(output?.history_messages)],
           ["Source content attached", yesNo(output?.source_content)],
         ]}
@@ -1211,6 +1215,7 @@ function ContextBody({ span }: BodyProps) {
         value={omitKeys(output, [
           "session",
           "is_debug_user",
+          "response_language",
           "preferred_language",
           "history_messages",
           "personalization",

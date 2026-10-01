@@ -33,40 +33,52 @@ export interface User {
   is_debug_user?: boolean;
 }
 
-/** Optional learning profile used to personalize Aeva's responses. */
-export interface LearningProfile {
-  education_level: string | null;
-  preferred_language: string | null;
+/**
+ * Where the learner is (school class & board, college program & year, target
+ * exam, skill, …). `type` is a stable context id ("school", "college",
+ * "competitive_exam", "skill_learning", "working_professional", "other");
+ * the rest are display labels.
+ */
+export interface LearningContext {
+  type?: string;
+  class?: string;
+  board?: string;
+  degree?: string;
+  year?: string;
+  exam?: string;
+  skill?: string;
+  other?: string;
+}
+
+/**
+ * The learning-profile document (`profiles.learning_profile`), the single
+ * shape onboarding, Settings, admin and Aeva's prompt all use.
+ */
+export interface LearningProfileFields {
+  context: LearningContext;
+  goal: string | null;
+  focus_areas: string[];
   explanation_style: string | null;
-  favorite_subjects: string[];
-  learning_goal: string | null;
+  /** Language Aeva replies in — never the app's interface language. */
+  response_language: string | null;
   // How Aeva should behave — the persona/tone, communication style, and any
   // free-form long-term instructions the student provides.
   ai_personality: string | null;
   communication_style: string | null;
   custom_instructions: string | null;
-  // Exam the student is preparing toward (JEE, NEET, Boards, …).
-  exam_target: string | null;
   // Whitelisted learning-related preferences (booleans / short strings),
   // e.g. likes_funny_examples, preferred_depth.
   learning_traits: Record<string, boolean | string>;
+}
+
+/** Optional learning profile used to personalize Aeva's responses. */
+export interface LearningProfile extends LearningProfileFields {
   personalization_status: PersonalizationStatus;
   personalization_updated_at: string | null;
 }
 
-/** Patch sent when saving the learning profile (all fields optional). */
-export interface LearningProfileInput {
-  education_level?: string | null;
-  preferred_language?: string | null;
-  explanation_style?: string | null;
-  favorite_subjects?: string[];
-  learning_goal?: string | null;
-  ai_personality?: string | null;
-  communication_style?: string | null;
-  custom_instructions?: string | null;
-  exam_target?: string | null;
-  learning_traits?: Record<string, boolean | string>;
-}
+/** Saving writes the whole document: omitted fields are cleared. */
+export type LearningProfileInput = Partial<LearningProfileFields>;
 
 export interface Session {
   id: string;

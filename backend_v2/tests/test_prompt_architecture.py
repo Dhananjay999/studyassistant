@@ -178,15 +178,15 @@ class TestStandingLanguageRequest:
 
 
 class TestLearningProfileSchema:
-    def test_accepts_new_fields(self):
+    def test_accepts_document_fields(self):
         data = UpdateLearningProfileSchema().load({
-            "exam_target": "JEE",
+            "context": {"type": "competitive_exam", "exam": "JEE"},
             "learning_traits": {
                 "likes_funny_examples": True,
                 "preferred_depth": "Deep",
             },
         })
-        assert data.exam_target == "JEE"
+        assert data.context["exam"] == "JEE"
         assert data.learning_traits["likes_funny_examples"] is True
 
     def test_rejects_unknown_trait_keys(self):
@@ -195,29 +195,31 @@ class TestLearningProfileSchema:
                 "learning_traits": {"home_address": "nope"}
             })
 
-    def test_profile_block_renders_new_fields(self):
+    def test_profile_block_renders_document_fields(self):
         block = prompts.build_personalization_block({
             "personalization_status": "completed",
-            "exam_target": "JEE",
-            "learning_traits": {
-                "likes_funny_examples": True,
-                "preferred_depth": "Deep",
+            "learning_profile": {
+                "context": {"type": "competitive_exam", "exam": "JEE"},
+                "learning_traits": {
+                    "likes_funny_examples": True,
+                    "preferred_depth": "Deep",
+                },
             },
         })
-        assert "Exam Target: JEE" in block
+        assert "Exam: JEE" in block
         assert "funny examples" in block
         assert "Preferred Depth: Deep" in block
 
     def test_language_applies_without_completed_onboarding(self):
         block = prompts.build_personalization_block({
             "personalization_status": "pending",
-            "preferred_language": "Hinglish",
+            "learning_profile": {"response_language": "Hinglish"},
         })
-        assert "Preferred Language: Hinglish" in block
+        assert "Response Language: Hinglish" in block
         # Other fields stay gated until onboarding completes.
         gated = prompts.build_personalization_block({
             "personalization_status": "pending",
-            "exam_target": "JEE",
+            "learning_profile": {"context": {"exam": "JEE"}},
         })
         assert gated == ""
 

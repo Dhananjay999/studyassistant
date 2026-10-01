@@ -1,6 +1,8 @@
 // Types for the hidden Super Admin panel. Kept separate from the public
 // app types since the admin surface evolves independently.
 
+import type { LearningProfileFields } from "@/types";
+
 export interface AdminOverview {
   total_users: number;
   total_chats: number;
@@ -49,16 +51,8 @@ export interface AdminDebugUser {
   created_at: string | null;
 }
 
-export interface AdminLearningProfile {
-  education_level: string | null;
-  preferred_language: string | null;
-  explanation_style: string | null;
-  favorite_subjects: string[];
-  learning_goal: string | null;
-  ai_personality?: string | null;
-  communication_style?: string | null;
-  custom_instructions?: string | null;
-}
+/** The user's learning-profile document (same shape as the user API). */
+export type AdminLearningProfile = LearningProfileFields;
 
 export interface AdminUserProfile {
   id: string;
@@ -164,16 +158,17 @@ export interface AdminAuditEntry {
 }
 
 /** Editable (non-sensitive) profile fields — partial update. */
+/** `full_name` is a profile column; the rest merge into the learning
+ * profile document. The learning context is set by the learner's own flow. */
 export interface AdminEditProfileInput {
   full_name?: string | null;
-  education_level?: string | null;
-  learning_goal?: string | null;
-  preferred_language?: string | null;
+  goal?: string | null;
+  response_language?: string | null;
   explanation_style?: string | null;
   ai_personality?: string | null;
   communication_style?: string | null;
   custom_instructions?: string | null;
-  favorite_subjects?: string[];
+  focus_areas?: string[];
 }
 
 export interface AdminQuizQuestion {

@@ -49,6 +49,7 @@ import {
 } from "@/hooks/adminApi";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/adminFormat";
+import { describeContext } from "@/lib/onboarding";
 import type { AdminUserDetail as Detail, UserResource } from "@/types/admin";
 
 type Pending =
@@ -248,15 +249,16 @@ export function AdminUserDetail({
           <CardTitle className="text-sm">Learning profile</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          <Field label="Education" value={learning.education_level} />
-          <Field label="Language" value={learning.preferred_language} />
+          <Field label="Context" value={describeContext(learning.context)} />
+          <Field label="Exam" value={learning.context.exam} />
+          <Field label="Goal" value={learning.goal} />
+          <Field label="Response language" value={learning.response_language} />
           <Field label="Style" value={learning.explanation_style} />
-          <Field label="Goal" value={learning.learning_goal} />
           <div className="sm:col-span-2">
-            <p className="text-xs text-muted-foreground">Favorite subjects</p>
+            <p className="text-xs text-muted-foreground">Focus areas</p>
             <div className="mt-1 flex flex-wrap gap-1.5">
-              {learning.favorite_subjects.length ? (
-                learning.favorite_subjects.map((s) => (
+              {learning.focus_areas.length ? (
+                learning.focus_areas.map((s) => (
                   <Badge key={s} variant="secondary">
                     {s}
                   </Badge>

@@ -10,6 +10,7 @@ from typing import Any
 
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.feature_flag import feature_flag_service
+from aeva.learning_profile import profile_document
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
 from aeva.mcp.base import (
@@ -592,6 +593,34 @@ class AssistantOrchestrator:
             plan["_dropped"] = dropped
         return ([answer] if answer else []) + generators
 
+    def _persist_standing_language(
+        self, ctx: Any, profile: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Save a standing language request; return the profile to use.
+
+        A standing request ("from now on talk in Hinglish") is persisted to
+        the profile so it survives new sessions — and applied to THIS turn by
+        patching the already-fetched profile row.
+        """
+        language = _standing_language_request(ctx.message)
+        current = profile_document.read(profile)["response_language"] or ""
+        if not language or current.lower() == language.lower():
+            return profile
+        try:
+            document = profile_document.with_fields(
+                profile, response_language=language
+            )
+            self.supabase.update_learning_profile(
+                ctx.user_id, {profile_document.COLUMN: document}
+            )
+        except Exception:
+            # Never fail the turn over a preference write; the in-chat
+            # request still applies via the conversation itself.
+            logger.exception("Failed to persist language preference")
+            return profile
+        logger.info("Persisted standing language preference: %s", language)
+        return {**(profile or {}), profile_document.COLUMN: document}
+
     @turn_trace.setup
     def _setup_and_plan(
         self, ctx: AssistantContext
@@ -614,26 +643,7 @@ class AssistantOrchestrator:
         # Developer Mode rides the profile row that personalization already
         # needs — deciding it costs normal users nothing extra.
         self._debug_enabled = bool((profile or {}).get("is_debug_user"))
-        # A standing language request ("from now on talk in Hinglish") is
-        # persisted to the profile so it survives new sessions — and applied
-        # to THIS turn by patching the already-fetched profile row.
-        language = _standing_language_request(ctx.message)
-        if language and (
-            str((profile or {}).get("preferred_language") or "").lower()
-            != language.lower()
-        ):
-            try:
-                self.supabase.update_learning_profile(
-                    ctx.user_id, {"preferred_language": language}
-                )
-                profile = {**(profile or {}), "preferred_language": language}
-                logger.info(
-                    "Persisted standing language preference: %s", language
-                )
-            except Exception:
-                # Never fail the turn over a preference write; the in-chat
-                # request still applies via the conversation itself.
-                logger.exception("Failed to persist language preference")
+        profile = self._persist_standing_language(ctx, profile)
         # Identity first: the student's name applies even when onboarding was
         # skipped, so Aeva never "forgets" who she is talking to.
         personalization = prompts.build_identity_block(profile)
