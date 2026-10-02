@@ -453,6 +453,9 @@ export interface QuizOptions {
   topic?: string;
   question_count?: number;
   difficulty?: Difficulty;
+  /** "Exam level": an exam-pattern key the quiz is pitched at instead of a
+   * difficulty — Aeva researches how that exam's past questions are asked. */
+  target_exam?: string;
   question_types?: QuestionType[];
   use_media?: boolean;
   /** Free-text extra guidance typed in the form; passed to the quiz tool. */
@@ -809,6 +812,8 @@ export interface QuizSetupDraft {
   topic: string;
   count: string;
   level: number;
+  /** Exam-pattern key when the level is set by exam; null for a difficulty. */
+  targetExam?: string | null;
   types: QuestionType[];
   instructions: string;
   useMedia: boolean;

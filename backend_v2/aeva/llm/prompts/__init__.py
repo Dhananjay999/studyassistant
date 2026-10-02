@@ -22,6 +22,7 @@ from aeva.llm.prompts.builder import (
     PromptTemplate,
     RenderedPrompt,
 )
+from aeva.llm.prompts.exam_research import EXAM_STYLE_RESEARCH_TEMPLATE
 from aeva.llm.prompts.flashcard import (
     FLASHCARD_GENERATION_SCHEMA,
     FLASHCARD_GENERATION_TEMPLATE,
@@ -76,6 +77,7 @@ from aeva.llm.prompts.quiz_generation import (
     QUIZ_GENERATION_SCHEMA,
     QUIZ_GENERATION_TEMPLATE,
     QUIZ_GENERATOR_PARAMS,
+    exam_pattern_segment,
 )
 from aeva.llm.prompts.response_meta import META_SENTINEL
 from aeva.llm.prompts.retrieval import (
@@ -97,6 +99,7 @@ from aeva.llm.prompts.web_search import (
 )
 
 __all__ = [
+    "EXAM_STYLE_RESEARCH_TEMPLATE",
     "FLASHCARD_GENERATION_SCHEMA",
     "FLASHCARD_GENERATION_TEMPLATE",
     "FLASHCARD_GENERATOR_PARAMS",
@@ -143,6 +146,7 @@ __all__ = [
     "build_personalization_block",
     "build_space_block",
     "current_date",
+    "exam_pattern_segment",
     "guess_search_intent",
     "no_context_message",
     "pick_skill",

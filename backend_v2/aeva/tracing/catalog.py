@@ -274,6 +274,25 @@ PROMPT_USAGE: dict[str, PromptUsage] = {
             "Answer from files",
         ),
     ),
+    "exam_style_research": PromptUsage(
+        stage="generators",
+        description=(
+            "A web-search-grounded call that learns how an exam's "
+            "previous-year questions on the topic are asked. Runs only "
+            "for a quiz pitched at an exam's level; the brief becomes the "
+            "quiz prompt's exam-pattern style guide."
+        ),
+        tool="quiz_generator",
+        site=("aeva/quiz/exam_research.py", "research"),
+        llm_method="generate",
+        config_key="LLM_WEB_SEARCH_MODEL",
+        upstream=(
+            "Planner LLM",
+            "Forced plan",
+            "Pick the source material",
+        ),
+        downstream=("Quiz generator",),
+    ),
     "quiz_generation": PromptUsage(
         stage="generators",
         description=(
@@ -293,6 +312,7 @@ PROMPT_USAGE: dict[str, PromptUsage] = {
             "Clamp the model",
             "Hand the answer to the generators",
             "Pick the source material",
+            "Research the exam pattern",
         ),
         downstream=_AFTER_GENERATOR,
     ),
@@ -1113,6 +1133,27 @@ FLOW: tuple[FlowStage, ...] = (
                 kind="context",
                 condition="Quiz and flashcard generation.",
                 code=("aeva/media/grounding.py", "ground_generator"),
+            ),
+            FlowNode(
+                id="exam_research",
+                label="Research the exam pattern",
+                description=(
+                    "A web-grounded call learns how the target exam's "
+                    "previous-year questions on the topic are asked; the "
+                    "brief steers the quiz's style and level. Best-effort: "
+                    "on failure the quiz falls back on the model's own "
+                    "knowledge."
+                ),
+                kind="llm",
+                prompt="exam_style_research",
+                condition=(
+                    "The quiz targets an exam's level (target_exam) "
+                    "instead of a difficulty band."
+                ),
+                code=(
+                    "aeva/quiz/exam_research.py",
+                    "ExamResearchService.research",
+                ),
             ),
             FlowNode(
                 id="quiz_generator",

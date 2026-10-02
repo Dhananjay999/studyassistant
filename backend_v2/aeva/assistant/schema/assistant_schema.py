@@ -17,6 +17,7 @@ from aeva.orchestration.models import (
     QuizOptions,
     UserClarificationResponse,
 )
+from aeva.quiz.exam_patterns import TARGET_EXAMS
 
 
 @dataclass
@@ -92,6 +93,12 @@ class QuizOptionsSchema(Schema):
         elif isinstance(raw, str):
             data = {**data, "difficulty": raw.strip().lower()}
         return data
+    # "Exam level": pitch the quiz at this exam instead of a difficulty.
+    target_exam = fields.Str(
+        load_default=None,
+        allow_none=True,
+        validate=validate.OneOf(TARGET_EXAMS),
+    )
     question_types = fields.List(fields.Str(), load_default=None)
     use_media = fields.Bool(load_default=None)
     additional_instructions = fields.Str(load_default=None)
@@ -138,6 +145,7 @@ class AssistantRequestSchema(Schema):
                 topic=opts.get("topic"),
                 question_count=opts.get("question_count"),
                 difficulty=opts.get("difficulty"),
+                target_exam=opts.get("target_exam"),
                 question_types=opts.get("question_types"),
                 use_media=opts.get("use_media"),
                 additional_instructions=opts.get("additional_instructions"),

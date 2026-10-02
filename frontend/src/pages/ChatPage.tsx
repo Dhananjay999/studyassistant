@@ -913,7 +913,10 @@ export default function ChatPage() {
     const resolved = { ...options, topic: options.topic || topic || undefined };
     analytics.track(AnalyticsEvent.QUIZ_GENERATION_REQUESTED, {
       question_count: resolved.question_count ?? 0,
-      difficulty: resolved.difficulty ?? "default",
+      difficulty: resolved.target_exam
+        ? "exam"
+        : (resolved.difficulty ?? "default"),
+      target_exam: resolved.target_exam,
       question_types: resolved.question_types ?? [],
       use_media: !!resolved.use_media,
       is_exam: !!resolved.exam_config,

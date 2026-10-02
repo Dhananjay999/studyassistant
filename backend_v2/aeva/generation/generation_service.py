@@ -36,6 +36,7 @@ _DEFAULT_NOTE_MAX_CHARS = 12000
 _QUIZ_OPTION_KEYS = (
     "question_count",
     "difficulty",
+    "target_exam",
     "question_types",
     "additional_instructions",
     "exam_config",

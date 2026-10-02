@@ -41,6 +41,7 @@ class QuizGenerateData(GenerationSource):
 
     question_count: int | None = None
     difficulty: str | None = None
+    target_exam: str | None = None
     question_types: list[str] | None = None
     additional_instructions: str | None = None
     exam_config: dict[str, Any] | None = None

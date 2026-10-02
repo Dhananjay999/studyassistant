@@ -1305,6 +1305,8 @@ class AssistantOrchestrator:
             params["question_count"] = opts.question_count
         if opts.difficulty:
             params["difficulty"] = opts.difficulty
+        if opts.target_exam:
+            params["target_exam"] = opts.target_exam
         if opts.question_types:
             params["question_types"] = opts.question_types
         if opts.use_media is not None:

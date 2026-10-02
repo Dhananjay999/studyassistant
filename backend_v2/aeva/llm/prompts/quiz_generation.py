@@ -11,6 +11,7 @@ JSON matching it so the quiz structure stays stable across models/vendors.
 
 from aeva.llm.prompts.blocks import SYSTEM_PROMPT_BLOCK
 from aeva.llm.prompts.builder import PromptTemplate
+from aeva.quiz.exam_patterns import TARGET_EXAMS
 
 QUIZ_GENERATION_TEMPLATE = PromptTemplate(
     name="quiz_generation",
@@ -24,7 +25,7 @@ Difficulty: {DIFFICULTY}
 Question types: {QUESTION_TYPES}
 Recent context: {RECENT_CONTEXT}
 Additional instructions: {ADDITIONAL_INSTRUCTIONS}
-{SOURCE_CONTEXT}
+{EXAM_PATTERN}{SOURCE_CONTEXT}
 Use the attached study material if provided; otherwise generate the quiz from the topic. If the topic is vague, infer it from the recent context.
 
 When SOURCE CONTEXT is present (content Aeva produced earlier in this turn, or excerpts from the student's files), every question MUST be answerable from it: never test facts absent from it, prefer its terminology and numbers, and spread the questions across all of it rather than clustering on one part.
@@ -59,11 +60,35 @@ Generate exactly the requested number of questions using only the requested ques
 Before returning, VERIFY each question: every `correct_answers` value exactly matches one of its `options`, and the count of correct answers obeys the type rule above (single_select and true_false have exactly one). Fix any violations before responding.
 """,
     defaults={"SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK},
-    optional=("USER_PROFILE", "SOURCE_CONTEXT"),
+    optional=("USER_PROFILE", "EXAM_PATTERN", "SOURCE_CONTEXT"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
     uses_attachments=True,
 )
+
+
+def exam_pattern_segment(exam: str, brief: str = "") -> str:
+    """Build the ``{EXAM_PATTERN}`` block for a quiz at an exam's level.
+
+    ``brief`` is the web research on how the exam's previous-year questions
+    are asked; empty when research was unavailable, in which case the model
+    falls back on what it knows of the pattern.
+    """
+    guide = (
+        f"How {exam} previous-year questions are asked (web research — a "
+        f"style guide, not a question bank):\n{brief.strip()}\n"
+        if brief.strip()
+        else f"Follow the {exam} previous-year pattern as you know it.\n"
+    )
+    return (
+        f"\nTarget exam: {exam} — set EVERY question at the real {exam} "
+        f"level and in its style.\n{guide}"
+        f"Mirror the formats, phrasing, sub-topic weighting and difficulty "
+        f"of {exam} previous-year questions. Write ORIGINAL questions: never "
+        f"reproduce a real question verbatim and never claim a question "
+        f"appeared in a specific past paper.\n"
+    )
+
 
 # Structured output for quiz generation.
 QUIZ_GENERATION_SCHEMA: dict = {
@@ -151,6 +176,16 @@ QUIZ_GENERATOR_PARAMS: dict = {
             "description": (
                 "Extra free-text guidance for the quiz (focus areas, style). "
                 "Only set when the student explicitly provides it."
+            ),
+        },
+        "target_exam": {
+            "type": "string",
+            "enum": list(TARGET_EXAMS),
+            "description": (
+                "Set ONLY when the student wants practice at a specific "
+                "exam's level (e.g. 'SSC CGL level quiz on percentages'). "
+                "Questions then match how that exam's previous-year "
+                "questions are asked, and difficulty is ignored."
             ),
         },
         "exam_config": {

@@ -30,7 +30,7 @@ function clock(seconds: number): string {
 }
 
 /** How long the answer stays locked on screen before auto-advancing. */
-const AUTO_NEXT_MS = 3000;
+const AUTO_NEXT_MS = 1250;
 
 /**
  * The quiz-taking experience: one question at a time, single/true-false answers

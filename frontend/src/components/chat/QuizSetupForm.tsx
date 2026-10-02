@@ -1,12 +1,19 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { GraduationCap, Sparkles } from "lucide-react";
+import { GraduationCap, Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { ExamSettingsFields } from "@/components/quiz/ExamSettingsFields";
-import { useAppConfig } from "@/hooks/api";
+import { useAppConfig, useExamPatterns } from "@/hooks/api";
 import { cn } from "@/lib/utils";
 import {
   difficultyMeta,
@@ -78,14 +85,24 @@ export function QuizSetupForm({
   const maxQuestions = config?.max_quiz_questions ?? DEFAULT_MAX;
 
   const [topic, setTopic] = useState(draft?.topic ?? initialTopic);
-  const [count, setCount] = useState(
-    draft?.count ?? String(initialCount ?? 5),
-  );
+  const [count, setCount] = useState(draft?.count ?? String(initialCount ?? 5));
   // Difficulty is chosen on a 1–10 slider and mapped to a 5-band label.
   const [level, setLevel] = useState<number>(
     draft?.level ?? difficultyToLevel(initialDifficulty ?? "medium"),
   );
   const difficulty: Difficulty = levelToDifficulty(level);
+  // "Exam level" replaces the slider: the quiz is pitched at a real exam and
+  // Aeva researches how its previous-year questions are asked.
+  const { data: patterns = [] } = useExamPatterns();
+  const exams = patterns.filter((p) => p.key !== "custom");
+  const [levelMode, setLevelMode] = useState<"difficulty" | "exam">(
+    draft?.targetExam ? "exam" : "difficulty",
+  );
+  const [targetExam, setTargetExam] = useState<string | null>(
+    draft?.targetExam ?? null,
+  );
+  const examLevel = levelMode === "exam";
+  const examLabel = exams.find((p) => p.key === targetExam)?.label;
   // Prefill detected types; otherwise leave empty so the LLM may generate a
   // mixed-type quiz unless the user explicitly picks a format.
   const [types, setTypes] = useState<QuestionType[]>(
@@ -107,18 +124,32 @@ export function QuizSetupForm({
       topic,
       count,
       level,
+      targetExam: examLevel ? targetExam : null,
       types,
       instructions,
       useMedia,
       exam,
     });
-  }, [onDraftChange, topic, count, level, types, instructions, useMedia, exam]);
+  }, [
+    onDraftChange,
+    topic,
+    count,
+    level,
+    examLevel,
+    targetExam,
+    types,
+    instructions,
+    useMedia,
+    exam,
+  ]);
 
   // No selection = Mixed: the LLM freely mixes question formats.
   const isMixed = types.length === 0;
   const countNum = Number(count);
   const countValid =
     Number.isInteger(countNum) && countNum >= 1 && countNum <= maxQuestions;
+  // Exam level needs an exam picked before Generate.
+  const levelValid = !examLevel || Boolean(targetExam);
 
   const toggleType = (t: QuestionType) =>
     setTypes((prev) =>
@@ -127,11 +158,12 @@ export function QuizSetupForm({
   const selectMixed = () => setTypes([]);
 
   const submit = () => {
-    if (!countValid || !canGenerate) return;
+    if (!countValid || !levelValid || !canGenerate) return;
     onGenerate({
       topic: topic.trim() || undefined,
       question_count: countNum,
-      difficulty,
+      difficulty: examLevel ? undefined : difficulty,
+      target_exam: examLevel ? (targetExam ?? undefined) : undefined,
       question_types: types.length > 0 ? types : undefined,
       use_media: mediaAvailable ? useMedia : undefined,
       additional_instructions: instructions.trim() || undefined,
@@ -142,7 +174,7 @@ export function QuizSetupForm({
   const submitButton = (
     <Button
       onClick={submit}
-      disabled={busy || !countValid || !canGenerate}
+      disabled={busy || !countValid || !levelValid || !canGenerate}
       className="w-full gap-2"
     >
       <Sparkles className="h-4 w-4" />
@@ -188,28 +220,82 @@ export function QuizSetupForm({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs">Difficulty</Label>
-          <span
-            className={cn(
-              "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-              difficultyMeta(difficulty).className,
-            )}
-          >
-            {difficultyMeta(difficulty).label} · {level}/10
-          </span>
+          <Label className="text-xs">Level</Label>
+          {!examLevel && (
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                difficultyMeta(difficulty).className,
+              )}
+            >
+              {difficultyMeta(difficulty).label} · {level}/10
+            </span>
+          )}
         </div>
-        <Slider
-          value={[level]}
-          onValueChange={([v]) => setLevel(v)}
-          min={1}
-          max={10}
-          step={1}
-          aria-label="Difficulty"
-        />
-        <div className="flex justify-between text-[10px] text-muted-foreground">
-          <span>Beginner</span>
-          <span>Expert</span>
+        <div className="grid grid-cols-2 gap-2" role="radiogroup">
+          {(
+            [
+              ["difficulty", "Difficulty level"],
+              ["exam", "Exam level"],
+            ] as const
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={levelMode === mode}
+              onClick={() => setLevelMode(mode)}
+              className={cn(
+                "rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+                levelMode === mode
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+        {examLevel ? (
+          <div className="space-y-1.5">
+            <Select
+              value={targetExam ?? undefined}
+              onValueChange={setTargetExam}
+            >
+              <SelectTrigger className="h-9" aria-label="Exam">
+                <SelectValue placeholder="Choose your exam" />
+              </SelectTrigger>
+              <SelectContent>
+                {exams.map((p) => (
+                  <SelectItem key={p.key} value={p.key}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="flex items-start gap-1 text-[10px] text-muted-foreground">
+              <Search className="mt-px h-3 w-3 shrink-0" />
+              {examLabel
+                ? `Aeva will look up how ${examLabel} previous-year questions are asked and match that level.`
+                : "Not sure which difficulty fits? Pick your exam and Aeva matches its real question level."}
+            </p>
+          </div>
+        ) : (
+          <>
+            <Slider
+              value={[level]}
+              onValueChange={([v]) => setLevel(v)}
+              min={1}
+              max={10}
+              step={1}
+              aria-label="Difficulty"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Beginner</span>
+              <span>Expert</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="space-y-2">

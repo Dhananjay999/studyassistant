@@ -48,7 +48,8 @@ export function CreateQuizPanel({
     if (!material) return;
     analytics.track(AnalyticsEvent.QUIZ_GENERATION_REQUESTED, {
       question_count: opts.question_count ?? 0,
-      difficulty: opts.difficulty ?? "default",
+      difficulty: opts.target_exam ? "exam" : (opts.difficulty ?? "default"),
+      target_exam: opts.target_exam,
       question_types: opts.question_types ?? [],
       use_media: material.source === "files",
       is_exam: !!opts.exam_config,
@@ -68,6 +69,7 @@ export function CreateQuizPanel({
         ...material,
         question_count: opts.question_count,
         difficulty: opts.difficulty,
+        target_exam: opts.target_exam,
         question_types: opts.question_types,
         additional_instructions: opts.additional_instructions,
         exam_config: opts.exam_config,

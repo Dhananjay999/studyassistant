@@ -121,6 +121,23 @@ EXAM_PATTERNS: dict[str, dict[str, Any]] = {
     },
 }
 
+# Exams a quiz can be pitched at instead of a difficulty band ("Exam level"):
+# every real exam preset — "custom" is a marking scheme, not an exam.
+TARGET_EXAMS: tuple[str, ...] = tuple(
+    key for key in EXAM_PATTERNS if key != "custom"
+)
+
+# Stored as the quiz's ``difficulty`` when it targets an exam's own level.
+EXAM_LEVEL_DIFFICULTY = "exam"
+
+
+def target_exam_label(key: Any) -> str | None:
+    """Display name of a target exam (``None`` for an unknown key)."""
+    if not isinstance(key, str) or key not in TARGET_EXAMS:
+        return None
+    return str(EXAM_PATTERNS[key]["label"])
+
+
 # The scheme fields persisted on a quiz's ``exam_config`` (``default_type`` is a
 # generation hint only, so it never lands on the row).
 _SCHEME_KEYS = ("correct", "negative", "skip", "timer_seconds")

@@ -78,6 +78,7 @@ export function estimatedMinutes(
     medium: 0.9,
     hard: 1.3,
     expert: 1.6,
+    exam: 1.2,
   };
   const rate = perQuestion[(difficulty ?? "medium").toLowerCase()] ?? 0.9;
   return Math.max(1, Math.round(questionCount * rate));
@@ -104,6 +105,11 @@ export function difficultyMeta(difficulty?: string | null): {
       return {
         label: "Hard",
         className: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+      };
+    case "exam":
+      return {
+        label: "Exam level",
+        className: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
       };
     case "expert":
       return {

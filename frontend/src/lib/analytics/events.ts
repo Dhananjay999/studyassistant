@@ -735,6 +735,8 @@ export interface EventPropsMap {
   [AnalyticsEvent.QUIZ_GENERATION_REQUESTED]: {
     question_count: number;
     difficulty: string;
+    /** Exam-pattern key when the quiz is pitched at an exam's level. */
+    target_exam?: string;
     question_types: string[];
     use_media: boolean;
     is_exam: boolean;

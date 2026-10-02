@@ -1379,7 +1379,8 @@ class TestCatalogUsage:
             for name, usage in by_name.items()
             if usage["stage"] in {"answer_tools", "generators"}
         ]
-        assert len(step_prompts) == 7  # one per registered tool
+        # One per registered tool, plus the quiz tool's exam research.
+        assert len(step_prompts) == 8
         for name, usage in step_prompts:
             assert usage["tool"], name
             assert "Planner LLM" in usage["upstream"], name

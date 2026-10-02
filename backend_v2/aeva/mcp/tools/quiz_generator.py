@@ -16,6 +16,7 @@ from aeva.mcp.base import (
 from aeva.media.grounding import ground_generator
 from aeva.media.retrieval import RetrievalService
 from aeva.quiz import exam_patterns
+from aeva.quiz.exam_research import ExamResearchService
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
 from aeva.tracing.services import tool_trace
@@ -84,11 +85,13 @@ class QuizGeneratorTool(BaseTool):
         quiz_repo: QuizRepository | None = None,
         supabase: SupabaseService | None = None,
         retrieval: RetrievalService | None = None,
+        exam_research: ExamResearchService | None = None,
     ) -> None:
         self._llm = llm
         self._quiz_repo = quiz_repo
         self._supabase = supabase
         self._retrieval = retrieval
+        self._exam_research = exam_research
 
     @property
     def llm(self) -> LLMClient:
@@ -111,6 +114,13 @@ class QuizGeneratorTool(BaseTool):
         if self._retrieval is None:
             self._retrieval = RetrievalService(supabase=self.supabase)
         return self._retrieval
+
+    @property
+    def exam_research(self) -> ExamResearchService:
+        """Lazy web research on an exam's previous-year question pattern."""
+        if self._exam_research is None:
+            self._exam_research = ExamResearchService()
+        return self._exam_research
 
     @property
     def definition(self) -> ToolDefinition:
@@ -177,12 +187,21 @@ class QuizGeneratorTool(BaseTool):
             current_app.config.get("QUIZ_MAX_QUESTIONS", 10),
         )
         difficulty = params.get("difficulty", "medium")
+        # "Exam level": pitched at a real exam instead of a difficulty band.
+        target_exam = params.get("target_exam")
+        exam_label = exam_patterns.target_exam_label(target_exam)
+        if exam_label:
+            difficulty = exam_patterns.EXAM_LEVEL_DIFFICULTY
+        else:
+            target_exam = None
         # Exam Mode config (normalized/validated; {} for an ordinary quiz). A
         # preset can suggest a default question type when the user picked none.
         exam_config = exam_patterns.normalize_exam_config(
             params.get("exam_config")
         )
-        default_type = self._pattern_default_type(exam_config)
+        default_type = self._pattern_default_type(
+            exam_config
+        ) or self._pattern_default_type({"pattern": target_exam})
         types = params.get("question_types") or (
             [default_type] if default_type else [
                 "single_select",
@@ -211,15 +230,30 @@ class QuizGeneratorTool(BaseTool):
         )
         tool_trace.quiz_params(locals())
 
+        # Learn how the exam's previous-year questions are asked first, so
+        # the questions match its style and level (best-effort web search).
+        exam_pattern = ""
+        if exam_label:
+            ctx.note(f"Researching {exam_label} question patterns…")
+            research = self.exam_research.research(
+                exam_label, str(params.get("topic") or "")
+            )
+            exam_pattern = prompts.exam_pattern_segment(
+                exam_label, research.brief
+            )
+
         instructions = params.get("additional_instructions") or "(none)"
         rendered = prompts.PromptBuilder.build(
             prompts.QUIZ_GENERATION_TEMPLATE,
             TOPIC=str(topic),
             QUESTION_COUNT=str(count),
-            DIFFICULTY=str(difficulty),
+            DIFFICULTY=(
+                f"{exam_label} exam level" if exam_label else str(difficulty)
+            ),
             QUESTION_TYPES=", ".join(types),
             RECENT_CONTEXT=ctx.enriched_message,
             ADDITIONAL_INSTRUCTIONS=instructions,
+            EXAM_PATTERN=exam_pattern,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
             SOURCE_CONTEXT=source_context,
         )
@@ -255,6 +289,7 @@ class QuizGeneratorTool(BaseTool):
             "topic": quiz["topic"],
             "questions": quiz["questions"],
             "difficulty": difficulty,
+            "target_exam": target_exam,
             "exam_config": exam_config,
             "source": (
                 "Uploaded material"

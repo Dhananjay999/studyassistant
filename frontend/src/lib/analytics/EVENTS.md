@@ -139,7 +139,7 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 | Event | When | Properties | Hook |
 |---|---|---|---|
 | `QUIZ_SETUP_REQUESTED` | Setup UI opened by the assistant, `/quiz`, or "Create quiz" on the Quizzes page | `chat_session_id`, `media_available`, `source: assistant\|slash\|quizzes_page`, `entry?: header\|empty_state` | `ChatPage.tsx`, `quiz/CreateQuizPanel.tsx` |
-| `QUIZ_GENERATION_REQUESTED` | Setup submitted | `question_count`, `difficulty`, `question_types`, `use_media`, `is_exam`, `has_topic`, `has_instructions`, `source: setup\|action\|quizzes_page`, `material?: topic\|files\|note` | `ChatPage.handleGenerateQuiz`, `CreateQuizPanel` |
+| `QUIZ_GENERATION_REQUESTED` | Setup submitted | `question_count`, `difficulty` (`exam` for exam level), `target_exam?`, `question_types`, `use_media`, `is_exam`, `has_topic`, `has_instructions`, `source: setup\|action\|quizzes_page`, `material?: topic\|files\|note` | `ChatPage.handleGenerateQuiz`, `CreateQuizPanel` |
 | `QUIZ_CREATE_FAILED` | Quizzes-page generation failed | `error_kind`, `material` | `CreateQuizPanel` |
 | `QUIZ_OPENED` | Quiz dashboard opened | `quiz_id`, `initial_view`, `source: chat_card\|quizzes_page\|deeplink\|bookmark` | `chat/QuizDrawer.tsx` |
 | `QUIZ_STARTED` | Runner mounted (new attempt) | `quiz_id`, `question_count`, `is_exam`, `timer_seconds`, `is_retake`, `is_guest` | `quiz/QuizRunner.tsx` |

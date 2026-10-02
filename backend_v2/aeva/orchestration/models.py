@@ -29,6 +29,9 @@ class QuizOptions:
     topic: str | None = None
     question_count: int | None = None
     difficulty: str | None = None
+    # "Exam level" — an exam key (see quiz.exam_patterns.TARGET_EXAMS) the
+    # quiz is pitched at instead of a difficulty band.
+    target_exam: str | None = None
     question_types: list[str] | None = None
     use_media: bool | None = None
     # Free-text extra guidance the user typed in the form; passed to the tool.
