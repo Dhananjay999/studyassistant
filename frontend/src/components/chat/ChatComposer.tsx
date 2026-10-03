@@ -9,6 +9,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUp,
+  CircleAlert,
   FolderOpen,
   Loader2,
   Mic,
@@ -36,6 +37,7 @@ import {
 import { filterSlashCommands, type SlashCommand } from "@/lib/slashCommands";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { isModifier } from "@/lib/platform";
+import { UPLOAD_ACCEPT } from "@/lib/uploadErrors";
 import { cn } from "@/lib/utils";
 
 export interface ChatComposerHandle {
@@ -80,6 +82,14 @@ function VoiceBars({ active }: { active: boolean }) {
   );
 }
 
+export interface ComposerNotice {
+  id: string;
+  message: string;
+}
+
+// How long a notice stays above the input before it clears itself.
+const NOTICE_MS = 5000;
+
 export const ChatComposer = forwardRef<
   ChatComposerHandle,
   {
@@ -99,6 +109,11 @@ export const ChatComposer = forwardRef<
     /** Whether the user already has uploaded media (drives the mobile
      *  choose-existing-vs-upload sheet). */
     hasMedia?: boolean;
+    /** A short-lived error shown above the input (e.g. a refused upload).
+     *  A new `id` restarts the timer and the entrance animation. */
+    notice?: ComposerNotice | null;
+    /** Called when the notice times out or is dismissed. */
+    onNoticeDismiss?: () => void;
   }
 >(function ChatComposer(
   {
@@ -112,6 +127,8 @@ export const ChatComposer = forwardRef<
     selectedCount = 0,
     onOpenFiles,
     hasMedia = false,
+    notice = null,
+    onNoticeDismiss,
   },
   ref,
 ) {
@@ -120,6 +137,14 @@ export const ChatComposer = forwardRef<
   const [activeIndex, setActiveIndex] = useState(0);
   const [attachOpen, setAttachOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const noticeId = notice?.id;
+  useEffect(() => {
+    if (!noticeId || !onNoticeDismiss) return;
+    const timer = window.setTimeout(onNoticeDismiss, NOTICE_MS);
+    return () => window.clearTimeout(timer);
+    // Keyed on the id alone so a re-render never restarts the countdown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noticeId]);
   const taRef = useRef<HTMLTextAreaElement>(null);
   // Composer text at the moment dictation started; the session transcript
   // is appended to this, so typed text is never overwritten.
@@ -423,10 +448,54 @@ export const ChatComposer = forwardRef<
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Upload error: slides in above the input and clears itself (the
+            bar underneath counts it down). */}
+        <AnimatePresence initial={false}>
+          {notice && (
+            <motion.div
+              key={notice.id}
+              initial={{ opacity: 0, y: 10, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ type: "spring", stiffness: 420, damping: 30 }}
+              className="mb-2 flex justify-center"
+            >
+              <div
+                role="alert"
+                className={cn(
+                  "relative flex max-w-full items-start gap-2 overflow-hidden rounded-xl border",
+                  "border-destructive/30 bg-destructive/10 py-1.5 pl-3 pr-1.5",
+                  "text-xs font-medium text-destructive shadow-sm",
+                )}
+              >
+                <CircleAlert
+                  className="mt-px h-3.5 w-3.5 shrink-0"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0">{notice.message}</span>
+                <button
+                  type="button"
+                  onClick={onNoticeDismiss}
+                  aria-label="Dismiss"
+                  className="-my-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-colors hover:bg-destructive/15"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+                <motion.span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 bottom-0 h-0.5 origin-left bg-destructive/40"
+                  initial={{ scaleX: 1 }}
+                  animate={{ scaleX: 0 }}
+                  transition={{ duration: NOTICE_MS / 1000, ease: "linear" }}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <input
           ref={fileRef}
           type="file"
-          accept="image/*,application/pdf"
+          accept={UPLOAD_ACCEPT}
           multiple
           hidden
           onChange={(e) => {

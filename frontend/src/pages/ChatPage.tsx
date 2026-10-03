@@ -28,7 +28,11 @@ import { Seo } from "@/components/common/Seo";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { BookmarkPreview } from "@/components/chat/BookmarkPreview";
-import { ChatComposer, type ChatComposerHandle } from "@/components/chat/ChatComposer";
+import {
+  ChatComposer,
+  type ChatComposerHandle,
+  type ComposerNotice,
+} from "@/components/chat/ChatComposer";
 import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
 import { QuizSetup } from "@/components/chat/QuizSetup";
 // Lazy chunks: these two pull the whole quiz/flashcard stack (runner, report,
@@ -88,7 +92,16 @@ import {
   type ChatIntent,
   type ChatSource,
 } from "@/lib/analytics";
-import { compressFiles } from "@/utils/compress";
+import { compressFile } from "@/utils/compress";
+import {
+  UPLOAD_FAILURES,
+  exceedsUploadLimit,
+  preflightUpload,
+  processingFailure,
+  toUploadError,
+  type UploadFailureReason,
+  type UploadFailureStage,
+} from "@/lib/uploadErrors";
 import type {
   AgentInfo,
   Bookmark as BookmarkData,
@@ -115,6 +128,9 @@ import { cn } from "@/lib/utils";
 const PDFViewer = lazy(() => import("@/components/PDFViewer"));
 
 const uid = () => crypto.randomUUID();
+
+const fileExtension = (file: File) =>
+  (file.name.split(".").pop() || "").toLowerCase().slice(0, 10);
 
 // The last active chat session, persisted so navigating to the Chat tab/button
 // (which drops ?sessionId) restores the conversation on BOTH mobile (kept-alive)
@@ -231,6 +247,8 @@ export default function ChatPage() {
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
+  // Latest upload/processing failure, shown briefly above the composer.
+  const [uploadNotice, setUploadNotice] = useState<ComposerNotice | null>(null);
   const mediaRef = useRef(media);
   mediaRef.current = media;
   const uploadsRef = useRef(uploads);
@@ -1089,16 +1107,19 @@ export default function ChatPage() {
         dropUpload(rowId, 900);
       },
       onError: (msg, recoverable, _via, kept) => {
+        const { reason, message } = processingFailure(msg);
         analytics.track(AnalyticsEvent.MEDIA_PROCESSING_FAILED, {
           media_id: mediaId,
           stage_last: lastStage,
+          reason,
           recoverable,
           kept,
           processing_ms: elapsed(),
         });
+        setUploadNotice({ id: uid(), message });
         patchUpload(rowId, {
           status: "error",
-          message: msg,
+          message,
           recoverable,
           kept,
         });
@@ -1111,17 +1132,65 @@ export default function ChatPage() {
     });
   };
 
+  // End an upload by naming its cause above the composer, and report it. A
+  // failure that a retry can fix also keeps its card (that is where Retry is).
+  const failUpload = (
+    file: File,
+    rowId: string,
+    reason: UploadFailureReason,
+    stage: UploadFailureStage,
+    httpStatus = 0,
+  ) => {
+    const { message, retryable } = UPLOAD_FAILURES[reason];
+    analytics.track(AnalyticsEvent.MEDIA_UPLOAD_FAILED, {
+      upload_id: rowId,
+      reason,
+      stage,
+      http_status: httpStatus,
+      retryable,
+      error_kind: reason === "network" ? "offline" : "generic",
+      file_extension: fileExtension(file),
+      mime_type: file.type || "unknown",
+      size_bytes: file.size,
+    });
+    setUploadNotice({ id: uid(), message });
+    if (!retryable) {
+      setUploads((prev) => prev.filter((u) => u.id !== rowId));
+      return;
+    }
+    const row: UploadProgress = {
+      id: rowId,
+      name: file.name,
+      progress: 0,
+      status: "error",
+      message,
+      recoverable: false,
+      retryable,
+      file,
+    };
+    setUploads((prev) =>
+      prev.some((u) => u.id === rowId)
+        ? prev.map((u) => (u.id === rowId ? row : u))
+        : [row, ...prev],
+    );
+  };
+
   const startUpload = async (
     file: File,
     rowId = uid(),
-    meta: { batchSize?: number; isRetry?: boolean } = {},
+    meta: {
+      batchSize?: number;
+      isRetry?: boolean;
+      originalBytes?: number;
+    } = {},
   ) => {
     const uploadStartedAt = performance.now();
     analytics.track(AnalyticsEvent.MEDIA_UPLOAD_STARTED, {
       upload_id: rowId,
-      file_extension: (file.name.split(".").pop() || "").toLowerCase().slice(0, 10),
+      file_extension: fileExtension(file),
       mime_type: file.type || "unknown",
       size_bytes: file.size,
+      original_size_bytes: meta.originalBytes ?? file.size,
       batch_size: meta.batchSize ?? 1,
       chat_session_id: activeId,
       is_retry: !!meta.isRetry,
@@ -1145,17 +1214,8 @@ export default function ChatPage() {
         patchUpload(rowId, { progress: p }),
       );
     } catch (e) {
-      analytics.track(AnalyticsEvent.MEDIA_UPLOAD_FAILED, {
-        upload_id: rowId,
-        error_kind: errorKind(e),
-        mime_type: file.type || "unknown",
-        size_bytes: file.size,
-      });
-      patchUpload(rowId, {
-        status: "error",
-        recoverable: false,
-        message: e instanceof Error ? e.message : "Upload failed",
-      });
+      const err = toUploadError(e);
+      failUpload(file, rowId, err.reason, "upload", err.status);
       return;
     }
     analytics.track(AnalyticsEvent.MEDIA_UPLOAD_COMPLETED, {
@@ -1179,13 +1239,32 @@ export default function ChatPage() {
   };
 
   const handleUpload = async (files: FileList) => {
-    // Show progress right away: open the media panel on layouts where the
-    // sidebar isn't already persistent (below Tailwind's `xl` breakpoint).
-    uploadWatchRef.current = true;
-    if (!window.matchMedia("(min-width: 1280px)").matches) setMediaOpen(true);
-    const list = await compressFiles(files);
+    const picked = Array.from(files);
     await Promise.all(
-      list.map((file) => startUpload(file, uid(), { batchSize: list.length })),
+      picked.map(async (original) => {
+        const rowId = uid();
+        // Refuse an unusable file before sending any bytes; the reason shows
+        // above the composer, so the media panel stays closed for it.
+        const refused = await preflightUpload(original);
+        if (refused) return failUpload(original, rowId, refused, "preflight");
+        // Show progress from here on: open the media panel on layouts where
+        // the sidebar isn't already persistent (below Tailwind's `xl`), and
+        // show the card while a large file is being shrunk.
+        uploadWatchRef.current = true;
+        if (!window.matchMedia("(min-width: 1280px)").matches) setMediaOpen(true);
+        setUploads((prev) => [
+          { id: rowId, name: original.name, progress: 0, status: "uploading" },
+          ...prev,
+        ]);
+        const file = await compressFile(original);
+        if (exceedsUploadLimit(file)) {
+          return failUpload(file, rowId, "too_large", "preflight");
+        }
+        await startUpload(file, rowId, {
+          batchSize: picked.length,
+          originalBytes: original.size,
+        });
+      }),
     );
   };
 
@@ -1666,6 +1745,8 @@ export default function ChatPage() {
               selectedCount={selected.size}
               onOpenFiles={() => setMediaOpen(true)}
               hasMedia={media.length > 0}
+              notice={uploadNotice}
+              onNoticeDismiss={() => setUploadNotice(null)}
             />
           </main>
 

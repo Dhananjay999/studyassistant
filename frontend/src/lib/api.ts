@@ -52,6 +52,7 @@ import type {
 import { mapAssistantContent } from "@/lib/messageMeta";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { errorKind } from "@/lib/errorMessage";
+import { UploadError, reasonFromResponse } from "@/lib/uploadErrors";
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -453,19 +454,22 @@ export function uploadFileWithProgress(
           const items = JSON.parse(xhr.responseText).data as MediaItem[];
           resolve(items[0]);
         } catch {
-          reject(new Error("Unexpected upload response"));
+          reject(new UploadError("unknown", xhr.status));
         }
       } else {
-        let msg = "Upload failed";
+        // The platform can answer with a non-JSON body (e.g. a 413 page).
+        let body: { msg?: string } = {};
         try {
-          msg = JSON.parse(xhr.responseText).msg || msg;
+          body = JSON.parse(xhr.responseText);
         } catch {
-          /* keep default */
+          /* keep empty */
         }
-        reject(new Error(msg));
+        reject(
+          new UploadError(reasonFromResponse(xhr.status, body.msg), xhr.status),
+        );
       }
     };
-    xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.onerror = () => reject(new UploadError("network"));
     xhr.send(form);
   });
 }

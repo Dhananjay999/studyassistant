@@ -762,6 +762,8 @@ export interface UploadProgress {
   recoverable?: boolean;
   // The backend kept the failed record (retry re-runs indexing in place).
   kept?: boolean;
+  // False when trying the same file again cannot succeed (hides Retry).
+  retryable?: boolean;
 }
 
 export interface ClarificationAnswer {

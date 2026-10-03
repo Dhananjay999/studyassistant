@@ -123,11 +123,11 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 
 | Event | When | Properties |
 |---|---|---|
-| `MEDIA_UPLOAD_STARTED` | Per file, after client compression | `upload_id`, `file_extension`, `mime_type`, `size_bytes`, `batch_size`, `chat_session_id`, `is_retry` |
+| `MEDIA_UPLOAD_STARTED` | Per file, after the browser checks and compression pass | `upload_id`, `file_extension`, `mime_type`, `size_bytes` (sent), `original_size_bytes` (picked; equal when nothing was saved), `batch_size`, `chat_session_id`, `is_retry` |
 | `MEDIA_UPLOAD_COMPLETED` | Upload HTTP done | `upload_id`, `media_id`, `mime_type`, `size_bytes`, `upload_ms` |
-| `MEDIA_UPLOAD_FAILED` | Upload threw | `upload_id`, `error_kind`, `mime_type`, `size_bytes` |
+| `MEDIA_UPLOAD_FAILED` | A picked file could not be uploaded. `stage: preflight` failures are caught in the browser and have no `MEDIA_UPLOAD_STARTED` | `upload_id`, `reason: unsupported_type\|too_large\|empty_file\|corrupt_file\|password_protected\|network\|unauthorized\|server_error\|unknown`, `stage: preflight\|upload`, `http_status` (0 = no response), `retryable`, `error_kind`, `file_extension`, `mime_type`, `size_bytes` |
 | ★ `MEDIA_PROCESSING_COMPLETED` | Processing reached `ready` | `media_id`, `processing_ms`, `via: stream\|poll`, `stages_seen` |
-| `MEDIA_PROCESSING_FAILED` | Processing error frame / poll failure | `media_id`, `stage_last`, `recoverable`, `kept?` (row kept for in-place retry), `processing_ms` |
+| `MEDIA_PROCESSING_FAILED` | Processing error frame / poll failure | `media_id`, `stage_last`, `reason: parse_failed\|parse_timeout\|not_found\|unexpected\|unknown` (named from the backend's message), `recoverable`, `kept?` (row kept for in-place retry), `processing_ms` |
 | `MEDIA_UPLOAD_RETRIED` / `MEDIA_UPLOAD_DISMISSED` | Upload card actions, or the sidebar "Retry" on a failed (not indexed) file | `upload_id`, `mode: resume\|reupload` / `upload_id`, `status` |
 | `MEDIA_CONTEXT_TOGGLED` | File (de)selected as chat context | `media_id`, `selected`, `selected_count`, `refused_not_ready` |
 | `MEDIA_DELETED` | Sidebar delete | `media_id`, `source` (`chat/MediaSidebar.tsx`) |

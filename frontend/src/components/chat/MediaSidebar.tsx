@@ -21,6 +21,7 @@ import { BookmarkButton } from "@/components/BookmarkButton";
 import { useDocumentViewer } from "@/contexts/DocumentViewerContext";
 import { cn } from "@/lib/utils";
 import { MediaProcessingCard } from "@/components/chat/MediaProcessingCard";
+import { UPLOAD_ACCEPT } from "@/lib/uploadErrors";
 import {
   isMediaReady,
   isMediaSelectable,
@@ -115,7 +116,7 @@ export function MediaSidebar({
         <label className="cursor-pointer">
           <input
             type="file"
-            accept="image/*,application/pdf"
+            accept={UPLOAD_ACCEPT}
             multiple
             hidden
             onChange={(e) => {

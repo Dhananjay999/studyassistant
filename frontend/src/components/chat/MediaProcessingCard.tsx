@@ -21,7 +21,8 @@ function stageLabel(u: UploadProgress): string {
  * A single in-flight upload, rendered as engaging, real-time AI-style
  * processing feedback: an animated stage icon, the live SSE message crossfading
  * as stages advance, and a shimmering gradient progress bar. Terminal states
- * collapse to a clean "ready" flourish or an error with a Retry affordance.
+ * collapse to a clean "ready" flourish or an error naming its cause, with
+ * Retry only when trying again can help.
  */
 export function MediaProcessingCard({
   upload,
@@ -100,7 +101,7 @@ export function MediaProcessingCard({
           </div>
 
           {/* Live stage message — crossfades as the SSE stream advances. */}
-          <div className="mt-0.5 h-4 overflow-hidden">
+          <div className={"mt-0.5 overflow-hidden " + (isError ? "min-h-4" : "h-4")}>
             <AnimatePresence mode="wait" initial={false}>
               <motion.p
                 key={label}
@@ -108,13 +109,14 @@ export function MediaProcessingCard({
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: -8, opacity: 0 }}
                 transition={{ duration: 0.22 }}
+                title={isError ? label : undefined}
                 className={
-                  "truncate text-[11px] " +
+                  "text-[11px] " +
                   (isError
-                    ? "text-destructive"
+                    ? "line-clamp-3 text-destructive"
                     : isReady
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-muted-foreground")
+                      ? "truncate text-emerald-600 dark:text-emerald-400"
+                      : "truncate text-muted-foreground")
                 }
               >
                 {label}
@@ -125,14 +127,16 @@ export function MediaProcessingCard({
 
         {isError && (
           <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={onRetry}
-              className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-[11px] font-medium hover:bg-muted"
-            >
-              <RotateCw className="h-3 w-3" />
-              Retry
-            </button>
+            {upload.retryable !== false && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-[11px] font-medium hover:bg-muted"
+              >
+                <RotateCw className="h-3 w-3" />
+                Retry
+              </button>
+            )}
             <button
               type="button"
               onClick={onDismiss}

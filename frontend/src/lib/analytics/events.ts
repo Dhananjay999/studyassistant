@@ -11,6 +11,12 @@
 // Adding an event = add the enum member + its props type in `EventPropsMap`
 // + a row in EVENTS.md. Nothing else changes.
 
+import type {
+  ProcessingFailureReason,
+  UploadFailureReason,
+  UploadFailureStage,
+} from "@/lib/uploadErrors";
+
 export enum AnalyticsEvent {
   // ---- Core (emitted by the SDK itself) ---------------------------------
   SESSION_STARTED = "SESSION_STARTED",
@@ -403,7 +409,10 @@ export interface MediaUploadStartedProps {
   upload_id: string;
   file_extension: string;
   mime_type: string;
+  /** Bytes sent, after compression. */
   size_bytes: number;
+  /** Bytes of the picked file; equals `size_bytes` when nothing was saved. */
+  original_size_bytes: number;
   batch_size: number;
   chat_session_id: string | null;
   is_retry: boolean;
@@ -685,6 +694,14 @@ export interface EventPropsMap {
   };
   [AnalyticsEvent.MEDIA_UPLOAD_FAILED]: ErrorKindProps & {
     upload_id: string;
+    /** The cause, e.g. `unsupported_type` (see `lib/uploadErrors.ts`). */
+    reason: UploadFailureReason;
+    /** Caught in the browser before sending, or refused by the server. */
+    stage: UploadFailureStage;
+    /** 0 when there was no response (preflight, network). */
+    http_status: number;
+    retryable: boolean;
+    file_extension: string;
     mime_type: string;
     size_bytes: number;
   };
@@ -697,6 +714,8 @@ export interface EventPropsMap {
   [AnalyticsEvent.MEDIA_PROCESSING_FAILED]: {
     media_id: string;
     stage_last: string;
+    /** Cause, named from the backend's message (`lib/uploadErrors.ts`). */
+    reason: ProcessingFailureReason;
     recoverable: boolean;
     /** The backend kept the row (retry in place) rather than scrubbing it. */
     kept?: boolean;
