@@ -292,7 +292,7 @@ export function SuggestedActions({
               if (ok) window.setTimeout(() => setNoteState("idle"), 2000);
             }}
             aria-label="Save as note"
-            className="group inline-flex h-7 items-center rounded-full px-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="group inline-flex h-7 items-center rounded-full px-2 text-muted-foreground touch:h-9 touch:px-2.5 transition-colors hover:bg-accent hover:text-foreground"
           >
             {noteState === "saving" ? (
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
@@ -310,7 +310,7 @@ export function SuggestedActions({
           type="button"
           onClick={copy}
           aria-label="Copy response"
-          className="group inline-flex h-7 items-center rounded-full px-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="group inline-flex h-7 items-center rounded-full px-2 text-muted-foreground touch:h-9 touch:px-2.5 transition-colors hover:bg-accent hover:text-foreground"
         >
           {copied ? (
             <Check className="h-3.5 w-3.5 shrink-0" />

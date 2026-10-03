@@ -114,7 +114,7 @@ function SpaceCard({
                   type="button"
                   aria-label="Space options"
                   onClick={(e) => e.stopPropagation()}
-                  className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
+                  className="-mr-1 -mt-1 shrink-0 rounded-md p-2 text-muted-foreground transition-opacity hover:bg-accent mouse:m-0 mouse:p-1 mouse:opacity-0 group-hover:opacity-100"
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
@@ -263,7 +263,7 @@ export default function SpacesPage() {
         </GlassCard>
       ) : (
         <div
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
           data-analytics-private
           data-analytics-section="spaces_list"
         >

@@ -188,7 +188,7 @@ export default function QuizzesPage() {
   return (
     <PageContainer title="Quizzes">
       <Seo title="Quizzes — Aeva" noindex path="/quizzes" />
-      <div className="p-4">
+      <div className="lg:p-4">
         {isLoading ? (
           <CardGridSkeleton />
         ) : quizzes.length === 0 && pending.length === 0 ? (
@@ -210,7 +210,7 @@ export default function QuizzesPage() {
                 <Button
                   variant="brand"
                   onClick={() => openCreate("header")}
-                  className="ml-auto gap-2"
+                  className="w-full gap-2 sm:ml-auto sm:w-auto"
                 >
                   <Plus className="h-4 w-4" />
                   Create quiz
@@ -281,7 +281,7 @@ function Metric({
       <span className="font-display text-sm font-bold leading-none tabular-nums">
         {value}
       </span>
-      <span className="mt-1 text-[10px] leading-none text-muted-foreground">
+      <span className="mt-1 text-[11px] leading-none text-muted-foreground">
         {label}
       </span>
     </div>
@@ -328,14 +328,14 @@ function QuizGridCard({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {examLabel && (
-            <span className="flex items-center gap-0.5 rounded-full bg-brand-1/15 px-2 py-0.5 text-[10px] font-semibold text-brand-1">
+            <span className="flex items-center gap-0.5 rounded-full bg-brand-1/15 px-2 py-0.5 text-[11px] font-semibold text-brand-1">
               <GraduationCap className="h-3 w-3" />
               {examLabel}
             </span>
           )}
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+              "rounded-full px-2 py-0.5 text-[11px] font-semibold",
               diff.className,
             )}
           >
@@ -409,7 +409,7 @@ function QuizGridCard({
       {attempted ? (
         <div className="mt-3">
           <Progress value={pct} className="h-1.5" />
-          <p className="mt-2 text-[10px] text-muted-foreground">
+          <p className="mt-2 text-[11px] text-muted-foreground">
             {q.last_attempt_at
               ? `Last attempt ${relativeDay(q.last_attempt_at)}`
               : " "}
@@ -418,20 +418,22 @@ function QuizGridCard({
       ) : (
         <div className="mt-3">
           <div className="h-1.5 rounded-full bg-muted/50" />
-          <p className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
             <Clock className="h-3 w-3" />~{minutes} min · {q.question_count}{" "}
             questions
           </p>
         </div>
       )}
 
-      {/* Actions pinned to the bottom so every card ends at the same line */}
-      <div className="mt-auto flex gap-2 pt-4">
+      {/* Actions pinned to the bottom so every card ends at the same line.
+         Phones stack them (primary action on its own row) — one row can't
+         hold four buttons without crushing the share/export icons. */}
+      <div className="mt-auto grid grid-cols-[1fr_auto_auto] gap-2 pt-4 sm:flex">
         <Button
           onClick={() => onOpen("take")}
           disabled={loading}
           variant="brand"
-          className="flex-1 gap-2"
+          className="col-span-3 gap-2 sm:flex-1"
         >
           {loadingView === "take" ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -458,6 +460,7 @@ function QuizGridCard({
           quizTitle={q.title}
           variant="outline"
           size="icon"
+          className="shrink-0"
         >
           <Share2 className="h-4 w-4" />
         </ShareQuizButton>
@@ -466,6 +469,7 @@ function QuizGridCard({
           quizTitle={q.title}
           variant="outline"
           size="icon"
+          className="shrink-0"
         >
           <FileDown className="h-4 w-4" />
         </QuizExportButton>

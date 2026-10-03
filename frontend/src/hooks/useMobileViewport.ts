@@ -18,10 +18,39 @@ export function useMobileViewport(): void {
     const root = document.documentElement;
     const vv = window.visualViewport;
 
+    // Tallest viewport seen at the current width = the keyboard-closed
+    // height. The keyboard is detected against THIS, not `window.innerHeight`:
+    // with `interactive-widget=resizes-content` (our viewport meta) Android
+    // Chrome shrinks the layout viewport together with the visual one, so
+    // `innerHeight - vv.height` stays ~0 there and the bottom nav never hid.
+    // iOS keeps `innerHeight` at full height, which the baseline also covers.
+    let baseline = 0;
+    let baselineWidth = 0;
+    // Only touch devices have an on-screen keyboard.
+    const touch = window.matchMedia("(hover: none), (pointer: coarse)");
+
+    const isEditing = () => {
+      const el = document.activeElement as HTMLElement | null;
+      return (
+        !!el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.isContentEditable)
+      );
+    };
+
     const update = () => {
       const h = vv ? vv.height : window.innerHeight;
       root.style.setProperty("--app-height", `${Math.round(h)}px`);
-      const kbOpen = vv ? window.innerHeight - vv.height > 120 : false;
+      // A width change is a rotation / window resize: start a new baseline.
+      if (window.innerWidth !== baselineWidth) {
+        baselineWidth = window.innerWidth;
+        baseline = 0;
+      }
+      baseline = Math.max(baseline, h, window.innerHeight);
+      // Require a focused field so a plain window resize (split-screen,
+      // browser chrome collapsing) is never mistaken for the keyboard.
+      const kbOpen = touch.matches && baseline - h > 120 && isEditing();
       root.dataset.kbOpen = kbOpen ? "1" : "0";
     };
     update();
@@ -30,6 +59,10 @@ export function useMobileViewport(): void {
     vv?.addEventListener("scroll", update);
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
+    // Focus moves without a resize when the keyboard is dismissed with the
+    // field still focused and re-opened, or focus jumps between fields.
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", update);
 
     const prevBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -39,6 +72,8 @@ export function useMobileViewport(): void {
       vv?.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
+      document.removeEventListener("focusin", update);
+      document.removeEventListener("focusout", update);
       document.body.style.overflow = prevBodyOverflow;
       root.style.removeProperty("--app-height");
       delete root.dataset.kbOpen;

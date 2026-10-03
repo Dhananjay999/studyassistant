@@ -27,7 +27,7 @@ export function AccountSection() {
             {initial}
           </AvatarFallback>
         </Avatar>
-        <div className="min-w-0 flex-1">
+        <div className="w-full min-w-0 flex-1 sm:w-auto">
           <h3 className="truncate text-lg font-semibold">{name}</h3>
           <p className="mt-0.5 flex items-center justify-center gap-1.5 text-sm text-muted-foreground sm:justify-start">
             <Mail className="h-3.5 w-3.5 shrink-0" />

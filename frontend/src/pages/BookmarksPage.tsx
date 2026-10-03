@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { markdownToPlain } from "@/lib/markdownPreview";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -359,7 +360,7 @@ export default function BookmarksPage() {
       <PageContainer title="Bookmarks">
         <div className="flex min-h-full flex-col lg:flex-row">
           {/* Folder navigation */}
-          <aside className="w-full shrink-0 border-b border-border/50 p-3 lg:w-64 lg:border-b-0 lg:border-r">
+          <aside className="w-full shrink-0 border-b border-border/50 pb-3 lg:w-64 lg:border-b-0 lg:border-r lg:p-3">
             <div className="mb-2 flex items-center justify-between px-1">
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Folders
@@ -443,7 +444,7 @@ export default function BookmarksPage() {
           </aside>
 
           {/* Main */}
-          <main className="flex-1 p-4">
+          <main className="min-w-0 flex-1 pt-4 lg:p-4">
             <ListToolbar
               className="mb-4"
               config={config}
@@ -453,7 +454,7 @@ export default function BookmarksPage() {
                 (filtered.length > 0 || selectMode) && (
                   <Button
                     variant={selectMode ? "default" : "outline"}
-                    className="gap-2"
+                    className="shrink-0 gap-2"
                     onClick={() =>
                       selectMode ? exitSelect() : setSelectMode(true)
                     }
@@ -595,10 +596,10 @@ function BookmarkContentDialog({
           <>
             <DialogHeader className="border-b border-border/50 px-5 py-4">
               <div className="mb-1.5 flex items-center gap-2">
-                <Badge variant="secondary" className="gap-1 text-[10px]">
+                <Badge variant="secondary" className="gap-1 text-[11px]">
                   <Icon className="h-3 w-3" /> {meta?.label}
                 </Badge>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                   Saved {new Date(bookmark.created_at).toLocaleDateString()}
                 </span>
               </div>
@@ -657,31 +658,38 @@ function SelectionBar({
         <Button
           variant="ghost"
           size="icon"
+          className="-ml-1 shrink-0"
           onClick={onCancel}
           aria-label="Cancel selection"
         >
           <X className="h-5 w-5" />
         </Button>
-        <span className="text-sm font-medium">{count} selected</span>
+        <span className="whitespace-nowrap text-sm font-medium">
+          {count} selected
+        </span>
         {count < total && (
           <Button
             variant="ghost"
             size="sm"
-            className="text-xs"
+            className="shrink-0 px-2 text-xs sm:px-3"
             onClick={onSelectAll}
           >
             Select all
           </Button>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        {/* Phones: icon-only actions — the labelled pair pushed Delete off
+           the right edge of the bar. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             className="gap-1.5"
             disabled={count === 0}
             onClick={onMove}
+            aria-label="Move selected"
           >
-            <FolderInput className="h-4 w-4" /> Move
+            <FolderInput className="h-4 w-4" />
+            <span className="hidden sm:inline">Move</span>
           </Button>
           <Button
             variant="destructive"
@@ -689,8 +697,10 @@ function SelectionBar({
             className="gap-1.5"
             disabled={count === 0}
             onClick={onDelete}
+            aria-label="Delete selected"
           >
-            <Trash2 className="h-4 w-4" /> Delete
+            <Trash2 className="h-4 w-4" />
+            <span className="hidden sm:inline">Delete</span>
           </Button>
         </div>
       </div>
@@ -740,7 +750,7 @@ function FolderRow({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100"
+              className="h-8 w-8 mouse:h-6 mouse:w-6 mouse:opacity-0 group-hover:opacity-100"
               aria-label="Folder options"
             >
               <MoreHorizontal className="h-4 w-4" />
@@ -821,10 +831,10 @@ function BookmarkCard({
       )}
     >
       <div className="mb-2 flex items-center gap-2">
-        <Badge variant="secondary" className="gap-1 text-[10px]">
+        <Badge variant="secondary" className="gap-1 text-[11px]">
           <Icon className="h-3 w-3" /> {meta.label}
         </Badge>
-        <span className="ml-auto text-[10px] text-muted-foreground">
+        <span className="ml-auto text-[11px] text-muted-foreground">
           {new Date(bookmark.created_at).toLocaleDateString()}
         </span>
         {selectMode && (
@@ -849,7 +859,7 @@ function BookmarkCard({
           </h3>
           {bookmark.content && (
             <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">
-              {bookmark.content}
+              {markdownToPlain(bookmark.content)}
             </p>
           )}
         </div>
@@ -870,14 +880,14 @@ function BookmarkCard({
           </h3>
           {bookmark.content && (
             <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">
-              {bookmark.content}
+              {markdownToPlain(bookmark.content)}
             </p>
           )}
         </button>
       )}
 
       <div className="mt-auto flex items-center gap-1 border-t border-border/40 pt-3">
-        <Badge variant="outline" className="text-[10px]">
+        <Badge variant="outline" className="text-[11px]">
           {folderName}
         </Badge>
         {!selectMode && (

@@ -157,6 +157,17 @@
     }
   }
 
+  /* iOS Safari zooms the whole page when a focused field's text is under
+     16px (and stays zoomed, which breaks the fixed app shell). Keep every
+     text field at 16px on touch devices; desktop keeps the compact sizes. */
+  @media (hover: none), (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
   /* Native-app (WebView) mode: the UI chrome shouldn't select or callout
      like a web page. Learning content and form fields stay selectable. */
   html.app-mode body {
@@ -234,6 +245,17 @@
   }
   .learning-content.learning-content {
     font-size: var(--content-font-size, 1rem);
+  }
+  /* Long unbroken strings (URLs, identifiers, inline code) wrap instead of
+     poking out of the message bubble on narrow screens. `break-word` (not
+     `anywhere`) so table columns still size by whole words. */
+  .learning-content {
+    overflow-wrap: break-word;
+  }
+  /* A display equation wider than the bubble scrolls sideways on its own. */
+  .learning-content .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   /* ----------------------------------------------------------------------

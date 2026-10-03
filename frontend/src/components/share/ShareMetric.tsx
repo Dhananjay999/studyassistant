@@ -17,7 +17,7 @@ export function ShareMetric({
       <span className="font-display text-sm font-bold leading-none tabular-nums">
         {value}
       </span>
-      <span className="mt-1 text-[10px] leading-none text-muted-foreground">
+      <span className="mt-1 text-[11px] leading-none text-muted-foreground">
         {label}
       </span>
     </div>

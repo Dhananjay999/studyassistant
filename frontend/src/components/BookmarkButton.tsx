@@ -135,7 +135,7 @@ export function BookmarkButton({
             aria-pressed={saved}
             aria-label={saved ? "Edit bookmark" : "Add bookmark"}
             className={cn(
-              "group inline-flex h-7 items-center rounded-full px-2 transition-colors hover:bg-accent hover:text-foreground",
+              "group inline-flex h-7 items-center rounded-full px-2 transition-colors hover:bg-accent hover:text-foreground touch:h-9 touch:px-2.5",
               saved ? "text-brand-1" : "text-muted-foreground",
               className,
             )}
@@ -153,7 +153,9 @@ export function BookmarkButton({
             aria-pressed={saved}
             aria-label={saved ? "Edit bookmark" : "Add bookmark"}
             className={cn(
-              label ? "h-7 gap-1.5 rounded-full px-3 text-xs" : "h-7 w-7",
+              label
+                ? "h-7 gap-1.5 rounded-full px-3 text-xs touch:h-9"
+                : "h-7 w-7 touch:h-9 touch:w-9",
               saved && "text-brand-1",
               className,
             )}

@@ -108,7 +108,7 @@ export function Features() {
         </Reveal>
 
         {/* Spotlight: the major learning features */}
-        <div className="mt-14 grid gap-5 md:grid-cols-3">
+        <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-3">
           {SPOTLIGHT.map((f, i) => (
             <Reveal key={f.title} delay={i * 0.08}>
               <GlassCard className="group h-full border-brand-1/25 p-6 transition-transform duration-300 hover:-translate-y-1">

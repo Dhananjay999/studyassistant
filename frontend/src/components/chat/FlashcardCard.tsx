@@ -23,12 +23,12 @@ export function FlashcardCard({
       className="mt-3 max-w-md"
     >
       <GlassCard className="border-brand-1/20 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <h4 className="flex items-center gap-1.5 font-display text-base font-bold leading-tight">
-            <Layers className="h-4 w-4 text-brand-1" />
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <h4 className="flex min-w-0 items-start gap-1.5 font-display text-base font-bold leading-tight">
+            <Layers className="mt-0.5 h-4 w-4 shrink-0 text-brand-1" />
             {flashcards.title}
           </h4>
-          <Badge variant="secondary" className="shrink-0">
+          <Badge variant="secondary" className="shrink-0 self-start">
             Flashcards
           </Badge>
         </div>

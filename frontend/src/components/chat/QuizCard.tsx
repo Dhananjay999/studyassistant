@@ -45,19 +45,23 @@ export function QuizCard({
       className="mt-3 max-w-md"
     >
       <GlassCard className="border-brand-1/20 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <h4 className="flex items-center gap-1.5 font-display text-base font-bold leading-tight">
-            <Sparkles className="h-4 w-4 text-brand-1" />
+        {/* Phones: badge + actions sit on their own row above the title so
+           the title gets the full card width instead of a narrow column. */}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <h4 className="flex min-w-0 items-start gap-1.5 font-display text-base font-bold leading-tight">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-brand-1" />
             {quiz.title}
           </h4>
           <div className="flex shrink-0 items-center gap-1">
             {examLabel ? (
-              <Badge className="gap-1 bg-brand-1/15 text-brand-1">
+              <Badge className="mr-auto gap-1 bg-brand-1/15 text-brand-1 sm:mr-0">
                 <GraduationCap className="h-3 w-3" />
                 {examLabel}
               </Badge>
             ) : (
-              <Badge variant="secondary">Quiz</Badge>
+              <Badge variant="secondary" className="mr-auto sm:mr-0">
+                Quiz
+              </Badge>
             )}
             {quiz.quiz_id && (
               <ShareQuizButton

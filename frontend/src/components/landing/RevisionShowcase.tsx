@@ -187,7 +187,7 @@ export function RevisionShowcase() {
       className="relative overflow-hidden py-24"
     >
       <div className="container">
-        <div className="grid items-center gap-12 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
           {/* Copy column */}
           <Reveal>
             <span className="inline-flex items-center gap-2 rounded-full border border-brand-1/30 bg-brand-1/10 px-3 py-1 text-xs font-semibold text-brand-1">

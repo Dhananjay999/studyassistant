@@ -29,7 +29,7 @@ export default function RevisionPage() {
   return (
     <PageContainer title="Revision">
       <Seo title="Revision — Aeva" noindex path="/revision" />
-      <div className="mx-auto max-w-4xl space-y-6 p-4">
+      <div className="mx-auto max-w-4xl space-y-6 lg:p-4">
         {isLoading ? (
           <DashboardSkeleton />
         ) : isError || !data ? (

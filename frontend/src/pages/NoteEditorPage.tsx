@@ -180,7 +180,7 @@ export default function NoteEditorPage() {
               type="button"
               onClick={() => navigate("/notes")}
               aria-label="All notes"
-              className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="-ml-1 shrink-0 rounded-lg p-2.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:ml-0 sm:p-1.5"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>

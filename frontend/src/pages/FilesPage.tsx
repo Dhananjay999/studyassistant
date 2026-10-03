@@ -137,7 +137,7 @@ export default function FilesPage() {
   return (
     <PageContainer title="Study Material">
       <Seo title="Study Material — Aeva" noindex path="/files" />
-      <div className="p-4">
+      <div className="lg:p-4">
         {hasFiles && (
           <ListToolbar
             className="mb-4"
@@ -198,7 +198,7 @@ export default function FilesPage() {
                       ) : (
                         <FileText className="h-9 w-9 text-brand-1" />
                       )}
-                      <span className="absolute left-2 top-2 rounded-md bg-background/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide backdrop-blur">
+                      <span className="absolute left-2 top-2 rounded-md bg-background/80 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide backdrop-blur">
                         {isImage ? "IMG" : "PDF"}
                       </span>
                       {openingId === m.id && (
@@ -233,7 +233,7 @@ export default function FilesPage() {
                           {m.page_count ? ` · ${m.page_count} pages` : ""}
                         </p>
                         {!ready && (
-                          <span className="mt-1 inline-block rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                          <span className="mt-1 inline-block rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
                             Processing…
                           </span>
                         )}

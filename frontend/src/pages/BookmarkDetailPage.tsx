@@ -120,7 +120,7 @@ export default function BookmarkDetailPage() {
   return (
     <PageContainer title="Saved content">
       <Seo title="Saved content — Aeva" noindex path="/bookmarks" />
-      <div className="mx-auto max-w-3xl px-4 py-4">
+      <div className="mx-auto max-w-3xl lg:px-4 lg:py-4">
         <header className="mb-4 flex items-center gap-2">
           <Button
             variant="ghost"

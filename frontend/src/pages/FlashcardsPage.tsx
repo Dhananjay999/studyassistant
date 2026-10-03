@@ -116,7 +116,7 @@ export default function FlashcardsPage() {
   return (
     <PageContainer title="Flashcards">
       <Seo title="Flashcards — Aeva" noindex path="/flashcards" />
-      <div className="p-4">
+      <div className="lg:p-4">
         {isLoading ? (
           <CardGridSkeleton />
         ) : sets.length === 0 && pending.length === 0 ? (
@@ -138,7 +138,7 @@ export default function FlashcardsPage() {
                 <Button
                   variant="brand"
                   onClick={() => openCreate("header")}
-                  className="ml-auto gap-2"
+                  className="w-full gap-2 sm:ml-auto sm:w-auto"
                 >
                   <Plus className="h-4 w-4" />
                   Create flashcards

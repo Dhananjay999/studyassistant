@@ -123,11 +123,16 @@ export default function SharePage() {
       <Seo title={pageTitle(share)} noindex path={`/share/${shareId}`} />
 
       {/* Top bar */}
-      <header className="flex items-center justify-between border-b border-border/50 px-4 py-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-        <Link to="/" aria-label="StudyAssistant home">
+      <header className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+        <Link to="/" aria-label="StudyAssistant home" className="min-w-0">
           <BrandLogo />
         </Link>
-        <Button variant="outline" size="sm" onClick={() => navigate("/")}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={() => navigate("/")}
+        >
           Try StudyAssistant
         </Button>
       </header>

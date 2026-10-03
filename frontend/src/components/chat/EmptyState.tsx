@@ -21,7 +21,7 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   );
 
   return (
-    <div className="relative mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-6 px-4 text-center">
+    <div className="relative mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center gap-6 px-4 py-6 text-center">
       {/* Subtle animated aurora backdrop */}
       <div
         aria-hidden

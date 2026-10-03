@@ -158,7 +158,9 @@ export const ChatComposer = forwardRef<
   // Full prompt wraps to two lines on a narrow phone (and the second line gets
   // clipped by the single-row height), so use a short one-line hint on mobile.
   const placeholder = locked
-    ? lockedPlaceholder
+    ? isMobile
+      ? "Answer above first…"
+      : lockedPlaceholder
     : isMobile
       ? "Ask anything…"
       : "Ask anything, type / for commands, or attach notes…";
@@ -477,7 +479,7 @@ export const ChatComposer = forwardRef<
                   type="button"
                   onClick={onNoticeDismiss}
                   aria-label="Dismiss"
-                  className="-my-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-colors hover:bg-destructive/15"
+                  className="-my-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-colors hover:bg-destructive/15 touch:-my-1 touch:h-7 touch:w-7"
                 >
                   <X className="h-3 w-3" />
                 </button>

@@ -29,7 +29,7 @@ export default function ProfileSectionPage() {
             type="button"
             onClick={goBack}
             aria-label="Back"
-            className="-ml-1 flex items-center rounded-lg p-1.5 text-foreground transition-colors hover:bg-accent/50"
+            className="flex items-center rounded-lg p-2 text-foreground transition-colors hover:bg-accent/50 lg:-ml-1 lg:p-1.5"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
@@ -44,7 +44,7 @@ export default function ProfileSectionPage() {
 
   const Component = entry.Component;
   return (
-    <div className="h-full overflow-y-auto pb-bottomnav lg:pb-0">
+    <div className="h-full overflow-y-auto overflow-x-hidden pb-bottomnav lg:pb-0">
       <div className="mx-auto w-full max-w-2xl p-4">
         <Component />
       </div>

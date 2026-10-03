@@ -59,7 +59,7 @@ export default function AnalyticsPage() {
   return (
     <PageContainer title="Analytics">
       <Seo title="Analytics — Aeva" noindex path="/analytics" />
-      <div className="mx-auto max-w-6xl space-y-6 p-4">
+      <div className="mx-auto max-w-6xl space-y-6 lg:p-4">
         {isLoading || !data ? (
           <DashboardSkeleton />
         ) : (
@@ -102,7 +102,7 @@ function Dashboard({ data }: { data: AnalyticsOverview }) {
 
       {/* Quiz Analytics */}
       <Section title="Quiz Analytics" icon={Target}>
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div className="grid grid-cols-2 gap-3 lg:col-span-1">
             <StatTile label="Attempted" value={quiz.quizzes_attempted} icon={ListChecks} />
             <StatTile label="Attempts" value={quiz.attempts} icon={TrendingUp} />
@@ -295,7 +295,7 @@ function TrendChart({ data }: { data: Array<{ date: string; score: number }> }) 
       config={trendConfig}
       className="h-[220px] w-full !aspect-auto"
     >
-      <AreaChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-score)" stopOpacity={0.3} />
@@ -368,9 +368,9 @@ function ActivityBars({
       {data.map((d) => (
         <div
           key={d.date}
-          className="flex min-w-0 flex-1 flex-col items-center gap-1"
+          className="flex h-full min-w-0 flex-1 flex-col items-center gap-1"
         >
-          <div className="flex h-full w-full items-end justify-center gap-0.5">
+          <div className="flex min-h-0 w-full flex-1 items-end justify-center gap-0.5">
             <div
               className="w-1/2 max-w-[10px] rounded-t bg-brand-1"
               style={{ height: h(d.questions) }}

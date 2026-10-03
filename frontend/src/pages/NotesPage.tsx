@@ -46,7 +46,7 @@ function NoteCard({
             {note.title}
           </h3>
           {note.source_type === "response" && (
-            <Badge variant="secondary" className="shrink-0 gap-1 text-[10px]">
+            <Badge variant="secondary" className="shrink-0 gap-1 text-[11px]">
               <Sparkles className="h-3 w-3" /> From Aeva
             </Badge>
           )}

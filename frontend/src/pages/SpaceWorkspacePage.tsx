@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { markdownToPlain } from "@/lib/markdownPreview";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -195,7 +196,7 @@ function SpaceSearchResults({
             <Row
               key={m.id}
               icon={MessageSquare}
-              title={m.content.slice(0, 90)}
+              title={markdownToPlain(m.content, 90)}
               sub={m.session_title}
               onClick={() => onOpenMessage(m.session_id, m.id)}
             />
@@ -413,12 +414,15 @@ export default function SpaceWorkspacePage() {
         <>
           {/* Header */}
           <GlassCard className="mb-4 p-4 sm:p-5">
-            <div className="flex items-start gap-3.5">
+            {/* Phones: back + icon + actions share the first row and the
+               title block takes the full width below, so a long space name
+               never gets squeezed into a sliver between them. */}
+            <div className="flex flex-wrap items-start gap-x-3.5 gap-y-3 sm:flex-nowrap">
               <button
                 type="button"
                 onClick={() => navigate("/spaces")}
                 aria-label="All spaces"
-                className="mt-1 shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="-ml-1 mt-1 shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:ml-0 sm:p-1"
               >
                 <ArrowLeft className="h-4 w-4" />
               </button>
@@ -431,9 +435,9 @@ export default function SpaceWorkspacePage() {
               >
                 <Icon className="h-6 w-6" />
               </span>
-              <div className="min-w-0 flex-1">
+              <div className="order-last min-w-0 basis-full sm:order-none sm:flex-1 sm:basis-auto">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="font-display text-xl font-bold leading-tight">
+                  <h1 className="min-w-0 break-words font-display text-xl font-bold leading-tight">
                     {space.name}
                   </h1>
                   {space.subject && (
@@ -446,7 +450,7 @@ export default function SpaceWorkspacePage() {
                   </p>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -537,7 +541,9 @@ export default function SpaceWorkspacePage() {
             />
           ) : (
           <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="mb-3 h-auto flex-wrap">
+            {/* Seven tabs don't fit a phone row: scroll them sideways there
+               (wrapping left ragged rows); wrap as before from sm up. */}
+            <TabsList className="mb-3 flex h-auto w-full justify-start overflow-x-auto sm:inline-flex sm:w-auto sm:flex-wrap sm:justify-center sm:overflow-visible [&>button]:shrink-0">
               <TabsTrigger value="chats" className="gap-1.5">
                 <MessageSquare className="h-3.5 w-3.5" />
                 Chats {counts.sessions ? `(${counts.sessions})` : ""}
@@ -732,7 +738,7 @@ export default function SpaceWorkspacePage() {
                   {/* Weak / strong topics */}
                   {(stats.weak_topics.length > 0 ||
                     stats.strong_topics.length > 0) && (
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <GlassCard className="p-4">
                         <p className="flex items-center gap-1.5 text-sm font-semibold">
                           <TrendingDown className="h-4 w-4 text-red-500" />

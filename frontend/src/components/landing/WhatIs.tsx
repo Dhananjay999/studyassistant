@@ -87,7 +87,7 @@ export function WhatIs() {
           </div>
         </Reveal>
         <Reveal delay={0.14}>
-          <ul className="mt-8 grid gap-3 sm:grid-cols-2">
+          <ul className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {CAPABILITIES.map((c) => (
               <li
                 key={c.term}

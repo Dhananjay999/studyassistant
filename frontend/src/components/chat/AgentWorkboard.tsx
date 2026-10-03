@@ -206,7 +206,7 @@ function AgentGroup({
           {title}
         </p>
       )}
-      <ul className="grid gap-2 sm:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {agents.map((agent) => (
           <AgentCard
             key={agent.id}

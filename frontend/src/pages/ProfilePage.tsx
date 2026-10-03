@@ -35,7 +35,7 @@ export default function ProfilePage() {
 
   return (
     <PageContainer title="Profile">
-      <div className="mx-auto w-full max-w-2xl space-y-6 p-4">
+      <div className="mx-auto w-full max-w-2xl space-y-6 lg:p-4">
         <ProfileHeader
           name={user?.full_name || "Student"}
           email={user?.email}

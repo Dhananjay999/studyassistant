@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
 import typography from "@tailwindcss/typography";
+import plugin from "tailwindcss/plugin";
 
 export default {
 	// Touch-first: every `hover:` utility only applies on devices that truly
@@ -144,5 +145,17 @@ export default {
 			},
 		},
 	},
-	plugins: [tailwindcssAnimate, typography],
+	plugins: [
+		tailwindcssAnimate,
+		typography,
+		// Pointer-capability variants. `mouse:` matches devices that truly hover
+		// (same test as `hoverOnlyWhenSupported`); `touch:` is everything else.
+		// Use them for controls that are revealed on hover: `mouse:opacity-0
+		// group-hover:opacity-100` stays visible on phones, where there is no
+		// hover to reveal it (a plain `opacity-0` there is an invisible button).
+		plugin(({ addVariant }) => {
+			addVariant("mouse", "@media (hover: hover) and (pointer: fine)");
+			addVariant("touch", "@media (hover: none), (pointer: coarse)");
+		}),
+	],
 } satisfies Config;

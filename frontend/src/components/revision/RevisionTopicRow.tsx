@@ -95,7 +95,9 @@ export function RevisionTopicRow({
               {item.reason}
             </p>
           </div>
-          <div className="flex shrink-0 gap-2">
+          {/* Phones: the three actions share the card width (and wrap on the
+             narrowest screens) instead of overflowing its right edge. */}
+          <div className="flex flex-wrap gap-2 sm:shrink-0 sm:flex-nowrap">
             {buttons.map((b) => {
               const primary = b.action === item.recommended_action;
               return (
@@ -105,7 +107,7 @@ export function RevisionTopicRow({
                   variant={primary ? "brand" : "outline"}
                   disabled={actions.pending}
                   onClick={b.onClick}
-                  className="gap-1.5"
+                  className="flex-1 gap-1 px-2 text-xs sm:flex-none sm:gap-1.5 sm:px-3 sm:text-sm"
                 >
                   <b.icon className="h-3.5 w-3.5" />
                   {b.label}

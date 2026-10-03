@@ -33,7 +33,9 @@ export function ListToolbar<T>({
           onChange={query.setSearch}
           placeholder={placeholder}
         />
-        <div className="flex items-center gap-2">
+        {/* Wraps on phones so a wide `extra` (e.g. a Create button) drops to
+           its own row instead of being pushed off-screen. */}
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <SortMenu
             options={config.sorts}
             value={query.sort}

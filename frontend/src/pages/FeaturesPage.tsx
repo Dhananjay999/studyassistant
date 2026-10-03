@@ -122,7 +122,7 @@ export default function FeaturesPage() {
         title="AI study tools for everything you're learning"
         intro="StudyAssistant is a complete AI study assistant — chat, PDF analysis, quizzes, flashcards, spaced-repetition revision, and analytics working together, not a collection of disconnected tools."
       >
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {FEATURES.map((f) => (
             <article
               key={f.title}

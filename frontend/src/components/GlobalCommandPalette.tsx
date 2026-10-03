@@ -24,6 +24,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { markdownToPlain } from "@/lib/markdownPreview";
 import { useBookmarks, useCollections, useSearch } from "@/hooks/api";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -266,7 +267,9 @@ export function GlobalCommandPalette({
                   <span className="truncate text-xs text-muted-foreground">
                     {m.session_title} · {m.role === "user" ? "You" : "Aeva"}
                   </span>
-                  <span className="truncate">{m.content}</span>
+                  <span className="truncate">
+                    {markdownToPlain(m.content, 160)}
+                  </span>
                 </span>
               </CommandItem>
             ))}

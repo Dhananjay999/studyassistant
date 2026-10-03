@@ -22,7 +22,10 @@ export function SortMenu<T>({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={className ?? "w-full sm:w-44"} aria-label="Sort">
+      <SelectTrigger
+        className={className ?? "min-w-[7rem] flex-1 sm:w-44 sm:flex-none"}
+        aria-label="Sort"
+      >
         <ArrowUpDown className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
         <SelectValue />
       </SelectTrigger>

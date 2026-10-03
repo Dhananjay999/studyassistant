@@ -11,6 +11,7 @@ import {
   ListChecks,
   Loader2,
   MessageSquare,
+  MoreHorizontal,
   NotebookPen,
   PanelLeft,
   PanelLeftClose,
@@ -27,11 +28,19 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { analytics, AnalyticsEvent, analyticsAttrs } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { BrandLogo } from "@/components/common/BrandLogo";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { usePinnedSessions } from "@/hooks/usePinnedSessions";
@@ -196,6 +205,7 @@ export function AppSidebar({
   const { data: allSpaces } = useSpaces();
   const spaces = spacesEnabled ? realSpaces(allSpaces).slice(0, 4) : [];
   const convertToSpace = useConvertToSpace();
+  const confirm = useConfirm();
   const [convertingId, setConvertingId] = useState<string | null>(null);
 
   // Pinned sessions float to the top in most-recently-pinned order; everything
@@ -208,7 +218,20 @@ export function AppSidebar({
   const accountName = user?.full_name || "Student";
   const accountInitial = user?.full_name?.[0] || user?.email?.[0] || "?";
 
+  // Deleting a chat is permanent, and on a phone the row actions sit right
+  // next to the row's own tap target — always confirm first.
   const handleDelete = async (id: string) => {
+    const title = sessions.find((s) => s.id === id)?.title;
+    const ok = await confirm({
+      title: "Delete this chat?",
+      description: title
+        ? `“${title}” and its messages will be permanently deleted.`
+        : "This chat and its messages will be permanently deleted.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      destructive: true,
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       await onDeleteSession(id);
@@ -262,6 +285,14 @@ export function AppSidebar({
 
   const renderRow = (s: Session) => {
     const pinnedRow = isPinned(s.id);
+    const busy = convertingId === s.id || deletingId === s.id;
+    const pin = () => {
+      analytics.track(AnalyticsEvent.CHAT_SESSION_PINNED, {
+        chat_session_id: s.id,
+        pinned: !pinnedRow,
+      });
+      togglePin(s.id);
+    };
     return (
       <div
         key={s.id}
@@ -287,17 +318,50 @@ export function AppSidebar({
           )}
           <span className="truncate">{s.title}</span>
         </button>
+        {/* Touch: one visible "more" menu. The hover-revealed icons below are
+           mouse-only — on a phone they would be invisible yet tappable (and
+           Delete has no confirmation). */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Chat options"
+              disabled={busy}
+              className="-my-1 -mr-1.5 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground mouse:hidden"
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MoreHorizontal className="h-4 w-4" />
+              )}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onClick={pin}>
+              {pinnedRow ? (
+                <PinOff className="mr-2 h-4 w-4" />
+              ) : (
+                <Pin className="mr-2 h-4 w-4" />
+              )}
+              {pinnedRow ? "Unpin chat" : "Pin chat"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleConvert(s)}>
+              <LibraryBig className="mr-2 h-4 w-4" /> Turn into Study Space
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => handleDelete(s.id)}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="mr-2 h-4 w-4" /> Delete chat
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button
           type="button"
-          onClick={() => {
-            analytics.track(AnalyticsEvent.CHAT_SESSION_PINNED, {
-              chat_session_id: s.id,
-              pinned: !pinnedRow,
-            });
-            togglePin(s.id);
-          }}
+          onClick={pin}
           className={cn(
-            "shrink-0 text-muted-foreground transition-opacity hover:text-brand-1",
+            "shrink-0 text-muted-foreground transition-opacity hover:text-brand-1 touch:hidden",
             pinnedRow
               ? "opacity-100"
               : "opacity-0 group-hover:opacity-100",
@@ -316,7 +380,7 @@ export function AppSidebar({
           type="button"
           onClick={() => handleConvert(s)}
           disabled={convertingId === s.id}
-          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-brand-1 group-hover:opacity-100 disabled:opacity-100"
+          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-brand-1 group-hover:opacity-100 disabled:opacity-100 touch:hidden"
           data-analytics-name="Turn into Study Space"
           aria-label="Turn into Study Space"
           title="Turn into Study Space"
@@ -331,7 +395,7 @@ export function AppSidebar({
           type="button"
           onClick={() => handleDelete(s.id)}
           disabled={deletingId === s.id}
-          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-100"
+          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-100 touch:hidden"
           data-analytics-name="Delete chat"
           aria-label="Delete chat"
         >
@@ -409,7 +473,8 @@ export function AppSidebar({
           >
             <Search className="h-4 w-4 shrink-0" />
             <span className="flex-1 text-left">Search</span>
-            <span className="text-[10px] text-muted-foreground">
+            {/* Keyboard hint: meaningless on a phone. */}
+            <span className="text-[10px] text-muted-foreground touch:hidden">
               {formatShortcut(["mod", "F"])}
             </span>
           </Button>

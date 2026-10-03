@@ -91,7 +91,7 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
   };
 
   return (
-    <div className="relative mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-5 px-4 py-6 text-center">
+    <div className="relative mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center gap-5 px-4 py-6 text-center">
       {/* Same aurora backdrop as EmptyState so the home mood is unchanged. */}
       <div
         aria-hidden

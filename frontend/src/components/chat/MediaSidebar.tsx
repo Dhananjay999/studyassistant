@@ -203,6 +203,7 @@ export function MediaSidebar({
                   onCheckedChange={() => onToggle(m.id)}
                   data-analytics-name="Use file as chat context"
                   aria-label={`Use ${m.file_name}`}
+                  className="relative after:absolute after:-inset-2.5 after:content-['']"
                 />
                 <button
                   type="button"
@@ -241,26 +242,26 @@ export function MediaSidebar({
                   <p className="truncate text-xs font-medium">{m.file_name}</p>
                   <div className="flex items-center gap-1.5">
                     {ready ? (
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-[11px] text-muted-foreground">
                         {prettySize(m.size_bytes)}
                       </span>
                     ) : failed ? (
                       // Kept but not indexed: still usable (answered from
                       // the raw file); offer a visible retry.
-                      <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                      <span className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
                         <AlertTriangle className="h-2.5 w-2.5" />
                         Not indexed
                         <button
                           type="button"
                           onClick={() => onReprocess(m.id)}
                           data-analytics-name="Retry indexing"
-                          className="ml-0.5 font-semibold underline underline-offset-2 hover:text-foreground"
+                          className="relative ml-0.5 font-semibold underline underline-offset-2 after:absolute after:-inset-2 after:content-[''] hover:text-foreground"
                         >
                           Retry
                         </button>
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Loader2 className="h-2.5 w-2.5 animate-spin" />
                         Processing…
                       </span>
@@ -268,7 +269,7 @@ export function MediaSidebar({
                     {inThisChat && (
                       <Badge
                         variant="secondary"
-                        className="h-4 px-1.5 text-[9px]"
+                        className="h-4 px-1.5 text-[10px]"
                       >
                         This chat
                       </Badge>
@@ -291,7 +292,7 @@ export function MediaSidebar({
                   type="button"
                   onClick={() => handleDelete(m.id)}
                   disabled={deletingId === m.id}
-                  className="shrink-0 text-muted-foreground hover:text-destructive"
+                  className="shrink-0 text-muted-foreground hover:text-destructive touch:-mr-1 touch:grid touch:h-9 touch:w-8 touch:place-items-center"
                   aria-label="Delete file"
                 >
                   {deletingId === m.id ? (
@@ -360,7 +361,7 @@ export function MediaSidebar({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-semibold">{q.title}</p>
-                      <span className="mt-1 inline-flex items-center rounded-full bg-brand-1/10 px-1.5 py-0.5 text-[10px] font-medium text-brand-1">
+                      <span className="mt-1 inline-flex items-center rounded-full bg-brand-1/10 px-1.5 py-0.5 text-[11px] font-medium text-brand-1">
                         {q.question_count}{" "}
                         {q.question_count === 1 ? "question" : "questions"}
                       </span>
@@ -382,7 +383,7 @@ export function MediaSidebar({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-semibold">{f.title}</p>
-                      <span className="mt-1 inline-flex items-center rounded-full bg-brand-2/10 px-1.5 py-0.5 text-[10px] font-medium text-brand-2">
+                      <span className="mt-1 inline-flex items-center rounded-full bg-brand-2/10 px-1.5 py-0.5 text-[11px] font-medium text-brand-2">
                         {f.card_count} {f.card_count === 1 ? "card" : "cards"}
                       </span>
                     </div>

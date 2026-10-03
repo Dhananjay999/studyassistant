@@ -78,7 +78,7 @@ function SourceCard({
           type="button"
           onClick={copy}
           aria-label="Copy link"
-          className="ml-auto text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          className="ml-auto text-muted-foreground transition-opacity hover:text-foreground mouse:opacity-0 group-hover:opacity-100"
         >
           <Copy className="h-3 w-3" />
         </button>

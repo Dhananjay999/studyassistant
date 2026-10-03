@@ -504,7 +504,7 @@ function AnalysisPanel({ analysis }: { analysis: QuizAnalysis }) {
         <Sparkles className="h-4 w-4 text-brand-1" />
         <p className="text-sm font-semibold">AI performance analysis</p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {sections
           .filter((s) => s.items?.length)
           .map((s) => (
