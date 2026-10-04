@@ -5,6 +5,7 @@ import { useLearningProfile } from "@/hooks/api";
 import { MemoryHint } from "@/components/chat/MemoryHint";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { buildSuggestedPrompts } from "@/lib/suggestedPrompts";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
 export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   const reduce = useReducedMotion();
@@ -87,7 +88,14 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
               <motion.button
                 key={p.text}
                 type="button"
-                onClick={() => onPick(p.text)}
+                // Fixed name: the prompt text must not become the event name.
+                data-analytics-name="Suggested prompt"
+                onClick={() => {
+                  analytics.track(AnalyticsEvent.CHAT_SUGGESTED_PROMPT_CLICKED, {
+                    kind: "empty_state",
+                  });
+                  onPick(p.text);
+                }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.18 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}

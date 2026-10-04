@@ -49,6 +49,8 @@ interface AuthContextValue {
   /** Same sign-in as a full-page redirect — the way out when the popup
    * keeps failing. */
   signInWithRedirect: () => void;
+  /** Stop waiting on an open sign-in popup (the dialog's Cancel button). */
+  cancelSignIn: () => void;
   reportSignInIssue: (issue: SignInIssue) => void;
   dismissSignInIssue: () => void;
   setSession: (
@@ -89,6 +91,16 @@ function reconcileUserState(userId: string): void {
   }
 }
 
+// Phones and tablets have no popup windows: `window.open` there opens a second
+// tab that hides the app, so those devices sign in within the same tab.
+function prefersSameTabSignIn(): boolean {
+  try {
+    return window.matchMedia("(hover: none), (pointer: coarse)").matches;
+  } catch {
+    return false;
+  }
+}
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -123,6 +135,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // (the callback page is a fresh load), which is itself the answer.
   const loginMethodRef = useRef<LoginMethod | null>(null);
   const loginStartedAtRef = useRef(0);
+  // Ends the in-flight popup attempt; set while a popup is open.
+  const cancelSignInRef = useRef<(() => void) | null>(null);
 
   // True once the initial token restore has settled. Session teardowns that
   // happen *during* boot (dead token found at startup) must clear quietly —
@@ -255,15 +269,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [loadUser]);
 
-  useEffect(() => {
+  // Wired while rendering, not in the effect below: React runs a child's
+  // effects before its parent's, so the sign-in callback page would otherwise
+  // call the API before the client knows the token (and get a 401).
+  if (typeof window !== "undefined") {
     setTokenGetter(() => tokenRef.current);
     // Any 401 from the API means the token expired/was revoked — log out
     // (with a page refresh once the app is past boot).
     setUnauthorizedHandler(onSessionInvalid);
+  }
 
+  useEffect(() => {
     (async () => {
-      const at = localStorage.getItem(STORAGE.access);
-      const expiresAt = Number(localStorage.getItem(STORAGE.expires) || 0);
+      // Storage can be gone by now (Safari, on a sign-in popup that has
+      // already closed itself): treat that as "no stored session".
+      const stored = (key: string): string | null => {
+        try {
+          return localStorage.getItem(key);
+        } catch {
+          return null;
+        }
+      };
+      const at = stored(STORAGE.access);
+      const expiresAt = Number(stored(STORAGE.expires) || 0);
       if (at && expiresAt > Date.now()) {
         tokenRef.current = at;
         setToken(at);
@@ -273,7 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {
           clearSession();
         }
-      } else if (localStorage.getItem(STORAGE.refresh)) {
+      } else if (stored(STORAGE.refresh)) {
         if (await doRefresh()) {
           try {
             await loadUser();
@@ -321,8 +349,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = `${API_BASE_URL}${ENDPOINTS.AUTH_LOGIN_GOOGLE}`;
   }, []);
 
+  const cancelSignIn = useCallback(() => cancelSignInRef.current?.(), []);
+
   const signInWithGoogle = useCallback(() => {
     setSignInIssue(null);
+    if (prefersSameTabSignIn()) {
+      signInWithRedirect();
+      return;
+    }
     const url = `${API_BASE_URL}${ENDPOINTS.AUTH_LOGIN_GOOGLE}`;
     const w = 480;
     const h = 660;
@@ -396,7 +430,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     function cleanup() {
       window.clearInterval(poll);
       window.removeEventListener("message", onMessage);
+      cancelSignInRef.current = null;
     }
+
+    // The user gave up from the dialog while the popup was still open (it may
+    // be hidden behind another window): close it and stop waiting, quietly.
+    cancelSignInRef.current = () => {
+      cleanup();
+      try {
+        popup.close();
+      } catch {
+        /* ignore */
+      }
+      setSigningIn(false);
+      noteLandingLogin("abandoned");
+      analytics.track(AnalyticsEvent.LOGIN_ABANDONED, {
+        elapsed_ms: Math.round(performance.now() - loginStartedAtRef.current),
+        via: "cancel",
+      });
+      loginMethodRef.current = null;
+    };
 
     window.addEventListener("message", onMessage);
   }, [setSession, signInWithRedirect]);
@@ -419,6 +472,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInIssue,
         signInWithGoogle,
         signInWithRedirect,
+        cancelSignIn,
         reportSignInIssue,
         dismissSignInIssue,
         setSession,

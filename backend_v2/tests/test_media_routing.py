@@ -3,6 +3,7 @@
 Guards the "I uploaded a file but Aeva says it can't find anything" fixes:
 - files selected + a study question never routes to a from-memory answer;
 - a resolved "which file?" clarification searches for the original question;
+- "which file?" is asked at most once, and never when every file is meant;
 - images and not-yet-indexed docs are attached whole instead of dropped;
 - a failed or unparseable upload is kept, never deleted.
 """
@@ -91,6 +92,114 @@ class TestForcedPlanQuery:
         plan = orch._forced_plan(_ctx(["m1"]), ["m1"], None)
         assert plan is not None
         assert _tool(plan)["params"] == {"media_ids": ["m1"]}
+
+
+class TestDisambiguateMedia:
+    """Several files selected and none named: ask once, or use them all."""
+
+    PDFS = (("m1", "physics.pdf", "application/pdf"),
+            ("m2", "chemistry.pdf", "application/pdf"))
+    PHOTOS = (("m1", "blob", "image/jpeg"), ("m2", "IMG_2.jpg", "image/jpeg"))
+
+    @staticmethod
+    def _decide(files, message: str, history: list | None = None):
+        supabase = MagicMock()
+        supabase.list_media.return_value = [
+            {"id": i, "file_name": name, "mime_type": mime}
+            for i, name, mime in files
+        ]
+        orch = AssistantOrchestrator(
+            llm=MagicMock(), registry=MagicMock(), supabase=supabase
+        )
+        return orch._disambiguate_media(
+            _ctx([i for i, _, _ in files]), message, history
+        )
+
+    def test_vague_request_asks_with_all_files_first(self):
+        plan = self._decide(self.PDFS, "summarise this")
+        assert plan is not None
+        assert plan["kind"] == "media_choice"
+        options = plan["clarification"]["questions"][0]["options"]
+        assert options == ["All files", "physics.pdf", "chemistry.pdf"]
+
+    def test_collective_reference_uses_every_file(self):
+        for message in (
+            "can you use all the pictures provided please",
+            "explain these pdfs",
+            "compare both",
+            "sab files se notes banao",
+        ):
+            assert self._decide(self.PDFS, message) is None, message
+
+    def test_photos_are_one_document(self):
+        assert self._decide(self.PHOTOS, "explain this") is None
+
+    def test_never_asks_twice_in_a_row(self):
+        asked = self._decide(self.PDFS, "summarise this")
+        history = [
+            {"role": "user", "content": "summarise this"},
+            {
+                "role": "assistant",
+                "content": f"**{asked['clarification']['reason']}**",
+            },
+        ]
+        assert self._decide(self.PDFS, "just summarise it", history) is None
+
+    def test_named_file_still_narrows(self):
+        plan = self._decide(self.PDFS, "summarise physics.pdf")
+        assert _tool(plan)["params"] == {"media_ids": ["m1"]}
+
+
+class TestRepeatShortcut:
+    """"Again" repeats the last quiz only when it is the whole message."""
+
+    @staticmethod
+    def _plan(message: str):
+        supabase = MagicMock()
+        supabase.get_messages.return_value = [
+            {"role": "assistant", "metadata": {"tool_used": "quiz_generator"}},
+        ]
+        orch = AssistantOrchestrator(
+            llm=MagicMock(), registry=MagicMock(), supabase=supabase
+        )
+        return orch._continuation_plan(_ctx(None), message)
+
+    def test_short_repeat_cue_repeats_the_quiz(self):
+        plan = self._plan("another one please")
+        assert plan is not None
+        assert _tool(plan)["tool"] == "quiz_generator"
+
+    def test_pasted_notes_containing_another_go_to_the_planner(self):
+        notes = (
+            "A foreign key is a column that refers to the primary key of "
+            "another table, so the two tables stay consistent."
+        )
+        assert self._plan(notes) is None
+
+
+class TestPlannerNoteInMediaPrompt:
+    def test_note_reaches_the_file_prompt(self):
+        from aeva.llm import prompts
+
+        note = prompts.planner_note_segment("avec sa", "Help me with the PDF")
+        rendered = prompts.PromptBuilder.build(
+            prompts.MEDIA_TEMPLATE,
+            USER_MESSAGE="avec sa",
+            PLANNER_NOTE=note,
+            DOCUMENT_CONTEXT="(none)",
+        )
+        assert "Help me with the PDF" in rendered.user_message
+
+    def test_without_a_note_the_prompt_is_unchanged(self):
+        from aeva.llm import prompts
+
+        rendered = prompts.PromptBuilder.build(
+            prompts.MEDIA_TEMPLATE,
+            USER_MESSAGE="what is osmosis?",
+            PLANNER_NOTE="",
+            DOCUMENT_CONTEXT="(none)",
+        )
+        assert "what is osmosis?\n\nRules:" in rendered.user_message
 
 
 class TestPartitionRecords:

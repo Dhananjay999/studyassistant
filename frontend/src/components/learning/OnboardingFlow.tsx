@@ -213,7 +213,14 @@ export function OnboardingFlow({
     });
   }, [open, screen, stepId, editing]);
 
+  // True while the final save is in flight. The last step stays tappable
+  // for the seconds the save takes, and a second tap must not save (and
+  // report completion) again.
+  const finishing = useRef(false);
+
   const finish = async (a: Answers) => {
+    if (finishing.current) return;
+    finishing.current = true;
     setSaveError(false);
     try {
       await saveMutation.mutateAsync(toProfileInput(a, profile));
@@ -223,6 +230,8 @@ export function OnboardingFlow({
       });
       setSaveError(true);
       return;
+    } finally {
+      finishing.current = false;
     }
     const steps = visibleSteps(a);
     analytics.track(AnalyticsEvent.ONBOARDING_COMPLETED, {
@@ -258,6 +267,7 @@ export function OnboardingFlow({
   /** Advance from the current step; `skipping` bypasses required-answer validation. */
   const goNext = (skipping = false) => {
     cancelAdvance();
+    if (finishing.current) return;
     const a = answersRef.current;
     const s = stepById(stepRef.current);
     if (!skipping && !canContinue(s, a)) return;

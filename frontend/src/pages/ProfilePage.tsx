@@ -90,6 +90,9 @@ function ProfileHeader({
     <button
       type="button"
       onClick={onClick}
+      // Named explicitly: the visible text is the person's name and email,
+      // which must never become the click event's name.
+      data-analytics-name="Profile account"
       className="flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card/40 p-4 text-left transition-colors hover:bg-accent/40"
     >
       <Avatar className="h-12 w-12">

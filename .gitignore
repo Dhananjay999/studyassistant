@@ -2,9 +2,11 @@
 .DS_Store
 Thumbs.db
 
-# Claude Code tooling / local config
-.claude/
-CLAUDE.md
+# Claude Code: CLAUDE.md, .mcp.json and .claude/skills/ are shared with the
+# team; everything else under .claude/ is local config and stays untracked.
+.claude/*
+!.claude/skills/
+CLAUDE.local.md
 
 # Vercel
 .vercel/

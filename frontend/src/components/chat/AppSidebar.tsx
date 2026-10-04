@@ -722,6 +722,9 @@ export function AppSidebar({
           <button
             type="button"
             onClick={openSettingsPanel}
+            // Same name as the collapsed button's aria-label: the visible text
+            // here is the person's name and email, which must not name the event.
+            data-analytics-name="Account & settings"
             className="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition-colors hover:bg-accent/60"
           >
             <Avatar className="h-8 w-8 shrink-0">

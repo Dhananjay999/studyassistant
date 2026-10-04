@@ -27,8 +27,10 @@ After your answer, append this metadata trailer exactly:
 Rules:
 - Output the sentinel, then one valid JSON object, and nothing after it.
 - available_actions: choose only relevant actions from [{_ACTIONS}]. Use [] for greetings, small talk, refusals, or non-study replies. Prefer a few high-value actions.
+- Offer an action only when your reply contains study content it can be built from: never offer a quiz or flashcards on a reply that only asks a question, chats, or says what you cannot do.
 - suggested_followups: provide 2–3 natural next questions based on your answer. Each item must contain:
   - title: short (max 6 words).
   - prompt: the complete message to send if selected.
 - Use [] for suggested_followups only when no meaningful next step exists (greetings, goodbyes, refusals). For any teaching answer, always suggest follow-ups.
+- If the student-safety rule applied to this reply, use [] for both lists and add "flag":"student_safety" to the JSON object. Never add "flag" otherwise.
 """

@@ -43,7 +43,7 @@ from aeva.orchestration.models import (
     Step,
 )
 from aeva.supabase.supabase_service import SupabaseService
-from aeva.tracing.services import turn_trace
+from aeva.tracing.services import safety_trace, turn_trace
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,25 @@ _REPEAT_RE = re.compile(
     r"\b(again|another|one more|once more|redo|re-?generate|"
     r"do it again|same (?:again|thing)|more of (?:these|those|them))\b",
 )
+
+# The message points at the selected files as a group ("all the pictures",
+# "these pdfs", "sab files"), so every one of them is meant.
+_ALL_FILES_RE = re.compile(
+    r"\b(all|both|every|each|everything|together|sab|sabhi|saare|saari)\b|"
+    r"\b(?:these|those|the|my|uploaded|attached|provided|selected)\s+"
+    r"(?:\w+\s+)?(?:files|pdfs|documents|docs|pictures|pics|photos|images|"
+    r"screenshots|notes|pages|slides|uploads|attachments)\b",
+)
+_MEDIA_CHOICE_REASON = (
+    "You have several files selected. Which one should I use?"
+)
+_IMAGE_SUFFIXES = (
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic", ".heif", ".bmp",
+)
+
+# "Again" only repeats the last tool when it is (nearly) the whole message; a
+# longer one that merely contains the word is a new request for the planner.
+_REPEAT_MAX_WORDS = 6
 
 # Tools whose "do it again" is unambiguous — a fresh quiz / flashcard set.
 # web_search / media_llm are excluded: repeating them verbatim is rarely
@@ -712,7 +731,9 @@ class AssistantOrchestrator:
 
         # Several files selected + a vague request -> ask which file to use.
         if not ctx.clarification and ctx.media_ids and len(ctx.media_ids) > 1:
-            decision = self._disambiguate_media(ctx, enriched_message)
+            decision = self._disambiguate_media(
+                ctx, enriched_message, history
+            )
             if decision is not None:
                 decision["_source"] = "media_choice"
                 return (
@@ -1093,6 +1114,7 @@ class AssistantOrchestrator:
             return text, empty
         answer = text[:idx].rstrip()
         tail = text[idx + len(prompts.META_SENTINEL):]
+        safety_trace.note_answer_flag(tail)
         return answer, self._parse_meta(tail)
 
     @staticmethod
@@ -1128,12 +1150,16 @@ class AssistantOrchestrator:
     def _selected_media(
         self, ctx: AssistantContext
     ) -> list[dict[str, str]]:
-        """Resolve selected media ids to {id, name} (single DB call)."""
+        """Resolve selected media ids to {id, name, mime_type} (one DB call)."""
         if not ctx.media_ids:
             return []
         by_id = {m["id"]: m for m in self.supabase.list_media(ctx.user_id)}
         return [
-            {"id": mid, "name": by_id[mid]["file_name"]}
+            {
+                "id": mid,
+                "name": by_id[mid]["file_name"],
+                "mime_type": by_id[mid].get("mime_type") or "",
+            }
             for mid in ctx.media_ids
             if mid in by_id
         ]
@@ -1153,35 +1179,62 @@ class AssistantOrchestrator:
                 found.append(f)
         return found
 
+    @staticmethod
+    def _means_all_files(
+        message: str,
+        files: list[dict[str, str]],
+        history: list[dict[str, str]] | None,
+    ) -> bool:
+        """Whether a request that names no file should use every selected one.
+
+        True when the message refers to the files as a group, when they are
+        all images (photographed notes are one document), or when the
+        previous turn already asked which file to use: never ask twice.
+        """
+        if _ALL_FILES_RE.search(message.lower()):
+            return True
+        if all(
+            (f.get("mime_type") or "").startswith("image/")
+            or f["name"].lower().endswith(_IMAGE_SUFFIXES)
+            for f in files
+        ):
+            return True
+        replies = [m for m in history or [] if m.get("role") == "assistant"]
+        last = replies[-1].get("content") or "" if replies else ""
+        return _MEDIA_CHOICE_REASON in last
+
     @turn_trace.branch_media_choice
     def _disambiguate_media(
-        self, ctx: AssistantContext, message: str
+        self,
+        ctx: AssistantContext,
+        message: str,
+        history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any] | None:
         """Resolve which selected file(s) a vague request refers to.
 
         Returns a clarify plan (ask which file) when none is named, a narrowed
-        media_llm plan when a subset is named, or None to plan normally.
+        media_llm plan when a subset is named, or None to plan normally with
+        every selected file.
         """
         files = self._selected_media(ctx)
         if len(files) <= 1:
             return None
         named = self._names_in_message(message, files)
+        if not named and self._means_all_files(message, files, history):
+            return None
         if not named:
             return {
                 "action": "clarify",
                 "kind": "media_choice",
                 "files": files,
                 "clarification": {
-                    "reason": (
-                        "You have several files selected. "
-                        "Which one should I use?"
-                    ),
+                    "reason": _MEDIA_CHOICE_REASON,
                     "questions": [
                         {
                             "id": "media_choice",
                             "text": "Choose a file",
-                            "options": [f["name"] for f in files]
-                            + ["All files"],
+                            "options": ["All files"]
+                            + [f["name"] for f in files],
                         }
                     ],
                 },
@@ -1793,6 +1846,8 @@ class AssistantOrchestrator:
         ):
             return None
         if not _REPEAT_RE.search(text):
+            return None
+        if len(text.split()) > _REPEAT_MAX_WORDS:
             return None
         last_tool = self._last_generator_tool(ctx.session_id)
         if last_tool is None:

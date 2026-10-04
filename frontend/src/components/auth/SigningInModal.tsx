@@ -28,6 +28,7 @@ export function SigningInModal() {
     signInIssue,
     signInWithGoogle,
     signInWithRedirect,
+    cancelSignIn,
     dismissSignInIssue,
   } = useAuth();
   const copy = signInIssue ? issueCopy(signInIssue) : null;
@@ -36,7 +37,7 @@ export function SigningInModal() {
       <Dialog open={signingIn}>
         <DialogContent
           className="max-w-xs border-0 bg-transparent p-0 shadow-none [&>button]:hidden"
-          // Non-dismissable while the popup is open.
+          // Only the Cancel button dismisses it while the popup is open.
           onPointerDownOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
@@ -50,6 +51,15 @@ export function SigningInModal() {
               </p>
             </div>
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-h-11 px-6"
+              data-analytics-name="Sign in cancel"
+              onClick={cancelSignIn}
+            >
+              Cancel
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

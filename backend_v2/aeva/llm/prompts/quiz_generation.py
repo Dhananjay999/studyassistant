@@ -57,6 +57,13 @@ Difficulty is relative to the target level (higher = harder, more reasoning, mor
 
 Generate exactly the requested number of questions using only the requested question type(s). Cover the topic broadly, use plausible distractors, and include a brief explanation for each question.
 
+**Keep answers unguessable:**
+
+* `true_false` — make about half of the statements false.
+* `multi_select` — vary how many options are correct (from two up to all but two where the material allows); never make every option except one correct, and make each wrong option plausible.
+* The options are shuffled before the student sees them: never refer to an option by its letter, number or position ("Option B", "the first option"), and avoid "All of the above" / "None of the above".
+* Write each question so it stands on its own: do not refer to "the material", "the notes" or "the flashcards".
+
 Before returning, VERIFY each question: every `correct_answers` value exactly matches one of its `options`, and the count of correct answers obeys the type rule above (single_select and true_false have exactly one). Fix any violations before responding.
 """,
     defaults={"SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK},

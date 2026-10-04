@@ -31,7 +31,7 @@ Retrieved Excerpts:
 {ATTACHED_FILES}
 Student Question:
 {USER_MESSAGE}
-
+{PLANNER_NOTE}
 Rules:
 - The excerpts are fragments of the student's files, not the whole files. If a term or fact appears in ANY excerpt, use it — never say the material "doesn't mention" something an excerpt contains.
 - Answer every part of the question the excerpts support, citing each statement immediately after it using:
@@ -47,7 +47,7 @@ Rules:
         "TEACHING": TEACHING_BLOCK,
         "ANSWER_META": ANSWER_META_BLOCK,
     },
-    optional=("USER_PROFILE", "ATTACHED_FILES"),
+    optional=("USER_PROFILE", "ATTACHED_FILES", "PLANNER_NOTE"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
     uses_attachments=True,

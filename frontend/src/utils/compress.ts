@@ -28,7 +28,15 @@ async function compressImage(file: File): Promise<File> {
     fileType: file.type,
     useWebWorker: true,
   });
-  return out.size < file.size ? out : file;
+  if (out.size >= file.size) return file;
+  // Some browsers hand back a bare Blob, which would upload under the name
+  // "blob": keep the name the student's file had.
+  return out instanceof File && out.name === file.name
+    ? out
+    : new File([out], file.name, {
+        type: out.type || file.type,
+        lastModified: file.lastModified,
+      });
 }
 
 /**

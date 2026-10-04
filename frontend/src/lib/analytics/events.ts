@@ -515,6 +515,9 @@ export interface EventPropsMap {
   [AnalyticsEvent.LOGIN_ABANDONED]: {
     /** How long the sign-in popup stayed open before being closed. */
     elapsed_ms: number;
+    /** `cancel`: the user pressed Cancel in the signing-in dialog. Absent
+     * when the popup itself was closed. */
+    via?: "cancel";
   };
   [AnalyticsEvent.LOGIN_FAILED]: {
     /** missing_token | session | missing_code | exchange_failed |

@@ -17,6 +17,7 @@ from aeva.media.grounding import ground_generator
 from aeva.media.retrieval import RetrievalService
 from aeva.quiz import exam_patterns
 from aeva.quiz.exam_research import ExamResearchService
+from aeva.quiz.option_order import shuffle_options
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.supabase.supabase_service import SupabaseService
 from aeva.tracing.services import tool_trace
@@ -267,8 +268,9 @@ class QuizGeneratorTool(BaseTool):
         )
         # Repair per-type answer invariants (e.g. a single_select the model
         # marked with two correct options) before anything is persisted.
-        quiz_data["questions"] = _normalize_questions(
-            quiz_data.get("questions") or []
+        # Options are then shuffled, so position never gives the answer away.
+        quiz_data["questions"] = shuffle_options(
+            _normalize_questions(quiz_data.get("questions") or [])
         )
         # Carry the requested difficulty + exam config onto the persisted quiz
         # row so the quizzes list/cards can surface them (the LLM output itself

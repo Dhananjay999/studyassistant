@@ -16,9 +16,15 @@ export const ACCEPTED_UPLOAD_TYPES: readonly string[] = [
 /** `accept` value for the file inputs, so pickers grey out other formats. */
 export const UPLOAD_ACCEPT = ACCEPTED_UPLOAD_TYPES.join(",");
 
-/** Mirrors the backend's MAX_UPLOAD_MB. */
-export const MAX_UPLOAD_MB =
-  Number(import.meta.env.VITE_MAX_UPLOAD_MB) || 10;
+// The hosting platform refuses a request body above about 4.5 MB before the
+// backend runs, so a larger file can never arrive whatever the backend allows.
+// A little room is left for the multipart envelope around the file.
+const PLATFORM_BODY_LIMIT_MB = 4.4;
+/** The backend's MAX_UPLOAD_MB, capped at what the platform lets through. */
+export const MAX_UPLOAD_MB = Math.min(
+  Number(import.meta.env.VITE_MAX_UPLOAD_MB) || 10,
+  PLATFORM_BODY_LIMIT_MB,
+);
 const MAX_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const PDF_HEADER = "%PDF-";
 const PDF_HEADER_WINDOW = 1024;
@@ -49,7 +55,7 @@ export const UPLOAD_FAILURES: Record<UploadFailureReason, ReasonMeta> = {
     retryable: false,
   },
   too_large: {
-    message: "This file is too large. Try a smaller or compressed version.",
+    message: `This file is too large (the limit is ${MAX_UPLOAD_MB} MB). Try a smaller or compressed version.`,
     retryable: false,
   },
   empty_file: {

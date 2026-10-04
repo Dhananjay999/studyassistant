@@ -530,9 +530,17 @@ class RetrievalService:
         diag: dict[str, Any],
     ) -> list[RetrievedChunk]:
         """Threshold, per-document quota, optional rerank, final cut."""
+        # With a reranker, relevance is its call: only the floor applies
+        # before it. An absolute gate tuned for one embedding model drops
+        # the right passages under another, where they score lower.
+        gate = (
+            min(opts.min_similarity, opts.floor_similarity)
+            if opts.rerank == RERANK_LLM
+            else opts.min_similarity
+        )
         chunks = apply_threshold(
             chunks,
-            min_similarity=opts.min_similarity,
+            min_similarity=gate,
             floor_similarity=opts.floor_similarity,
             min_results=opts.min_results,
         )

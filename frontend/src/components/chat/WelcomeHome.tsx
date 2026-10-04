@@ -176,6 +176,8 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
           <motion.button
             key={p.text}
             type="button"
+            // Fixed name: the prompt text must not become the event name.
+            data-analytics-name="Suggested prompt"
             onClick={() => {
               analytics.track(AnalyticsEvent.CHAT_SUGGESTED_PROMPT_CLICKED, {
                 kind: "empty_state",

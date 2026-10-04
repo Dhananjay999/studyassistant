@@ -264,6 +264,9 @@ class MediaLLMTool(BaseTool):
         rendered = prompts.PromptBuilder.build(
             prompts.MEDIA_TEMPLATE,
             USER_MESSAGE=ctx.enriched_message,
+            PLANNER_NOTE=prompts.planner_note_segment(
+                ctx.enriched_message, params.get("query")
+            ),
             DOCUMENT_CONTEXT=context or "(none)",
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
             ATTACHED_FILES=prompts.attached_files_block(labels),

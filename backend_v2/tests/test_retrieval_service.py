@@ -142,6 +142,44 @@ class TestPipeline:
         assert result.diagnostics["reranked"] is False
         assert result.diagnostics["rerank_timeout"] is True
 
+    def test_reranker_sees_passages_below_the_similarity_gate(self, app: Flask):
+        # The asked-for passage scores 0.33: under the 0.40 gate but above the
+        # 0.25 floor. It must reach the reranker, which puts it first.
+        rows = [
+            _row("ref1", "m1", 0, 0.45),
+            _row("ref2", "m1", 2, 0.42),
+            _row("ref3", "m1", 4, 0.41),
+            _row("section", "m1", 9, 0.33),
+            _row("noise", "m1", 20, 0.10),
+        ]
+        service, _ = _service(rows)
+        service.rewrite_llm.generate_structured.return_value = {
+            "scores": [
+                {"index": 3, "score": 10},
+                {"index": 0, "score": 3},
+                {"index": 1, "score": 2},
+                {"index": 2, "score": 1},
+            ]
+        }
+        opts = RetrievalOptions(top_k=2, multi_query=False, rerank="llm", rerank_timeout_s=2)
+        with app.app_context():
+            result = service.retrieve("u1", "q", [{"id": "m1", "file_name": "n.pdf"}], options=opts)
+        assert result.diagnostics["after_threshold"] == 4  # the 0.10 chunk is still dropped
+        assert result.chunks[0].id == "section"
+
+    def test_similarity_gate_still_applies_without_a_reranker(self, app: Flask):
+        rows = [
+            _row("a", "m1", 0, 0.45),
+            _row("b", "m1", 2, 0.42),
+            _row("c", "m1", 4, 0.41),
+            _row("d", "m1", 9, 0.33),
+        ]
+        service, _ = _service(rows)
+        opts = RetrievalOptions(top_k=4, multi_query=False, rerank="none")
+        with app.app_context():
+            result = service.retrieve("u1", "q", [{"id": "m1", "file_name": "n.pdf"}], options=opts)
+        assert result.diagnostics["after_threshold"] == 3
+
     def test_rerank_reorders(self, app: Flask):
         rows = [_row("a", "m1", 0, 0.9), _row("b", "m1", 3, 0.8)]
         service, _ = _service(rows)

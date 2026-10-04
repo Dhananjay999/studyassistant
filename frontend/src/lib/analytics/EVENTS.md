@@ -38,6 +38,12 @@ lists, command palette, bookmark popover, media sidebar rows) are masked as
 `[private]`; give a button in one of those zones a `data-analytics-name` to
 label it explicitly. `data-analytics-ignore` skips an element entirely.
 
+A button whose visible text is personal or user-specific always carries an
+explicit `data-analytics-name`, so that text never becomes an event name:
+the account buttons (`ACCOUNT_SETTINGS_CLICK` in the sidebar,
+`PROFILE_ACCOUNT_CLICK` on the profile and mobile settings pages, which show
+the person's name and email) and the starter prompts (`SUGGESTED_PROMPT_CLICK`).
+
 ## Auth / landing
 
 **Landing engagement** — `src/hooks/useLandingAnalytics.ts` (mounted on `LandingPage` and every `PublicPage`), fed by `src/lib/analytics/landing.ts`
@@ -67,14 +73,14 @@ The prompt is a `ResponsiveModal`, so it also emits the generic `AUTH_PROMPT_MOD
 |---|---|---|---|
 | ★ `LANDING_CTA_CLICKED` | Google CTA pressed | `location: hero\|navbar\|navbar_mobile\|cta_band\|features\|about\|app_welcome\|share\|auth_prompt` | `landing/GoogleButton.tsx`, `pages/AppWelcomePage.tsx`, `auth/AuthPrompt.tsx` |
 | `LANDING_FAQ_OPENED` | FAQ accordion item opened | `faq_index` | `landing/Faq.tsx` |
-| ★ `LOGIN_STARTED` | Popup opened or redirect started | `method: popup\|redirect` | `contexts/AuthContext.tsx signInWithGoogle` |
-| `LOGIN_ABANDONED` | Popup closed without tokens or a reported failure (the sign-in issue dialog then opens) | `elapsed_ms` | same (popup poll) |
+| ★ `LOGIN_STARTED` | Popup opened or redirect started. Touch devices (phones, tablets) always use `redirect`: they have no popup windows | `method: popup\|redirect` | `contexts/AuthContext.tsx signInWithGoogle` |
+| `LOGIN_ABANDONED` | Popup closed without tokens or a reported failure (the sign-in issue dialog then opens), or the user pressed Cancel in the signing-in dialog (`via: cancel`, no issue dialog) | `elapsed_ms`, `via?: cancel` | same (popup poll, `cancelSignIn`) |
 | `LOGIN_FAILED` | Sign-in ended in an error: the backend callback failed, Google denied access, the callback had no tokens, or the session could not load | `reason: missing_token\|session\|missing_code\|exchange_failed\|access_denied\|provider_error\|unknown`, `method: popup\|redirect` | popup: `AuthContext.tsx signInWithGoogle` (reported by the popup over `postMessage`); redirect: `pages/AuthCallback.tsx` |
 | ★ `LOGIN_SUCCEEDED` | Tokens received and profile loaded | `method`, `is_new_user` | `AuthContext.loadUser("login")` |
 | `LOGOUT_COMPLETED` | User confirmed logout | `source: header\|settings_modal\|settings_mobile\|settings_account\|profile_page` | `hooks/useConfirmLogout.ts` |
 | `SESSION_INVALIDATED` | 401 / failed refresh forced a logout | — | `AuthContext.onSessionInvalid` |
 
-After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/SigningInModal.tsx`) opens and emits `SIGN_IN_ISSUE_DIALOG_OPENED` / `SIGN_IN_ISSUE_DIALOG_CLOSED`; its buttons emit `SIGN_IN_TRY_AGAIN_CLICK` (new popup attempt) and `SIGN_IN_IN_THIS_TAB_CLICK` (full-page redirect), each followed by a fresh `LOGIN_STARTED`.
+After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/SigningInModal.tsx`) opens and emits `SIGN_IN_ISSUE_DIALOG_OPENED` / `SIGN_IN_ISSUE_DIALOG_CLOSED`; its buttons emit `SIGN_IN_TRY_AGAIN_CLICK` (new popup attempt) and `SIGN_IN_IN_THIS_TAB_CLICK` (full-page redirect), each followed by a fresh `LOGIN_STARTED`. While the popup is open, the signing-in dialog's Cancel button emits `SIGN_IN_CANCEL_CLICK`, then `LOGIN_ABANDONED` with `via: cancel`.
 
 `identify(user)` runs in `AuthContext.loadUser` (login, boot restore, refresh);
 `reset()` runs first thing in `hardLogout`.
@@ -109,7 +115,7 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 | `CHAT_CLARIFICATION_ANSWERED` | Clarification submitted | `action: skip\|answer`, `answered_count` |
 | `CHAT_SLASH_COMMAND_SELECTED` | Slash menu pick | `command_id` (`components/chat/ChatComposer.tsx`) |
 | `CHAT_VOICE_STARTED` / `CHAT_VOICE_ENDED` / `CHAT_VOICE_FAILED` | Dictation lifecycle | `lang` / `transcript_length`, `canceled`, `duration_ms` / `code` (`ChatComposer.tsx`) |
-| `CHAT_SUGGESTED_PROMPT_CLICKED` | Welcome prompt or recommendation | `kind: empty_state\|recommendation`, `action?` (`components/chat/WelcomeHome.tsx`) |
+| `CHAT_SUGGESTED_PROMPT_CLICKED` | Starter prompt on the empty chat or the welcome home, or a recommendation. The prompt buttons' click event is the fixed `SUGGESTED_PROMPT_CLICK` (never the prompt text) | `kind: empty_state\|recommendation`, `action?` (`components/chat/WelcomeHome.tsx`, `components/chat/EmptyState.tsx`) |
 | `CHAT_ACTION_CLICKED` | Action bar under a reply | `action: primary_prompt\|flashcards\|copy\|followup\|save_note`, `action_id?`, `followup_index?` (`components/chat/SuggestedActions.tsx`) |
 | `CHAT_NOTE_SAVED` / `CHAT_NOTE_SAVE_FAILED` | Save reply as note | `note_id`, `chat_session_id`, `content_length` / `error_kind` |
 | `CHAT_SOURCE_CLICKED` | Web source card, document chip or inline citation | `kind: web\|document`, `media_id?`, `page?`, `position?` (`SourceCards.tsx`, `MarkdownContent.tsx`) |
