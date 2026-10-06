@@ -75,6 +75,7 @@ export function Hero() {
             learning: chat with your PDFs and notes, search the web, and turn
             any answer into flashcards, quizzes, and notes — then Aeva
             remembers what you studied and tells you exactly what to revise.
+            Exam coming up? Aeva plans every day and teaches every topic.
           </motion.p>
 
           <motion.div

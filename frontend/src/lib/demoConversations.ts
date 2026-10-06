@@ -464,4 +464,67 @@ export const DEMO_CONVERSATIONS: DemoConversation[] = [
       ],
     },
   },
+  {
+    id: "exam-prep-boards",
+    category: "Exam Prep · Class 10 Boards",
+    hint: "thinking",
+    user:
+      "My Class 10 CBSE boards start on 15 March — Science and Maths. " +
+      "I can study 2 hours a day. Plan it for me.",
+    answer:
+      "Done — I checked the official CBSE Class 10 syllabus for **Science** " +
+      "and **Mathematics** and spread every chapter across your days, " +
+      "**2 hours a day**, with the last 4 days kept for revision.\n\n" +
+      "**Day 1 · Today**\n" +
+      "- **Science** — Chemical Reactions and Equations · 60 min\n" +
+      "- **Maths** — Real Numbers · 60 min\n\n" +
+      "**Day 2**\n" +
+      "- **Science** — Acids, Bases and Salts · 60 min\n" +
+      "- **Maths** — Polynomials · 60 min\n\n" +
+      "Open any topic and I'll teach it — a full lesson with worked " +
+      "examples and common mistakes, then a quiz and flashcards until it " +
+      "sticks. Shall we start with Chemical Reactions?",
+    actions: ["plan", "quiz", "flashcards"],
+    followups: [
+      "Teach me Chemical Reactions and Equations",
+      "Move Maths to the evenings",
+    ],
+    quiz: {
+      title: "Quiz: Chemical Reactions and Equations",
+      count: 10,
+      mins: 15,
+      difficulty: "medium",
+      questions: [
+        {
+          question:
+            "Which type of reaction is 2Mg + O₂ → 2MgO?",
+          options: [
+            "Combination",
+            "Decomposition",
+            "Displacement",
+            "Double displacement",
+          ],
+          answer: 0,
+        },
+      ],
+    },
+    flashcards: {
+      title: "Flashcards: Chemical Reactions",
+      count: 12,
+      cards: [
+        {
+          front: "What is a balanced chemical equation?",
+          back: "One with equal numbers of atoms of each element on both sides.",
+        },
+        {
+          front: "Oxidation vs reduction?",
+          back: "Oxidation gains oxygen or loses hydrogen; reduction is the reverse.",
+        },
+        {
+          front: "Why does a cut apple turn brown?",
+          back: "Oxidation — the exposed surface reacts with oxygen in the air.",
+        },
+      ],
+    },
+  },
 ];

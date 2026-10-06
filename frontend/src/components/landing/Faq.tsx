@@ -50,6 +50,14 @@ export const FAQS = [
     a: "Yes. StudyAssistant supports the full exam-prep loop: ask questions, summarize material, generate practice quizzes and flashcards, and review AI performance analysis that shows exactly which topics need more revision.",
   },
   {
+    q: "Can Aeva make my exam study plan?",
+    a: "Yes. Tell Aeva which exam you're preparing for — a school exam, a board exam, a college or university exam, or a single subject or unit test — plus the date, your class or stream, your subjects, and how long you can study each day. Aeva researches the official syllabus online and builds a day-by-day plan: each day lists the subjects and topics to cover, and you can mark every topic as not started, in progress, or done. Full preparation for entrance exams such as JEE, NEET, or UPSC is not available yet.",
+  },
+  {
+    q: "Does Aeva teach the topics or just plan them?",
+    a: "Both. Open any topic on your plan and Aeva writes a full lesson for it — why it matters, the core ideas, worked examples, things to remember, common mistakes, and a quick self-check. From the same screen you can start a quiz or a flashcard deck on that topic, run a study timer, and ask doubts in a doubt box scoped to the topic, so you practice until it sticks.",
+  },
+  {
     q: "Does StudyAssistant help me revise with spaced repetition?",
     a: "Yes. AI Revision Mode tracks a memory-strength score for every topic you study and schedules reviews just before you're likely to forget. Your revision dashboard shows what needs immediate revision, what's due today, and what you've recently mastered — each with a reason, like “You scored 58% on this 3 days ago” — and one tap starts a revision session, quiz, or flashcard review. After each session, a quick confidence check-in reschedules the topic.",
   },

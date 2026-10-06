@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bot,
   Brain,
+  CalendarCheck,
   FileText,
   Globe,
   Image as ImageIcon,
@@ -23,6 +24,11 @@ const SPOTLIGHT = [
     icon: Brain,
     title: "AI Revision Mode",
     body: "Spaced repetition, run by Aeva. Every topic gets a memory-strength score and a review date — your dashboard shows what needs revision, why, and one tap starts a revision session, quiz, or flashcard review.",
+  },
+  {
+    icon: CalendarCheck,
+    title: "AI Exam Prep",
+    body: "Tell Aeva which exam, when, and how long you can study each day. It researches the official syllabus, builds a day-by-day plan, then teaches every topic — a full lesson, a quiz, flashcards, and a doubt box — and tracks what's done.",
   },
   {
     icon: ListChecks,
@@ -102,13 +108,13 @@ export function Features() {
             <span className="text-gradient">complete learning system</span>
           </h2>
           <p className="mt-4 text-muted-foreground">
-            Homework help, exam prep, and spaced-repetition revision —
-            discover, learn, save, and remember in one place.
+            Homework help, day-by-day exam plans, and spaced-repetition
+            revision — discover, learn, save, and remember in one place.
           </p>
         </Reveal>
 
         {/* Spotlight: the major learning features */}
-        <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-3">
+        <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
           {SPOTLIGHT.map((f, i) => (
             <Reveal key={f.title} delay={i * 0.08}>
               <GlassCard className="group h-full border-brand-1/25 p-6 transition-transform duration-300 hover:-translate-y-1">

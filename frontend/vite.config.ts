@@ -69,8 +69,9 @@ function seoAssets(siteUrl: string): Plugin {
         `Its assistant, Aeva, answers questions with live web search, chats ` +
         `with uploaded PDFs, notes, and images (with page-level citations), ` +
         `turns any topic or document into practice quizzes and flashcards, ` +
-        `and runs a spaced-repetition revision schedule that tells students ` +
-        `exactly what to review next.\n\n` +
+        `runs a spaced-repetition revision schedule that tells students ` +
+        `exactly what to review next, and plans exams day by day with a ` +
+        `lesson for every topic.\n\n` +
         `Key facts:\n` +
         `- Pricing: free to start; sign in with Google.\n` +
         `- Platform: web app (installable PWA).\n` +
@@ -79,6 +80,15 @@ function seoAssets(siteUrl: string): Plugin {
         `generator with mastery tracking, markdown notes with PDF export, ` +
         `AI-generated diagrams and images, learning analytics, bookmarks, and ` +
         `global search.\n` +
+        `- Exam Prep: the student names a school, board, college/university ` +
+        `exam or a single subject/unit test, its date, class/board/stream, ` +
+        `subjects and daily study time; Aeva researches the official ` +
+        `syllabus, builds a day-by-day plan (days, subjects, topics) and ` +
+        `teaches each topic with a full lesson (why it matters, core ideas, ` +
+        `worked examples, things to remember, common mistakes, self-check), ` +
+        `on-demand quizzes and flashcards, a study timer, progress tracking ` +
+        `and a per-topic doubt box. Entrance exams (JEE, NEET, UPSC) are ` +
+        `not covered yet.\n` +
         `- Revision: topic-level spaced repetition with memory-strength ` +
         `scores, due dates, reasons for every recommendation, confidence ` +
         `check-ins, and study streaks.\n` +

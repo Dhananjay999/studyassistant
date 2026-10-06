@@ -14,6 +14,10 @@ The in-app assistant is named **Aeva**.
   token-by-token.
 - **Chat with your notes** — upload PDFs & images; Aeva reads them and answers from your
   own material (multimodal).
+- **Exam Prep** — pick your exam (school, board, college/university, or a single subject/unit
+  test), date, class/stream, subjects and daily study time; Aeva researches the official
+  syllabus, builds a day‑by‑day plan and teaches every topic with a full lesson, on‑demand
+  quizzes and flashcards, a study timer, progress tracking and a per‑topic doubt box.
 - **Practice quizzes** — generate a configurable quiz (count / difficulty / question types /
   source) that opens in a focused exam side‑panel, then get scored with AI feedback.
 - **Smart clarifications** — when a request is ambiguous (e.g. multiple files selected and

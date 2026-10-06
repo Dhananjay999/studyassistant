@@ -59,6 +59,8 @@ export function HowItWorks() {
           </h2>
           <p className="mt-4 text-muted-foreground">
             A loop designed to make you actually remember — not just chat.
+            Preparing for an exam? Aeva turns the same loop into a day-by-day
+            plan and teaches every topic on it.
           </p>
         </Reveal>
 

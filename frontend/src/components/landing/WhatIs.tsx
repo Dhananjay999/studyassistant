@@ -31,7 +31,7 @@ const CAPABILITIES = [
   {
     term: "Exam preparation",
     detail:
-      "build study plans, test yourself, and see exactly what to revise before the exam.",
+      "name your school, board or college exam and its date — Aeva researches the official syllabus, builds a day-by-day plan, and teaches every topic with a lesson, quiz, and flashcards.",
   },
   {
     term: "Notes and summaries",
@@ -82,7 +82,9 @@ export function WhatIs() {
               sources, reads the PDFs and notes you upload, and turns any
               answer or document into quizzes, flashcards, and study plans —
               then tracks your performance and schedules spaced-repetition
-              revision so you review the right topic at the right time.
+              revision so you review the right topic at the right time. For
+              an upcoming exam, it plans every day up to the date and
+              teaches each topic on the plan.
             </p>
           </div>
         </Reveal>

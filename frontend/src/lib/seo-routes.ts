@@ -34,6 +34,8 @@ export const CORE_KEYWORDS = [
   "chat with PDF AI",
   "AI notes generator",
   "AI exam preparation",
+  "AI exam study plan",
+  "exam preparation planner for students",
   "AI for students",
   "best AI study app",
   "spaced repetition app",
@@ -51,23 +53,29 @@ export const PAGES = {
     path: "/",
     title: `${SITE_NAME} — Free AI Study Assistant & Study Buddy`,
     description:
-      "Free AI study assistant for students: chat with your PDFs, generate " +
-      "quizzes and flashcards, and let spaced-repetition revision tell you " +
-      "what to review next.",
+      "Free AI study assistant for students: day-by-day exam plans with a " +
+      "lesson per topic, PDF chat, AI quizzes, flashcards, and " +
+      "spaced-repetition revision.",
     keywords: CORE_KEYWORDS,
     changefreq: "weekly",
     priority: 1.0,
   },
   features: {
     path: "/features",
-    title: `AI Revision, Quiz Generator & Flashcards — ${SITE_NAME}`,
+    title: `Exam Prep, AI Revision, Quiz & Flashcards — ${SITE_NAME}`,
     description:
-      "Explore StudyAssistant's AI study tools: spaced-repetition revision, " +
-      "study spaces, notes, quizzes, flashcards, PDF chat, sharing, and " +
-      "analytics.",
+      "StudyAssistant's AI study tools: exam plans with topic lessons, " +
+      "spaced-repetition revision, study spaces, notes, quizzes, flashcards, " +
+      "PDF chat, and analytics.",
     // CORE_KEYWORDS already covers quiz generator / flashcards — only the
     // page-specific extras are listed here to avoid duplicate terms.
-    keywords: ["AI study tools", "PDF AI chat", "study analytics", ...CORE_KEYWORDS],
+    keywords: [
+      "AI study tools",
+      "exam study planner",
+      "PDF AI chat",
+      "study analytics",
+      ...CORE_KEYWORDS,
+    ],
     changefreq: "weekly",
     priority: 0.9,
   },

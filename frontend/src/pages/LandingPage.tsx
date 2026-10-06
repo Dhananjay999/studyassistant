@@ -5,6 +5,7 @@ import { Navbar } from "@/components/landing/Navbar";
 import { Hero } from "@/components/landing/Hero";
 import { Features } from "@/components/landing/Features";
 import { RevisionShowcase } from "@/components/landing/RevisionShowcase";
+import { ExamPrepShowcase } from "@/components/landing/ExamPrepShowcase";
 import { HowItWorks } from "@/components/landing/HowItWorks";
 import { WhatIs } from "@/components/landing/WhatIs";
 import { Faq, FAQS } from "@/components/landing/Faq";
@@ -41,6 +42,7 @@ export default function LandingPage() {
           <Hero />
           <Features />
           <RevisionShowcase />
+          <ExamPrepShowcase />
           <HowItWorks />
           <WhatIs />
           <Faq />

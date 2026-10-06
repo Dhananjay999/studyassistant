@@ -86,10 +86,11 @@ export function softwareApplicationSchema(): Record<string, unknown> {
     operatingSystem: "Web",
     url: SITE_URL,
     description:
-      "AI study buddy for students: ask questions, upload notes/PDFs for instant answers, search the web, and generate practice quizzes and flashcards.",
+      "AI study buddy for students: ask questions, upload notes/PDFs for instant answers, search the web, generate practice quizzes and flashcards, and get a day-by-day exam study plan with a lesson for every topic.",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     screenshot: `${SITE_URL}/og-image.png`,
     featureList: [
+      "Exam study plans and topic lessons: day-by-day plan from the official syllabus, with a lesson, quiz, flashcards, study timer, and doubt box per topic",
       "AI revision mode with topic-level spaced repetition",
       "Memory-strength tracking with reasons and one-tap revision actions",
       "Study streaks and post-session confidence check-ins",

@@ -29,6 +29,12 @@ const SLIDES: { emoji: string; title: string; description: string }[] = [
       "Ask anything and get clear, personalized explanations from Aeva — anytime, on any subject.",
   },
   {
+    emoji: "🎯",
+    title: "Plan your exam, topic by topic",
+    description:
+      "Tell Aeva your exam and date. Get a day-by-day plan from the official syllabus, with a lesson, quiz, and flashcards for every topic.",
+  },
+  {
     emoji: "📄",
     title: "Upload PDFs and chat with your notes",
     description:

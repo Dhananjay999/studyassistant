@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bookmark,
   Brain,
+  CalendarCheck,
   FileText,
   Globe,
   Image as ImageIcon,
@@ -29,6 +30,11 @@ const FEATURES = [
     icon: Brain,
     title: "AI Revision Mode with spaced repetition",
     body: "StudyAssistant tracks a memory-strength score for every topic and schedules reviews just before you forget. Your dashboard shows what needs immediate revision, what's due today, and what you've recently mastered — with a reason for each, and one-tap actions to revise, quiz, or review flashcards.",
+  },
+  {
+    icon: CalendarCheck,
+    title: "AI Exam Prep: a plan for every day, a lesson for every topic",
+    body: "Pick your exam — school, board, college, or a single subject or unit test — and give the date, class or stream, subjects, and daily study time. Aeva researches the official syllabus, builds a day-by-day plan, and teaches each topic with a full lesson, on-demand quizzes and flashcards, a study timer, progress tracking, and a doubt box. Entrance exams such as JEE, NEET, and UPSC are not covered yet.",
   },
   {
     icon: MessageSquare,
@@ -120,7 +126,7 @@ export default function FeaturesPage() {
       />
       <PublicPage
         title="AI study tools for everything you're learning"
-        intro="StudyAssistant is a complete AI study assistant — chat, PDF analysis, quizzes, flashcards, spaced-repetition revision, and analytics working together, not a collection of disconnected tools."
+        intro="StudyAssistant is a complete AI study assistant — chat, PDF analysis, quizzes, flashcards, day-by-day exam plans with topic lessons, spaced-repetition revision, and analytics working together, not a collection of disconnected tools."
       >
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {FEATURES.map((f) => (
