@@ -1431,6 +1431,7 @@ class TestCatalogFlow:
             "finish",
             "persist",
             "outside_chat",
+            "exam_prep",
         ]
         for stage in built["flow"]["stages"]:
             assert stage["title"]

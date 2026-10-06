@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { assistantStreamUrl, getAuthToken } from "@/lib/api";
-import type { AssistantRequest } from "@/types";
+import type {
+  AssistantRequest,
+  ExamChatRequest,
+  ExamLessonStreamRequest,
+} from "@/types";
 
 export interface StreamCallbacks {
   onChunk: (delta: string) => void;
@@ -39,7 +43,7 @@ export interface StreamCallbacks {
  * Handles content / clarification / quiz_setup / done frames plus the agent
  * frames (agents_planned, agent_status) of multi-agent turns; abortable.
  */
-export function useAssistantStream() {
+export function useAssistantStream(streamUrl: string = assistantStreamUrl) {
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -55,7 +59,13 @@ export function useAssistantStream() {
   }, []);
 
   const start = useCallback(
-    async (request: AssistantRequest, cb: StreamCallbacks) => {
+    // The Exam Prep streams (`examChatStreamUrl`, `examLessonStreamUrl`) take
+    // their own strict bodies; the union keeps ChatPage's AssistantRequest
+    // calls unchanged.
+    async (
+      request: AssistantRequest | ExamChatRequest | ExamLessonStreamRequest,
+      cb: StreamCallbacks,
+    ) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -72,7 +82,7 @@ export function useAssistantStream() {
 
       try {
         const token = getAuthToken();
-        const res = await fetch(assistantStreamUrl, {
+        const res = await fetch(streamUrl, {
           method: "POST",
           headers: {
             Accept: "text/event-stream",
@@ -202,7 +212,7 @@ export function useAssistantStream() {
         setStreaming(false);
       }
     },
-    [],
+    [streamUrl],
   );
 
   useEffect(() => () => stop(), [stop]);

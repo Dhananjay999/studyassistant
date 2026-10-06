@@ -50,6 +50,7 @@ const FlashcardViewer = lazy(() =>
 );
 import { MediaSidebar } from "@/components/chat/MediaSidebar";
 import { WelcomeHome } from "@/components/chat/WelcomeHome";
+import { ExamPrepCta } from "@/components/exam/ExamPrepCta";
 import { ContinueLearningRail } from "@/components/spaces/ContinueLearningRail";
 import { useShell } from "@/components/layout/AppLayout";
 import { DRAWER_EDGE_SIZE } from "@/components/layout/MobileNavDrawer";
@@ -63,6 +64,7 @@ import {
 import { useIsDesktop } from "@/hooks/use-mobile";
 import { useBackClose } from "@/hooks/useBackClose";
 import { useAssistantStream } from "@/hooks/useAssistantStream";
+import { useFeature } from "@/hooks/useFeature";
 import { useMediaProcessing } from "@/hooks/useMediaProcessing";
 import { useSwipe } from "@/hooks/useSwipe";
 import { TOOL_TO_HINT, type ThinkingHint } from "@/lib/loadingMessages";
@@ -85,6 +87,7 @@ import {
 } from "@/lib/api";
 import { normalizeAgents } from "@/lib/agents";
 import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
+import { detectExamIntent } from "@/lib/examIntent";
 import { isTeamTurn, mapAssistantContent } from "@/lib/messageMeta";
 import {
   analytics,
@@ -158,6 +161,11 @@ export default function ChatPage() {
   // Optional personalization onboarding: shown once for users who have not yet
   // completed or skipped it. Dismissed locally so it never reappears mid-session.
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  // Exam Prep (default-off flag): a composer message that reads like exam
+  // preparation earns one dismissible "Create exam plan" banner per mount.
+  const examPrepEnabled = useFeature("exam_prep", false);
+  const [showExamBanner, setShowExamBanner] = useState(false);
+  const examBannerShownRef = useRef(false);
   const showOnboarding =
     !!user &&
     (user.personalization_status ?? "pending") === "pending" &&
@@ -508,6 +516,16 @@ export default function ChatPage() {
         voice_used: !!opts?.voiceUsed,
         has_seed_context: !!seedContextRef.current,
       });
+      if (
+        examPrepEnabled &&
+        !examBannerShownRef.current &&
+        intent === "text" &&
+        (opts?.source ?? "composer") === "composer" &&
+        detectExamIntent(text)
+      ) {
+        examBannerShownRef.current = true;
+        setShowExamBanner(true);
+      }
 
       const streamId = `stream-${uid()}`;
       const userMsgId = uid();
@@ -856,6 +874,7 @@ export default function ChatPage() {
       createSession,
       setSearchParams,
       setMediaSession,
+      examPrepEnabled,
     ],
   );
 
@@ -1727,6 +1746,16 @@ export default function ChatPage() {
                   <Loader2 className="h-3 w-3 animate-spin text-brand-1" />
                   Indexing your file… it will be used as soon as it's ready.
                 </span>
+              </div>
+            )}
+
+            {showExamBanner && (
+              <div className="mx-auto w-full max-w-4xl px-4 pb-2">
+                <ExamPrepCta
+                  variant="banner"
+                  source="intent"
+                  onDismiss={() => setShowExamBanner(false)}
+                />
               </div>
             )}
 

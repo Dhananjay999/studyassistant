@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   Settings,
+  Target,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
@@ -51,11 +52,15 @@ import { formatShortcut } from "@/lib/platform";
 import type { FeatureKey, Session } from "@/types";
 
 // `feature` marks entries hidden when the admin disables that flag.
+// `defaultOff` flips the gate for flags that ship disabled: the entry shows
+// only once /config says the flag is on (never while loading or on an older
+// backend that does not know the key).
 interface NavItem {
   label: string;
   icon: LucideIcon;
   to: string;
   feature?: FeatureKey;
+  defaultOff?: boolean;
 }
 
 // Library: ALL navigation tabs, grouped under one collapsible dropdown on
@@ -68,14 +73,16 @@ const LIBRARY_NAV: NavItem[] = [
   { label: "Chats", icon: MessageSquare, to: "/chat" },
   { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
+  // Exam Prep sits with the two study tools (hidden until the flag is on).
+  { label: "Exam Prep", icon: Target, to: "/exam", feature: "exam_prep", defaultOff: true },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
   { label: "Analytics", icon: BarChart3, to: "/analytics", feature: "analytics" },
   { label: "Study Material", icon: FolderOpen, to: "/files" },
 ];
 
-// Routes surfaced as the full-width shortcut pair while the dropdown is
-// closed.
-const QUICK_ROUTES = new Set(["/quizzes", "/flashcards"]);
+// Routes surfaced as the full-width shortcut row while the dropdown is
+// closed (Exam Prep joins the pair only when its flag is on).
+const QUICK_ROUTES = new Set(["/quizzes", "/flashcards", "/exam"]);
 
 // Scroll hysteresis: expand only at the very top, collapse once clearly
 // scrolled, so small movements around the boundary never flicker the state.
@@ -157,7 +164,10 @@ export function AppSidebar({
   // Admin-managed feature flags hide their nav entries entirely.
   const features = useAppConfig().data?.features;
   const flagged = (item: NavItem) =>
-    !item.feature || features?.[item.feature] !== false;
+    !item.feature ||
+    (item.defaultOff
+      ? features?.[item.feature] === true
+      : features?.[item.feature] !== false);
   // Every tab lives in the Library dropdown on the expanded desktop sidebar.
   // The mobile drawer (identified by `onNavigate`) and the collapsed desktop
   // rail keep a flat vertical list of the same items instead.
@@ -588,8 +598,9 @@ export function AppSidebar({
               </div>
             </div>
 
-            {/* While the dropdown is closed, keep the two most-used
-               shortcuts one tap away as a full-width button pair. */}
+            {/* While the dropdown is closed, keep the most-used shortcuts
+               one tap away: Quizzes + Flashcards as a pair, and Exam Prep
+               (when on) as a full-width button under them. */}
             {!libraryOpen && quickShortcuts.length > 0 && (
               <div className="grid grid-cols-2 gap-1.5 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
                 {quickShortcuts.map((item) => {
@@ -601,14 +612,15 @@ export function AppSidebar({
                       type="button"
                       onClick={() => go(item.to)}
                       className={cn(
-                        "flex items-center justify-center gap-2 rounded-lg border px-2 py-2 text-sm transition-colors",
+                        "flex min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm transition-colors",
+                        item.to === "/exam" && "col-span-2",
                         active
                           ? "border-brand-1/40 bg-accent font-medium text-accent-foreground"
                           : "border-border/60 text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" />
-                      {item.label}
+                      <span className="truncate">{item.label}</span>
                     </button>
                   );
                 })}

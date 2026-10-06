@@ -4,10 +4,18 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import * as api from "@/lib/api";
+import { hasExamPlan } from "@/types";
 import type {
   ConfidenceInput,
   CreateBookmarkInput,
+  CreateExamPlanRequest,
   ExamConfig,
+  ExamDashboard,
+  ExamDashboardResponse,
+  ExamTopic,
+  ExamTopicFlashcardsRequest,
+  ExamTopicQuizRequest,
+  ExamTopicStatus,
   FlashcardGenerateRequest,
   LearningProfileInput,
   MediaItem,
@@ -46,6 +54,16 @@ export const qk = {
   revisionDashboard: ["revision", "dashboard"] as const,
   revisionHome: ["revision", "home"] as const,
   config: ["config"] as const,
+  // Exam Prep: nested under ["exam-prep"] so one invalidation after a topic
+  // status change or generation refreshes the dashboard, the day and the chat.
+  examPrep: ["exam-prep"] as const,
+  examPlan: ["exam-prep", "plan"] as const,
+  examDay: (planId: string, dayId: string) =>
+    ["exam-prep", "day", planId, dayId] as const,
+  examMessages: (planId: string, topicId?: string) =>
+    ["exam-prep", "messages", planId, topicId ?? "all"] as const,
+  examTopicLesson: (topicId: string) =>
+    ["exam-prep", "lesson", topicId] as const,
 };
 
 /** Mutation keys for direct creation, so a library page can render in-flight
@@ -561,6 +579,197 @@ export function useSkipPersonalization() {
     mutationFn: () => api.skipPersonalization(),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: qk.learningProfile }),
+  });
+}
+
+/* -------------------------------- Exam Prep ------------------------------- */
+// Behind the `exam_prep` feature flag (callers pass `enabled`).
+
+export function useExamDashboard(enabled = true) {
+  return useQuery({
+    queryKey: qk.examPlan,
+    queryFn: api.getExamDashboard,
+    enabled,
+    // Days remaining / "today" depend on the date; refresh on focus is enough.
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateExamPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateExamPlanRequest) => api.createExamPlan(body),
+    onSuccess: (dashboard) => {
+      // The POST returns the full dashboard: seed the cache, no second GET.
+      qc.setQueryData<ExamDashboardResponse>(qk.examPlan, dashboard);
+      qc.invalidateQueries({ queryKey: qk.examPrep, refetchType: "none" });
+    },
+  });
+}
+
+export function useArchiveExamPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: string) => api.archiveExamPlan(planId),
+    onSuccess: () => {
+      qc.setQueryData<ExamDashboardResponse>(qk.examPlan, { plan: null });
+      qc.invalidateQueries({ queryKey: qk.examPrep });
+    },
+  });
+}
+
+/** One day's detail. The first open generates the detailed plan server-side
+ * (slow), so results are kept fresh for a long time once loaded. */
+export function useExamDay(
+  planId: string | undefined,
+  dayId: string | undefined,
+) {
+  return useQuery({
+    queryKey: qk.examDay(planId ?? "", dayId ?? ""),
+    queryFn: () => api.getExamDay(planId!, dayId!),
+    enabled: !!planId && !!dayId,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+/** Patch every cached copy of a topic (dashboard days + the day detail).
+ * Exported for the topic page: the lesson stream's done frame returns the
+ * updated topic (a fresh topic becomes in-progress on its first lesson). */
+export function patchExamTopic(
+  qc: ReturnType<typeof useQueryClient>,
+  topic: ExamTopic,
+) {
+  qc.setQueryData<ExamDashboardResponse>(qk.examPlan, (cur) => {
+    if (!hasExamPlan(cur)) return cur;
+    const days = cur.days.map((d) => ({
+      ...d,
+      subjects: d.subjects.map((s) => ({
+        ...s,
+        topics: s.topics.map((t) => (t.id === topic.id ? topic : t)),
+      })),
+    }));
+    const pick = (id: string) => days.find((d) => d.id === id);
+    const recount = (d: ExamDashboard["days"][number]) => {
+      const all = d.subjects.flatMap((s) => s.topics);
+      return {
+        ...d,
+        completed_count: all.filter((t) => t.status === "completed").length,
+        in_progress_count: all.filter((t) => t.status === "in_progress")
+          .length,
+      };
+    };
+    const recounted = days.map(recount);
+    const allTopics = recounted.flatMap((d) =>
+      d.subjects.flatMap((s) => s.topics),
+    );
+    const completed = allTopics.filter((t) => t.status === "completed").length;
+    const inProgress = allTopics.filter(
+      (t) => t.status === "in_progress",
+    ).length;
+    const total = allTopics.length;
+    return {
+      ...cur,
+      days: recounted,
+      today: cur.today
+        ? (recounted.find((d) => d.id === cur.today!.id) ?? cur.today)
+        : null,
+      upcoming: cur.upcoming.map((u) => pick(u.id) ?? u).map(recount),
+      progress: {
+        total_topics: total,
+        completed,
+        in_progress: inProgress,
+        not_started: Math.max(0, total - completed - inProgress),
+        percent: total ? Math.round((completed / total) * 100) : 0,
+      },
+      subjects: cur.subjects.map((s) => {
+        const mine = allTopics.filter((t) => t.subject === s.subject);
+        return {
+          ...s,
+          total: mine.length,
+          completed: mine.filter((t) => t.status === "completed").length,
+          in_progress: mine.filter((t) => t.status === "in_progress").length,
+        };
+      }),
+    };
+  });
+  qc.setQueryData<ExamDayDetailCache>(
+    qk.examDay(topic.plan_id, topic.day_id),
+    (cur) =>
+      cur
+        ? {
+            ...cur,
+            subjects: cur.subjects.map((s) => ({
+              ...s,
+              topics: s.topics.map((t) => (t.id === topic.id ? topic : t)),
+            })),
+          }
+        : cur,
+  );
+}
+
+type ExamDayDetailCache = Awaited<ReturnType<typeof api.getExamDay>>;
+
+export function useUpdateExamTopicStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { topicId: string; status: ExamTopicStatus }) =>
+      api.updateExamTopicStatus(v.topicId, v.status),
+    onSuccess: (topic) => patchExamTopic(qc, topic),
+    onError: () => {
+      qc.invalidateQueries({ queryKey: qk.examPrep });
+    },
+  });
+}
+
+export function useGenerateExamTopicQuiz() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { topicId: string; body?: ExamTopicQuizRequest }) =>
+      api.generateExamTopicQuiz(v.topicId, v.body),
+    onSuccess: () => {
+      // The topic row now carries quiz_id (and may be in_progress).
+      qc.invalidateQueries({ queryKey: qk.examPrep });
+      qc.invalidateQueries({ queryKey: qk.quizzes });
+    },
+  });
+}
+
+export function useGenerateExamTopicFlashcards() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      topicId: string;
+      body?: ExamTopicFlashcardsRequest;
+    }) => api.generateExamTopicFlashcards(v.topicId, v.body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.examPrep });
+      qc.invalidateQueries({ queryKey: qk.flashcards });
+    },
+  });
+}
+
+export function useExamMessages(
+  planId: string | undefined,
+  topicId?: string,
+) {
+  return useQuery({
+    queryKey: qk.examMessages(planId ?? "", topicId),
+    queryFn: () => api.getExamMessages(planId!, 60, topicId),
+    enabled: !!planId,
+    staleTime: Infinity,
+  });
+}
+
+/** A topic with its lesson. `lesson_md` is null until the lesson stream has
+ * run once; the topic page then invalidates this key. */
+export function useExamTopicLesson(topicId: string | undefined) {
+  return useQuery({
+    queryKey: qk.examTopicLesson(topicId ?? ""),
+    queryFn: () => api.getExamTopicLesson(topicId!),
+    enabled: !!topicId,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }
 

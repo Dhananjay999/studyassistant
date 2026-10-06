@@ -69,6 +69,16 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
         "message": "Admin panel is not configured on this server",
         "status": 503,
     },
+    "FEATURE_DISABLED": {
+        "code": "FEATURE_DISABLED",
+        "message": "This feature is not available",
+        "status": 404,
+    },
+    "EXAM_PLAN_NOT_FOUND": {
+        "code": "EXAM_PLAN_NOT_FOUND",
+        "message": "Exam plan not found",
+        "status": 404,
+    },
 }
 
 

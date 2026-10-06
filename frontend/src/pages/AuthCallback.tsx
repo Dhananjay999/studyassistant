@@ -6,6 +6,7 @@ import { AppLoader } from "@/components/common/AppLoader";
 import { Seo } from "@/components/common/Seo";
 import { AUTH_MESSAGES } from "@/lib/loadingMessages";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { hasExamPlanHint } from "@/lib/examPrepHome";
 
 // Failure reasons the backend callback can send. The value comes from the
 // URL, so anything else is reported as "unknown" rather than passed through.
@@ -68,9 +69,16 @@ export default function AuthCallback() {
       navigate(`/?auth_error=${reason}`, { replace: true });
     };
 
+    // A browser that remembers an active exam plan lands on "/", where
+    // HomeRoute picks /exam or /chat once the feature flag is known (see
+    // lib/examPrepHome.ts); everyone else goes straight to /chat as before.
     if (hasTokens) {
       setSession(accessToken, refreshToken, expiresIn)
-        .then(() => navigate("/chat", { replace: true }))
+        .then(() =>
+          navigate(hasExamPlanHint(undefined) ? "/" : "/chat", {
+            replace: true,
+          }),
+        )
         .catch(() => fail("session"));
     } else {
       fail(failure);

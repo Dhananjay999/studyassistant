@@ -153,6 +153,33 @@ export enum AnalyticsEvent {
   CONFIDENCE_SUBMITTED = "CONFIDENCE_SUBMITTED",
   CONFIDENCE_SUBMIT_FAILED = "CONFIDENCE_SUBMIT_FAILED",
 
+  // ---- Exam Prep (feature flag `exam_prep`) ------------------------------
+  EXAM_PREP_CTA_SHOWN = "EXAM_PREP_CTA_SHOWN",
+  EXAM_PREP_CTA_CLICKED = "EXAM_PREP_CTA_CLICKED",
+  EXAM_PREP_SETUP_STARTED = "EXAM_PREP_SETUP_STARTED",
+  EXAM_PREP_SETUP_STEP_COMPLETED = "EXAM_PREP_SETUP_STEP_COMPLETED",
+  EXAM_PREP_SETUP_COMPLETED = "EXAM_PREP_SETUP_COMPLETED",
+  EXAM_PREP_SETUP_FAILED = "EXAM_PREP_SETUP_FAILED",
+  EXAM_PREP_DASHBOARD_VIEWED = "EXAM_PREP_DASHBOARD_VIEWED",
+  EXAM_PREP_DAY_OPENED = "EXAM_PREP_DAY_OPENED",
+  EXAM_PREP_DAY_DETAIL_FAILED = "EXAM_PREP_DAY_DETAIL_FAILED",
+  EXAM_PREP_TOPIC_STATUS_CHANGED = "EXAM_PREP_TOPIC_STATUS_CHANGED",
+  EXAM_PREP_QUIZ_REQUESTED = "EXAM_PREP_QUIZ_REQUESTED",
+  EXAM_PREP_QUIZ_CREATED = "EXAM_PREP_QUIZ_CREATED",
+  EXAM_PREP_FLASHCARDS_REQUESTED = "EXAM_PREP_FLASHCARDS_REQUESTED",
+  EXAM_PREP_FLASHCARDS_CREATED = "EXAM_PREP_FLASHCARDS_CREATED",
+  EXAM_PREP_GENERATION_FAILED = "EXAM_PREP_GENERATION_FAILED",
+  EXAM_PREP_CHAT_OPENED = "EXAM_PREP_CHAT_OPENED",
+  EXAM_PREP_TOPIC_OPENED = "EXAM_PREP_TOPIC_OPENED",
+  EXAM_PREP_LESSON_GENERATED = "EXAM_PREP_LESSON_GENERATED",
+  EXAM_PREP_LESSON_FAILED = "EXAM_PREP_LESSON_FAILED",
+  EXAM_PREP_MESSAGE_SENT = "EXAM_PREP_MESSAGE_SENT",
+  EXAM_PREP_RESPONSE_COMPLETED = "EXAM_PREP_RESPONSE_COMPLETED",
+  EXAM_PREP_RESPONSE_FAILED = "EXAM_PREP_RESPONSE_FAILED",
+  EXAM_PREP_PLAN_ARCHIVED = "EXAM_PREP_PLAN_ARCHIVED",
+  EXAM_PREP_NEXT_UP_CLICKED = "EXAM_PREP_NEXT_UP_CLICKED",
+  EXAM_PREP_TIMER_TOGGLED = "EXAM_PREP_TIMER_TOGGLED",
+
   // ---- Sharing (public) --------------------------------------------------
   SHARE_VIEWED = "SHARE_VIEWED",
   SHARE_RESOLVE_FAILED = "SHARE_RESOLVE_FAILED",
@@ -173,6 +200,12 @@ export enum AnalyticsEvent {
 /* ------------------------------ shared types ------------------------------ */
 
 export type ErrorKind = "offline" | "high_demand" | "generic";
+/** Where an Exam Prep CTA was rendered. */
+export type ExamPrepCtaSource = "empty_state" | "welcome" | "intent";
+/** Which Exam Prep surface triggered a topic action. */
+export type ExamPrepActionSource = "row" | "sheet" | "day" | "chat" | "topic";
+/** Mirrors `ExamTopicStatus` in `@/types` (kept local to avoid a cycle). */
+export type ExamTopicStatus = "not_started" | "in_progress" | "completed";
 /** Control that opened a Quizzes/Flashcards-page creation panel. */
 export type CreateEntry = "header" | "empty_state";
 /** Material a Quizzes/Flashcards-page creation is built from. */
@@ -913,6 +946,148 @@ export interface EventPropsMap {
     ref_id?: string;
   };
   [AnalyticsEvent.CONFIDENCE_SUBMIT_FAILED]: ErrorKindProps & { source: string };
+
+  // Exam Prep. Props are ids, counts and enums only — never the exam name,
+  // subject or topic text (see sanitize.ts and EVENTS.md).
+  [AnalyticsEvent.EXAM_PREP_CTA_SHOWN]: {
+    source: ExamPrepCtaSource;
+    has_plan: boolean;
+  };
+  [AnalyticsEvent.EXAM_PREP_CTA_CLICKED]: {
+    source: ExamPrepCtaSource | "onboarding" | "sidebar";
+    has_plan: boolean;
+  };
+  [AnalyticsEvent.EXAM_PREP_SETUP_STARTED]: { prefilled: boolean };
+  [AnalyticsEvent.EXAM_PREP_SETUP_STEP_COMPLETED]: {
+    step: number;
+    exam_kind?: string;
+  };
+  [AnalyticsEvent.EXAM_PREP_SETUP_COMPLETED]: {
+    exam_kind?: string;
+    research?: boolean;
+    days_remaining: number;
+    subject_count: number;
+    daily_minutes: number;
+    has_target_score: boolean;
+    has_syllabus: boolean;
+    material_count: number;
+    total_days: number;
+    latency_ms: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_SETUP_FAILED]: ErrorKindProps & {
+    latency_ms: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_DASHBOARD_VIEWED]: {
+    plan_id: string;
+    days_remaining: number;
+    progress_percent: number;
+    has_today: boolean;
+  };
+  [AnalyticsEvent.EXAM_PREP_DAY_OPENED]: {
+    plan_id: string;
+    day_id: string;
+    day_number: number;
+    topic_count: number;
+    had_detail: boolean;
+  };
+  [AnalyticsEvent.EXAM_PREP_DAY_DETAIL_FAILED]: ErrorKindProps & {
+    plan_id: string;
+    day_id: string;
+  };
+  [AnalyticsEvent.EXAM_PREP_TOPIC_STATUS_CHANGED]: {
+    plan_id: string;
+    topic_id: string;
+    from: ExamTopicStatus;
+    to: ExamTopicStatus;
+    source: ExamPrepActionSource;
+    /** Seconds on the study timer when completed from the topic StudyBar. */
+    study_seconds?: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_QUIZ_REQUESTED]: {
+    plan_id: string;
+    topic_id: string;
+    source: ExamPrepActionSource;
+  };
+  [AnalyticsEvent.EXAM_PREP_QUIZ_CREATED]: {
+    plan_id: string;
+    topic_id: string;
+    quiz_id: string;
+    latency_ms: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_FLASHCARDS_REQUESTED]: {
+    plan_id: string;
+    topic_id: string;
+    source: ExamPrepActionSource;
+  };
+  [AnalyticsEvent.EXAM_PREP_FLASHCARDS_CREATED]: {
+    plan_id: string;
+    topic_id: string;
+    set_id: string;
+    latency_ms: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_GENERATION_FAILED]: ErrorKindProps & {
+    plan_id: string;
+    topic_id: string;
+    kind: "quiz" | "flashcards";
+  };
+  /** Retired: the Ask Aeva drawer was replaced by the topic page. */
+  [AnalyticsEvent.EXAM_PREP_CHAT_OPENED]: {
+    plan_id: string;
+    has_topic: boolean;
+    has_day: boolean;
+    source: "fab" | "topic" | "learn";
+  };
+  [AnalyticsEvent.EXAM_PREP_TOPIC_OPENED]: {
+    plan_id: string;
+    topic_id: string;
+    had_lesson: boolean;
+  };
+  [AnalyticsEvent.EXAM_PREP_LESSON_GENERATED]: {
+    plan_id: string;
+    topic_id: string;
+    latency_ms: number;
+    lesson_length: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_LESSON_FAILED]: ErrorKindProps & {
+    plan_id: string;
+    topic_id: string;
+  };
+  [AnalyticsEvent.EXAM_PREP_MESSAGE_SENT]: {
+    plan_id: string;
+    message_length: number;
+    has_topic: boolean;
+    has_day: boolean;
+    intent: "text" | "quiz" | "flashcards" | "followup" | "learn";
+  };
+  [AnalyticsEvent.EXAM_PREP_RESPONSE_COMPLETED]: {
+    plan_id: string;
+    tool_used?: string;
+    latency_ms: number;
+    first_token_ms: number | null;
+    response_length: number;
+    has_quiz: boolean;
+    has_flashcards: boolean;
+  };
+  [AnalyticsEvent.EXAM_PREP_RESPONSE_FAILED]: ErrorKindProps & {
+    plan_id: string;
+    phase: "pre_stream" | "mid_stream";
+  };
+  [AnalyticsEvent.EXAM_PREP_PLAN_ARCHIVED]: {
+    plan_id: string;
+    days_remaining: number;
+    progress_percent: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_NEXT_UP_CLICKED]: {
+    plan_id: string;
+    topic_id: string;
+    source: "dashboard" | "day" | "sheet";
+  };
+  [AnalyticsEvent.EXAM_PREP_TIMER_TOGGLED]: {
+    plan_id: string;
+    topic_id: string;
+    action: "start" | "pause" | "resume" | "reset";
+    elapsed_s: number;
+  };
 
   [AnalyticsEvent.SHARE_VIEWED]: { share_id: string; kind: string };
   [AnalyticsEvent.SHARE_RESOLVE_FAILED]: { share_id: string; kind: string };

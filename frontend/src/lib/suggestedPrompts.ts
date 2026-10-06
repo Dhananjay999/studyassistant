@@ -50,6 +50,8 @@ const GENERIC: SuggestedPrompt[] = [
   idea("Explain today's most important AI trend in simple language"),
   explain("Explain Prompt Engineering with practical examples"),
   quiz("Create a 15-question MCQ quiz on Newton's Laws of Motion with explanations"),
+  cards("Create revision flashcards on the key formulas of Quadratic Equations"),
+  cards("Create flashcards on the OSI Model layers and what each one does"),
   explain("Explain the OSI Model layer by layer with practical networking examples"),
   explain("Explain SQL Joins: INNER, LEFT, RIGHT, FULL OUTER, and CROSS with examples"),
   solve("Explain Quadratic Equations step by step with solved examples"),
@@ -422,8 +424,40 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+export type PromptKind = "question" | "quiz" | "cards";
+
+export function kindOf(p: SuggestedPrompt): PromptKind {
+  if (p.icon === Layers) return "cards";
+  if (p.icon === ListChecks) return "quiz";
+  return "question";
+}
+
 /**
- * Build `count` suggested prompts tailored to the user's learning profile.
+ * Pick `count` prompts so the student always sees one of each thing Aeva
+ * does — flashcards to make, a quiz to create, a question to ask (in that
+ * order) — before any further variety. With three slots (phones) that is
+ * exactly one each.
+ */
+function balanced(pool: SuggestedPrompt[], count: number): SuggestedPrompt[] {
+  const buckets: Record<PromptKind, SuggestedPrompt[]> = {
+    question: [],
+    quiz: [],
+    cards: [],
+  };
+  for (const p of shuffle(pool)) buckets[kindOf(p)].push(p);
+  const picked: SuggestedPrompt[] = [];
+  for (const kind of ["cards", "quiz", "question"] as PromptKind[]) {
+    const next = buckets[kind].shift();
+    if (next && picked.length < count) picked.push(next);
+  }
+  const rest = shuffle([...buckets.question, ...buckets.quiz, ...buckets.cards]);
+  while (picked.length < count && rest.length) picked.push(rest.shift()!);
+  return picked;
+}
+
+/**
+ * Build `count` suggested prompts tailored to the user's learning profile:
+ * one question, one quiz and one flashcard prompt first, then more variety.
  * Falls back to a generic set when onboarding isn't completed.
  */
 export function buildSuggestedPrompts(
@@ -431,7 +465,7 @@ export function buildSuggestedPrompts(
   count = 6,
 ): SuggestedPrompt[] {
   if (!profile || profile.personalization_status !== "completed") {
-    return shuffle(GENERIC).slice(0, count);
+    return balanced(GENERIC, count);
   }
 
   const pool: SuggestedPrompt[] = [];
@@ -461,7 +495,8 @@ export function buildSuggestedPrompts(
   }
 
   const unique = dedupe(pool);
-  // Backfill with generic prompts if the profile produced too few.
-  if (unique.length < count) unique.push(...GENERIC);
-  return shuffle(dedupe(unique)).slice(0, count);
+  // Backfill with generic prompts if the profile produced too few (or lacks
+  // a quiz / flashcard prompt to fill its slot).
+  unique.push(...GENERIC);
+  return balanced(dedupe(unique), count);
 }

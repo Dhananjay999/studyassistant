@@ -95,6 +95,7 @@ class SearchRepository:
                 supabase.client.table("sessions")
                 .select("id, title, updated_at")
                 .eq("user_id", uid)
+                .eq("kind", "chat")
             )
             .ilike("title", like)
             .limit(8)
@@ -108,6 +109,7 @@ class SearchRepository:
                 supabase.client.table("sessions")
                 .select("id, title")
                 .eq("user_id", uid)
+                .eq("kind", "chat")
             )
             .execute()
         ).data or []

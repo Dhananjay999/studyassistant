@@ -21,6 +21,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { useFeature } from "@/hooks/useFeature";
+import { useAppConfig } from "@/hooks/api";
+import { hasExamPlanHint, homePathFor } from "@/lib/examPrepHome";
 import type { FeatureKey } from "@/types";
 import { PreferencesProvider } from "@/contexts/PreferencesContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
@@ -66,6 +68,12 @@ const RevisionPage = lazy(() => import("@/pages/RevisionPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const ProfileSectionPage = lazy(() => import("@/pages/ProfileSectionPage"));
+// Exam Prep (feature flag `exam_prep`, default off): study-plan dashboard,
+// setup wizard, per-day plan and the per-topic lesson page.
+const ExamPrepPage = lazy(() => import("@/pages/exam/ExamPrepPage"));
+const ExamSetupPage = lazy(() => import("@/pages/exam/ExamSetupPage"));
+const ExamDayPage = lazy(() => import("@/pages/exam/ExamDayPage"));
+const ExamTopicPage = lazy(() => import("@/pages/exam/ExamTopicPage"));
 // Public, no-login share surface for every shareable content type.
 const SharePage = lazy(() => import("@/pages/SharePage"));
 // Native-app (WebView) entry: onboarding + welcome/login instead of the
@@ -101,19 +109,43 @@ function AnalyticsRouteTracker() {
  * deep-links to hidden features degrade gracefully instead of 404ing. */
 function FeatureRoute({
   feature,
+  fallback = true,
   children,
 }: {
   feature: FeatureKey;
+  /** What the gate assumes while /config loads (see `useFeature`). Flags
+   * that ship disabled by default pass `false` so the page never flashes. */
+  fallback?: boolean;
   children: ReactNode;
 }) {
-  const enabled = useFeature(feature);
+  const enabled = useFeature(feature, fallback);
   return enabled ? <>{children}</> : <Navigate to="/chat" replace />;
+}
+
+/** Signed-in home: /chat, or /exam for a student with an active exam plan
+ * (feature flag `exam_prep`). Only a browser that remembers a plan needs the
+ * flag, so everyone else keeps the immediate /chat redirect and never waits
+ * on /config. Its own component so the anonymous landing page never triggers
+ * the /config fetch. */
+function AuthedHomeRedirect() {
+  const { user } = useAuth();
+  if (!hasExamPlanHint(user?.id)) return <Navigate to="/chat" replace />;
+  return <ExamHomeRedirect userId={user?.id} />;
+}
+
+/** The flag must be known before choosing /exam, so this waits for /config
+ * (cached after boot). */
+function ExamHomeRedirect({ userId }: { userId?: string }) {
+  const { isLoading } = useAppConfig();
+  const examPrepEnabled = useFeature("exam_prep", false);
+  if (isLoading) return <RouteFallback />;
+  return <Navigate to={homePathFor(examPrepEnabled, userId)} replace />;
 }
 
 function HomeRoute() {
   const { isAuthenticated, loading } = useAuth();
   if (loading) return <RouteFallback />;
-  if (isAuthenticated) return <Navigate to="/chat" replace />;
+  if (isAuthenticated) return <AuthedHomeRedirect />;
   // Inside the native app's WebView, skip the marketing site entirely and
   // open the app-style onboarding/welcome experience.
   if (isAppMode()) return <AppWelcomePage />;
@@ -232,6 +264,38 @@ export default function App() {
                         element={
                           <FeatureRoute feature="revision_mode">
                             <RevisionPage />
+                          </FeatureRoute>
+                        }
+                      />
+                      <Route
+                        path="/exam"
+                        element={
+                          <FeatureRoute feature="exam_prep" fallback={false}>
+                            <ExamPrepPage />
+                          </FeatureRoute>
+                        }
+                      />
+                      <Route
+                        path="/exam/setup"
+                        element={
+                          <FeatureRoute feature="exam_prep" fallback={false}>
+                            <ExamSetupPage />
+                          </FeatureRoute>
+                        }
+                      />
+                      <Route
+                        path="/exam/day/:dayId"
+                        element={
+                          <FeatureRoute feature="exam_prep" fallback={false}>
+                            <ExamDayPage />
+                          </FeatureRoute>
+                        }
+                      />
+                      <Route
+                        path="/exam/topic/:topicId"
+                        element={
+                          <FeatureRoute feature="exam_prep" fallback={false}>
+                            <ExamTopicPage />
                           </FeatureRoute>
                         }
                       />

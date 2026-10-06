@@ -203,6 +203,48 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 | `REVISION_ACTION_CLICKED` | `action: revise\|quiz\|flashcards`, `has_existing_target` | `hooks/useRevisionActions.ts` |
 | `CONFIDENCE_SUBMITTED` / `CONFIDENCE_SUBMIT_FAILED` | `confidence`, `source`, `ref_id?` / `source`, `error_kind` | `components/revision/ConfidencePrompt.tsx` |
 
+## Exam Prep — `pages/exam/*`, `components/exam/*` (feature flag `exam_prep`)
+
+Props carry ids, counts, durations and enums only. The exam name, subjects,
+topic titles and syllabus text are user content and are never sent; topic and
+subject lists are wrapped in `data-analytics-private` and action buttons carry
+a fixed `data-analytics-name`.
+
+| Event | When | Properties | Hook |
+|---|---|---|---|
+| `EXAM_PREP_CTA_SHOWN` | An Exam Prep call-to-action rendered on the chat home or as the exam-intent banner | `source: empty_state\|welcome\|intent`, `has_plan` | `components/exam/ExamPrepCta.tsx` |
+| `EXAM_PREP_CTA_CLICKED` ★ | The CTA or the onboarding celebration button was tapped. The sidebar "Exam Prep" entry is a plain nav click (`sidebar.nav.exam` via `analyticsAttrs`), so `source: sidebar` is declared but not emitted yet | `source: empty_state\|welcome\|intent\|onboarding\|sidebar`, `has_plan` | `ExamPrepCta.tsx`, `learning/OnboardingFlow.tsx` |
+| `EXAM_PREP_SETUP_STARTED` | Setup form opened | `prefilled` (profile values pre-filled) | `pages/exam/ExamSetupPage.tsx` |
+| `EXAM_PREP_SETUP_STEP_COMPLETED` | A setup step advanced | `step`, `exam_kind?` (school / board / competitive / college / other) | `components/exam/ExamSetupForm.tsx` |
+| `EXAM_PREP_SETUP_COMPLETED` ★ | Plan created and roadmap generated | `exam_kind?`, `research?` (official syllabus researched online), `days_remaining`, `subject_count`, `daily_minutes`, `has_target_score`, `has_syllabus`, `material_count`, `total_days`, `latency_ms` | `ExamSetupForm.tsx` |
+| `EXAM_PREP_SETUP_FAILED` | Plan creation failed | `error_kind`, `latency_ms` | same |
+| `EXAM_PREP_DASHBOARD_VIEWED` | Exam dashboard rendered with a plan | `plan_id`, `days_remaining`, `progress_percent`, `has_today` | `pages/exam/ExamPrepPage.tsx` |
+| `EXAM_PREP_DAY_OPENED` | A day page opened | `plan_id`, `day_id`, `day_number`, `topic_count`, `had_detail` (false = detail generated lazily on this open) | `pages/exam/ExamDayPage.tsx` |
+| `EXAM_PREP_DAY_DETAIL_FAILED` | Lazy day-detail generation failed | `plan_id`, `day_id`, `error_kind` | same |
+| `EXAM_PREP_TOPIC_OPENED` ★ | A topic page (`/exam/topic/:id`) opened, once the lesson query settled | `plan_id`, `topic_id`, `had_lesson` (false = the lesson is streamed on this open) | `pages/exam/ExamTopicPage.tsx` |
+| `EXAM_PREP_LESSON_GENERATED` ★ | Aeva's lesson for a topic finished streaming (first open or Regenerate) | `plan_id`, `topic_id`, `latency_ms`, `lesson_length` (characters) | same |
+| `EXAM_PREP_LESSON_FAILED` | The lesson stream failed | `plan_id`, `topic_id`, `error_kind` | same |
+| `EXAM_PREP_TOPIC_STATUS_CHANGED` | Topic marked not started / in progress / completed | `plan_id`, `topic_id`, `from`, `to`, `source: row\|sheet\|day\|chat\|topic`, `study_seconds?` (timer reading when completed from the topic page's StudyBar) | `components/exam/useTopicActions.ts` (called from `TopicRow.tsx` / `TopicActionSheet.tsx` / `StudyBar.tsx`) |
+| `EXAM_PREP_QUIZ_REQUESTED` / `EXAM_PREP_QUIZ_CREATED` ★ | On-demand topic quiz requested / created | `plan_id`, `topic_id`, `source` / `plan_id`, `topic_id`, `quiz_id`, `latency_ms` | same |
+| `EXAM_PREP_FLASHCARDS_REQUESTED` / `EXAM_PREP_FLASHCARDS_CREATED` ★ | On-demand topic flashcards requested / created | `plan_id`, `topic_id`, `source` / `plan_id`, `topic_id`, `set_id`, `latency_ms` | same |
+| `EXAM_PREP_GENERATION_FAILED` | Topic quiz / flashcard generation failed | `plan_id`, `topic_id`, `kind: quiz\|flashcards`, `error_kind` | same |
+| `EXAM_PREP_CHAT_OPENED` (retired) | No longer emitted: the Ask Aeva drawer (FAB + `ExamChatPanel`) was replaced by the topic page. The enum member stays so old events keep their type. The PostHog insight "Exam Prep — daily engagement" counted this event; it should read `EXAM_PREP_TOPIC_OPENED` instead | `plan_id`, `has_topic`, `has_day`, `source: fab\|topic\|learn` | — |
+| `EXAM_PREP_MESSAGE_SENT` ★ | Message sent to the Exam Prep coach from a topic page's doubt box (`has_topic` / `has_day` are always true there; `intent: learn` is no longer emitted) | `plan_id`, `message_length`, `has_topic`, `has_day`, `intent: text\|quiz\|flashcards\|followup\|learn` | `components/exam/useExamConversation.ts` |
+| `EXAM_PREP_RESPONSE_COMPLETED` | Exam chat turn finished | `plan_id`, `tool_used?`, `latency_ms`, `first_token_ms`, `response_length`, `has_quiz`, `has_flashcards` | same |
+| `EXAM_PREP_RESPONSE_FAILED` | Exam chat turn failed | `plan_id`, `phase: pre_stream\|mid_stream`, `error_kind` | same |
+| `EXAM_PREP_PLAN_ARCHIVED` | Plan archived ("Start over") | `plan_id`, `days_remaining`, `progress_percent` | `pages/exam/ExamPrepPage.tsx` |
+| `EXAM_PREP_NEXT_UP_CLICKED` ★ | The "Start" / "Continue" button of the dashboard's Next up card, the day page's "Start day" / "Continue day", or "Start next topic" in the sheet shown after completing a topic | `plan_id`, `topic_id`, `source: dashboard\|day\|sheet` | `components/exam/NextUpCard.tsx`, `pages/exam/ExamDayPage.tsx`, `components/exam/NextUpSheet.tsx` |
+| `EXAM_PREP_TIMER_TOGGLED` | The study timer on the topic page was started, paused, resumed or reset by the student (the auto-start on open is not tracked) | `plan_id`, `topic_id`, `action: start\|pause\|resume\|reset`, `elapsed_s` | `components/exam/StudyBar.tsx` |
+
+Quizzes and flashcard sets opened from Exam Prep reuse `QuizDrawer` /
+`FlashcardViewer`, so the existing `QUIZ_*` and `FLASHCARDS_*` events keep
+firing there with `source: "exam_prep"`. Page views arrive as `PAGE_ENTRY`
+with `page_name: exam | exam_setup | exam_day | exam_topic`.
+The "How it works" strip on the dashboard (shown until the first topic is
+completed) is dismissed with a plain click (`Exam how it works dismiss`); the
+checklist rows (`Exam today step`), the StudyBar buttons (`Exam study …`) and
+the next-up sheet buttons are plain clicks too.
+
 ## Sharing (public, anonymous) — `pages/SharePage.tsx`
 
 | Event | Properties |

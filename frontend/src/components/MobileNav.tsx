@@ -5,9 +5,11 @@ import {
   Layers,
   ListChecks,
   MessageSquare,
+  Target,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/AuthContext";
+import { useFeature } from "@/hooks/useFeature";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -16,6 +18,9 @@ const TABS = [
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
 ];
+// With Exam Prep on, it takes the fourth slot; Bookmarks stays reachable
+// from the sidebar drawer. Flag off = the exact tabs as before.
+const EXAM_TAB = { label: "Exam Prep", icon: Target, to: "/exam" };
 
 /**
  * App-style fixed bottom navigation. Mobile/tablet only (hidden on lg+ where
@@ -29,6 +34,10 @@ export function MobileNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const examPrepEnabled = useFeature("exam_prep", false);
+  const tabs = examPrepEnabled
+    ? TABS.map((t) => (t.to === "/bookmarks" ? EXAM_TAB : t))
+    : TABS;
 
   const isActive = (to: string) =>
     to === "/chat"
@@ -40,9 +49,12 @@ export function MobileNav() {
   return (
     <nav
       data-bottom-nav
-      className="glass-strong fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border/60 pb-safe lg:hidden"
+      // `h-bottomnav` is the height every `pb-bottomnav` / fixed-row offset in
+      // the app reserves (3.75rem + home indicator), so bars that sit above
+      // the nav meet it with no gap.
+      className="glass-strong h-bottomnav fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border/60 pb-safe lg:hidden"
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const Icon = tab.icon;
         const active = isActive(tab.to);
         return (

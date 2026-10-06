@@ -11,8 +11,17 @@ import type {
   ConfidenceInput,
   ConfidenceResult,
   CreateBookmarkInput,
+  CreateExamPlanRequest,
   ExamConfig,
+  ExamDashboard,
+  ExamDashboardResponse,
+  ExamDayDetail,
   ExamPattern,
+  ExamTopic,
+  ExamTopicFlashcardsRequest,
+  ExamTopicLesson,
+  ExamTopicQuizRequest,
+  ExamTopicStatus,
   LearningProfile,
   LearningProfileInput,
   MediaItem,
@@ -111,6 +120,22 @@ export const ENDPOINTS = {
   REVISION_DASHBOARD: "/revision/dashboard",
   REVISION_HOME: "/revision/home",
   REVISION_CONFIDENCE: "/revision/confidence",
+  // Exam Prep (feature flag `exam_prep`).
+  EXAM_PLAN: "/exam-prep/plan",
+  EXAM_PLAN_ARCHIVE: (planId: string) => `/exam-prep/plan/${planId}/archive`,
+  EXAM_DAY: (planId: string, dayId: string) =>
+    `/exam-prep/plan/${planId}/days/${dayId}`,
+  EXAM_TOPIC: (topicId: string) => `/exam-prep/topics/${topicId}`,
+  EXAM_TOPIC_QUIZ: (topicId: string) => `/exam-prep/topics/${topicId}/quiz`,
+  EXAM_TOPIC_FLASHCARDS: (topicId: string) =>
+    `/exam-prep/topics/${topicId}/flashcards`,
+  EXAM_TOPIC_LESSON: (topicId: string) =>
+    `/exam-prep/topics/${topicId}/lesson`,
+  EXAM_TOPIC_LESSON_STREAM: (topicId: string) =>
+    `/exam-prep/topics/${topicId}/lesson/stream`,
+  EXAM_MESSAGES: (planId: string) => `/exam-prep/plan/${planId}/messages`,
+  EXAM_CHAT_STREAM: (planId: string) =>
+    `/exam-prep/plan/${planId}/chat/stream`,
   CONFIG: "/config",
 } as const;
 
@@ -768,3 +793,119 @@ export async function exportSpaceMarkdown(id: string): Promise<string> {
 export const assistantStreamUrl = `${API_BASE_URL}${ENDPOINTS.ASSISTANT_STREAM}`;
 
 export type { AssistantRequest };
+
+/* -------------------------------- Exam Prep ------------------------------- */
+// Behind the `exam_prep` feature flag. Plan creation, lazy day detail and
+// on-demand quiz/flashcards each run one LLM generation, so they use the
+// generation timeout like /quiz/generate.
+
+/** The active plan's dashboard, or `{ plan: null }` when there is none. */
+export const getExamDashboard = () =>
+  unwrap<ExamDashboardResponse>(ENDPOINTS.EXAM_PLAN);
+
+/** Creates the plan and generates the lightweight roadmap (archives any
+ * previous active plan). Returns the new dashboard. */
+export const createExamPlan = (body: CreateExamPlanRequest) =>
+  unwrap<ExamDashboard>(
+    ENDPOINTS.EXAM_PLAN,
+    { method: "POST", body: JSON.stringify(body) },
+    { timeoutMs: GENERATION_TIMEOUT },
+  );
+
+export const archiveExamPlan = (planId: string) =>
+  unwrap<{ id: string; status: "archived" }>(
+    ENDPOINTS.EXAM_PLAN_ARCHIVE(planId),
+    { method: "POST" },
+  );
+
+/** One day with its topics; the detailed plan is generated on first open. */
+export const getExamDay = (planId: string, dayId: string) =>
+  unwrap<ExamDayDetail>(ENDPOINTS.EXAM_DAY(planId, dayId), undefined, {
+    timeoutMs: GENERATION_TIMEOUT,
+  });
+
+export const updateExamTopicStatus = (
+  topicId: string,
+  status: ExamTopicStatus,
+) =>
+  unwrap<ExamTopic>(ENDPOINTS.EXAM_TOPIC(topicId), {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+
+export const generateExamTopicQuiz = (
+  topicId: string,
+  body: ExamTopicQuizRequest = {},
+) =>
+  unwrap<QuizGenerateResult>(
+    ENDPOINTS.EXAM_TOPIC_QUIZ(topicId),
+    { method: "POST", body: JSON.stringify(body) },
+    { timeoutMs: GENERATION_TIMEOUT },
+  );
+
+export const generateExamTopicFlashcards = (
+  topicId: string,
+  body: ExamTopicFlashcardsRequest = {},
+) =>
+  unwrap<FlashcardGenerateResult>(
+    ENDPOINTS.EXAM_TOPIC_FLASHCARDS(topicId),
+    { method: "POST", body: JSON.stringify(body) },
+    { timeoutMs: GENERATION_TIMEOUT },
+  );
+
+/** A persisted message row as the backend returns it. */
+interface MessageRow {
+  id: string;
+  role: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+/** Row → UI message, the same normalisation `getMessages` applies. */
+function mapMessageRow(m: MessageRow): Message {
+  const md = m.metadata ?? {};
+  const inner = (md.content ?? {}) as Record<string, unknown>;
+  const toolUsed = md.tool_used as Message["meta"]["tool_used"];
+  return {
+    id: m.id,
+    role: m.role === "user" ? "user" : "assistant",
+    content: m.content,
+    createdAt: new Date(m.created_at),
+    meta: {
+      ...mapAssistantContent(inner, toolUsed),
+      status: md.status as Message["meta"]["status"],
+      run_id: md.run_id as string | undefined,
+      clarification: md.clarification as Message["meta"]["clarification"],
+    },
+  } satisfies Message;
+}
+
+/** The topic with its lesson markdown (`lesson_md` is null until generated). */
+export const getExamTopicLesson = (topicId: string) =>
+  unwrap<ExamTopicLesson>(ENDPOINTS.EXAM_TOPIC_LESSON(topicId));
+
+/** History of the plan's dedicated Exam Prep conversation (newest `limit`
+ * messages, oldest first). With `topicId`, only that topic's turns. */
+export async function getExamMessages(
+  planId: string,
+  limit = 60,
+  topicId?: string,
+): Promise<Message[]> {
+  const query = topicId
+    ? `?limit=${limit}&topic_id=${encodeURIComponent(topicId)}`
+    : `?limit=${limit}`;
+  const rows = await unwrap<MessageRow[]>(
+    `${ENDPOINTS.EXAM_MESSAGES(planId)}${query}`,
+  );
+  return rows.map(mapMessageRow);
+}
+
+/** Absolute URL for the Exam Prep SSE stream (useAssistantStream(url)). */
+export const examChatStreamUrl = (planId: string) =>
+  `${API_BASE_URL}${ENDPOINTS.EXAM_CHAT_STREAM(planId)}`;
+
+/** Absolute URL for the topic-lesson SSE stream (same frames as chat; the
+ * body is `{ regenerate?: boolean }`). */
+export const examLessonStreamUrl = (topicId: string) =>
+  `${API_BASE_URL}${ENDPOINTS.EXAM_TOPIC_LESSON_STREAM(topicId)}`;

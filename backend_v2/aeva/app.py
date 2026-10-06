@@ -22,6 +22,7 @@ from aeva.common.logging_config import preview, setup_logging
 from aeva.common.sentry import capture_exception, init_sentry
 from aeva.containers import Container
 from aeva.delay.delay_controller import blueprint as delay_bp
+from aeva.exam_prep.exam_prep_controller import blueprint as exam_prep_bp
 from aeva.feature_flag import feature_flag_service
 from aeva.flashcard.flashcard_controller import blueprint as flashcard_bp
 from aeva.learning_profile.learning_profile_controller import (
@@ -133,6 +134,10 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["LLM_FLASHCARD_MODEL"] = os.environ.get(
         "LLM_FLASHCARD_MODEL", default_model
     )
+    # Exam Prep roadmap / day-detail generation (structured calls).
+    app.config["LLM_EXAM_PLAN_MODEL"] = os.environ.get(
+        "LLM_EXAM_PLAN_MODEL", default_model
+    )
     # Per-tool candidate model lists for planner-driven model selection
     # (comma-separated, ordered cheapest -> strongest). The planner picks one
     # per request; the first entry is the cheapest default. Blank falls back to
@@ -188,6 +193,9 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     )
     app.config["LLM_FLASHCARD_PROVIDER"] = os.environ.get(
         "LLM_FLASHCARD_PROVIDER", default_provider
+    )
+    app.config["LLM_EXAM_PLAN_PROVIDER"] = os.environ.get(
+        "LLM_EXAM_PLAN_PROVIDER", default_provider
     )
     # Image generation runs on OpenAI by default (independent of the text
     # provider); needs OPENAI_API_KEY. Set both to move it elsewhere.
@@ -492,6 +500,7 @@ def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
     api.register_blueprint(admin_bp)
     api.register_blueprint(admin_trace_bp)
     api.register_blueprint(delay_bp)
+    api.register_blueprint(exam_prep_bp)
 
     _register_request_logging(app)
 

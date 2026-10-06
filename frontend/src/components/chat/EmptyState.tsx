@@ -2,7 +2,9 @@ import { useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { useLearningProfile } from "@/hooks/api";
+import { useFeature } from "@/hooks/useFeature";
 import { MemoryHint } from "@/components/chat/MemoryHint";
+import { ExamPrepCta } from "@/components/exam/ExamPrepCta";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { buildSuggestedPrompts } from "@/lib/suggestedPrompts";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
@@ -11,7 +13,11 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   const reduce = useReducedMotion();
   const isMobile = useIsMobile();
   const { data: profile, isLoading } = useLearningProfile();
-  const count = isMobile ? 3 : 4;
+  // Phones: exactly three ways in — flashcards, a quiz, and either Exam Prep
+  // (when the flag is on, the card above takes that slot) or a plain
+  // question. Desktop keeps its four chips.
+  const examPrepOn = useFeature("exam_prep", false);
+  const count = isMobile ? (examPrepOn ? 2 : 3) : 4;
 
   // Re-rolled per mount (opening a new chat) so combinations stay fresh.
   // Building only once the profile has resolved keeps the set from flickering
@@ -70,6 +76,9 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
           Ask a question, attach your notes, or generate a quiz.
         </p>
       </motion.div>
+
+      {/* Exam Prep entry (feature-flagged; renders nothing when off). */}
+      <ExamPrepCta source="empty_state" />
 
       <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-center">
         {isLoading

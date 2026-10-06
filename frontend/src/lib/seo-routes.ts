@@ -114,6 +114,7 @@ export const DISALLOWED_PREFIXES = [
   "/flashcards",
   "/analytics",
   "/revision",
+  "/exam",
   "/spaces",
   "/notes",
   "/files",

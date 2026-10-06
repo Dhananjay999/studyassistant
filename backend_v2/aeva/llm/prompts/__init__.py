@@ -22,6 +22,17 @@ from aeva.llm.prompts.builder import (
     PromptTemplate,
     RenderedPrompt,
 )
+from aeva.llm.prompts.exam_prep import (
+    EXAM_DAY_DETAIL_SCHEMA,
+    EXAM_DAY_DETAIL_TEMPLATE,
+    EXAM_PLAN_SCHEMA,
+    EXAM_PLAN_TEMPLATE,
+    EXAM_SYLLABUS_RESEARCH_TEMPLATE,
+    EXAM_TOPIC_LESSON_TEMPLATE,
+    EXAM_PREP_QUIZ_INSTRUCTIONS,
+    build_exam_prep_block,
+    format_quiz_instructions,
+)
 from aeva.llm.prompts.exam_research import EXAM_STYLE_RESEARCH_TEMPLATE
 from aeva.llm.prompts.flashcard import (
     FLASHCARD_GENERATION_SCHEMA,
@@ -99,6 +110,13 @@ from aeva.llm.prompts.web_search import (
 )
 
 __all__ = [
+    "EXAM_DAY_DETAIL_SCHEMA",
+    "EXAM_DAY_DETAIL_TEMPLATE",
+    "EXAM_PLAN_SCHEMA",
+    "EXAM_PLAN_TEMPLATE",
+    "EXAM_SYLLABUS_RESEARCH_TEMPLATE",
+    "EXAM_TOPIC_LESSON_TEMPLATE",
+    "EXAM_PREP_QUIZ_INSTRUCTIONS",
     "EXAM_STYLE_RESEARCH_TEMPLATE",
     "FLASHCARD_GENERATION_SCHEMA",
     "FLASHCARD_GENERATION_TEMPLATE",
@@ -142,11 +160,13 @@ __all__ = [
     "PromptTemplate",
     "RenderedPrompt",
     "attached_files_block",
+    "build_exam_prep_block",
     "build_identity_block",
     "build_personalization_block",
     "build_space_block",
     "current_date",
     "exam_pattern_segment",
+    "format_quiz_instructions",
     "guess_search_intent",
     "no_context_message",
     "pick_skill",

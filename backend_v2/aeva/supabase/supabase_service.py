@@ -208,8 +208,15 @@ class SupabaseService:
         title: str = "New chat",
         mode: str = "media",
         space_id: str | None = None,
+        kind: str = "chat",
+        exam_plan_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create a new chat session."""
+        """Create a new chat session.
+
+        ``kind`` / ``exam_plan_id`` tag a dedicated (non-chat) conversation,
+        e.g. an Exam Prep coach session; both are written only when set so
+        ordinary chats keep the column defaults.
+        """
         row: dict[str, Any] = {
             "user_id": user_id,
             "title": title,
@@ -217,17 +224,22 @@ class SupabaseService:
         }
         if space_id:
             row["space_id"] = space_id
+        if kind != "chat":
+            row["kind"] = kind
+        if exam_plan_id:
+            row["exam_plan_id"] = exam_plan_id
         result = self.client.table("sessions").insert(row).execute()
         return result.data[0]
 
     def list_sessions(
         self, user_id: str, space_id: str | None = None
     ) -> list[dict[str, Any]]:
-        """List user sessions ordered by updated_at."""
+        """List user sessions ordered by updated_at (plain chats only)."""
         query = (
             self.client.table("sessions")
             .select("*")
             .eq("user_id", user_id)
+            .eq("kind", "chat")
         )
         if space_id:
             query = query.eq("space_id", space_id)

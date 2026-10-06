@@ -66,8 +66,23 @@ const SKILLS = opts(
   "Languages",
 );
 
+/**
+ * Exam Prep (feature flag `exam_prep`): picking this goal offers a study plan
+ * right after onboarding. It leads every goal list so `labelOf("goal")`
+ * resolves it on any branch; the onboarding UI hides it while the flag is off.
+ */
+export const EXAM_PREP_GOAL_ID = "exam_preparation";
+const EXAM_PREP_GOAL: Option = {
+  id: EXAM_PREP_GOAL_ID,
+  label: "Exam Preparation (with a study plan)",
+};
+const withExamPrep = (...labels: string[]): Option[] => [
+  EXAM_PREP_GOAL,
+  ...opts(...labels),
+];
+
 const GOALS = {
-  school: opts(
+  school: withExamPrep(
     "Understand concepts",
     "Prepare for exams",
     "Practice questions",
@@ -75,7 +90,7 @@ const GOALS = {
     "Prepare for competitive exams",
     "Explore a subject",
   ),
-  college: opts(
+  college: withExamPrep(
     "Understand concepts",
     "Prepare for semester exams",
     "Complete assignments",
@@ -83,21 +98,21 @@ const GOALS = {
     "Learn practical skills",
     "Prepare for interviews",
   ),
-  competitive_exam: opts(
+  competitive_exam: withExamPrep(
     "Full preparation",
     "Revision",
     "Practice",
     "Mock tests",
     "Doubt solving",
   ),
-  skill_learning: opts(
+  skill_learning: withExamPrep(
     "Learn from scratch",
     "Build projects",
     "Improve existing skills",
     "Prepare for interviews",
     "Get certified",
   ),
-  working_professional: opts(
+  working_professional: withExamPrep(
     "Learn a new skill",
     "Improve existing skills",
     "Prepare for interviews",
@@ -106,7 +121,7 @@ const GOALS = {
     "Explore a topic",
   ),
 };
-const GENERIC_GOALS = opts(
+const GENERIC_GOALS = withExamPrep(
   "Understand concepts",
   "Prepare for exams",
   "Practice questions",
@@ -469,6 +484,10 @@ export interface Answers {
 }
 
 export const EMPTY_ANSWERS: Answers = { single: {}, custom: {}, focus: [] };
+
+/** True when the learner chose the Exam Prep goal (any branch). */
+export const isExamPrepGoal = (a: Answers): boolean =>
+  a.single.goal === EXAM_PREP_GOAL_ID;
 
 export const stepById = (id: StepId): StepDef =>
   STEPS.find((s) => s.id === id) ?? STEPS[0];

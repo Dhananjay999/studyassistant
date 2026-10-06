@@ -76,6 +76,13 @@ FEATURE_FLAGS: tuple[FeatureFlagDef, ...] = (
         "Voice input",
         "Microphone dictation button in the chat composer.",
     ),
+    FeatureFlagDef(
+        "exam_prep",
+        "Exam Prep",
+        "Exam Preparation: onboarding goal, study plan dashboard, exam coach "
+        "chat and exam quiz/flashcard entry points.",
+        default_enabled=False,
+    ),
 )
 
 DEFAULTS: dict[str, bool] = {f.key: f.default_enabled for f in FEATURE_FLAGS}

@@ -24,6 +24,10 @@ const ROUTES: [RegExp, string][] = [
   [/^\/analytics\/?$/, "analytics"],
   [/^\/revision\/?$/, "revision"],
   [/^\/files\/?$/, "files"],
+  [/^\/exam\/setup\/?$/, "exam_setup"],
+  [/^\/exam\/day\/[^/]+/, "exam_day"],
+  [/^\/exam\/topic\/[^/]+/, "exam_topic"],
+  [/^\/exam\/?$/, "exam"],
   [/^\/profile\/?$/, "profile"],
   [/^\/profile\/[^/]+/, "profile_section"],
 ];

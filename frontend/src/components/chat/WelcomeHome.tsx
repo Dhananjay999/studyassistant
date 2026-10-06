@@ -11,12 +11,14 @@ import { Flame } from "lucide-react";
 import { EmptyState } from "@/components/chat/EmptyState";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { MemoryHint } from "@/components/chat/MemoryHint";
+import { ExamPrepCta } from "@/components/exam/ExamPrepCta";
 import { RecommendationCard } from "@/components/revision/RecommendationCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLearningProfile, useRevisionHome } from "@/hooks/api";
 import { useFeature } from "@/hooks/useFeature";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { revisionPrompt } from "@/hooks/useRevisionActions";
-import { buildSuggestedPrompts } from "@/lib/suggestedPrompts";
+import { buildSuggestedPrompts, kindOf } from "@/lib/suggestedPrompts";
 import type { RevisionRecommendation } from "@/types";
 
 export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
@@ -28,12 +30,19 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
   const { data: home, isLoading, isError } = useRevisionHome(revisionEnabled);
   const { data: profile } = useLearningProfile();
 
-  // The rich home shows a fixed layout: one quiz + one flashcard
-  // recommendation (from the backend) and exactly two suggestion chips.
+  // Exactly three ways in, like the empty state: a flashcard slot, a quiz
+  // slot and a third slot that is Exam Prep when the flag is on, else a plain
+  // question. A backend recommendation (with its "why") fills the flashcard
+  // or quiz slot when there is one; otherwise a suggestion chip does.
+  const examPrepOn = useFeature("exam_prep", false);
+  // Phones get the three-slot layout; desktop keeps the full list.
+  const isMobile = useIsMobile();
   const prompts = useMemo(
-    () => buildSuggestedPrompts(profile, 2),
+    () => buildSuggestedPrompts(profile, 3),
     [profile],
   );
+  const chip = (kind: "cards" | "quiz" | "question") =>
+    prompts.find((p) => kindOf(p) === kind);
 
   if (!revisionEnabled) return <EmptyState onPick={onPick} />;
 
@@ -147,34 +156,64 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
         </motion.div>
       )}
 
-      {/* Aeva's recommendations, each with its "why" */}
-      {home.recommendations.length > 0 && (
-        <div
-          className="flex w-full flex-col gap-2"
-          data-analytics-private
-          data-analytics-section="chat_recommendations"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Recommended for you
-          </p>
-          {home.recommendations.map((r, i) => (
-            <RecommendationCard
-              key={`${r.action}-${r.topic}`}
-              action={r.action}
-              topic={r.topic}
-              reason={r.reason}
-              index={i}
-              onClick={() => openRecommendation(r)}
-            />
-          ))}
-        </div>
+      {/* Desktop: Aeva's recommendations, Exam Prep and two chips. */}
+      {!isMobile && (
+        <>
+          {home.recommendations.length > 0 && (
+            <div
+              className="flex w-full flex-col gap-2"
+              data-analytics-private
+              data-analytics-section="chat_recommendations"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Recommended for you
+              </p>
+              {home.recommendations.map((r, i) => (
+                <RecommendationCard
+                  key={`${r.action}-${r.topic}`}
+                  action={r.action}
+                  topic={r.topic}
+                  reason={r.reason}
+                  index={i}
+                  onClick={() => openRecommendation(r)}
+                />
+              ))}
+            </div>
+          )}
+          <ExamPrepCta source="welcome" />
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-center">
+            {prompts.slice(0, 2).map((p, i) => (
+              <motion.button
+                key={p.text}
+                type="button"
+                // Fixed name: the prompt text must not become the event name.
+                data-analytics-name="Suggested prompt"
+                onClick={() => {
+                  analytics.track(AnalyticsEvent.CHAT_SUGGESTED_PROMPT_CLICKED, {
+                    kind: "empty_state",
+                  });
+                  onPick(p.text);
+                }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}
+                className="glass flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
+              >
+                <p.icon className="h-4 w-4 shrink-0 text-brand-1" />
+                {p.text}
+              </motion.button>
+            ))}
+          </div>
+        </>
       )}
 
-      {/* Classic free-form suggestions */}
-      <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-center">
-        {prompts.map((p, i) => (
+      {/* Phones: three slots — flashcards · quiz · Exam Prep or a question. */}
+      {isMobile && (() => {
+        const recCards = home.recommendations.find((r) => r.action === "flashcards");
+        const recQuiz = home.recommendations.find((r) => r.action === "quiz");
+        const slots: { key: string; node: JSX.Element }[] = [];
+        const chipNode = (p: NonNullable<ReturnType<typeof chip>>, i: number) => (
           <motion.button
-            key={p.text}
             type="button"
             // Fixed name: the prompt text must not become the event name.
             data-analytics-name="Suggested prompt"
@@ -187,13 +226,45 @@ export function WelcomeHome({ onPick }: { onPick: (text: string) => void }) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}
-            className="glass flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
+            className="glass flex w-full items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
           >
             <p.icon className="h-4 w-4 shrink-0 text-brand-1" />
             {p.text}
           </motion.button>
-        ))}
-      </div>
+        );
+        const recNode = (r: RevisionRecommendation, i: number) => (
+          <RecommendationCard
+            action={r.action}
+            topic={r.topic}
+            reason={r.reason}
+            index={i}
+            onClick={() => openRecommendation(r)}
+          />
+        );
+        const cards = chip("cards");
+        const quiz = chip("quiz");
+        const question = chip("question");
+        if (recCards) slots.push({ key: "rec-cards", node: recNode(recCards, 0) });
+        else if (cards) slots.push({ key: "chip-cards", node: chipNode(cards, 0) });
+        if (recQuiz) slots.push({ key: "rec-quiz", node: recNode(recQuiz, 1) });
+        else if (quiz) slots.push({ key: "chip-quiz", node: chipNode(quiz, 1) });
+        if (!examPrepOn && question) {
+          slots.push({ key: "chip-question", node: chipNode(question, 2) });
+        }
+        return (
+          <div
+            className="flex w-full flex-col gap-2"
+            data-analytics-private
+            data-analytics-section="chat_recommendations"
+          >
+            {slots.map((slot) => (
+              <div key={slot.key}>{slot.node}</div>
+            ))}
+            {/* Exam Prep takes the third slot (renders nothing when off). */}
+            <ExamPrepCta source="welcome" />
+          </div>
+        );
+      })()}
 
       <MemoryHint />
     </div>

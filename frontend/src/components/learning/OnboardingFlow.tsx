@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FocusEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Plus, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Sparkles, Target } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,12 +18,14 @@ import {
   useSaveLearningProfile,
   useSkipPersonalization,
 } from "@/hooks/api";
+import { useFeature } from "@/hooks/useFeature";
 import { useSwipe } from "@/hooks/useSwipe";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { errorKind } from "@/lib/errorMessage";
 import {
   CUSTOM_MAX,
   EMPTY_ANSWERS,
+  EXAM_PREP_GOAL_ID,
   FOCUS_CUSTOM_MAX,
   OTHER_ID,
   OTHER_LABEL,
@@ -33,6 +36,7 @@ import {
   carryOverPreferences,
   copyFor,
   fromProfile,
+  isExamPrepGoal,
   isUnanswered,
   isVisible,
   optionsFor,
@@ -139,6 +143,9 @@ export function OnboardingFlow({
   const pending = useRef(new Set<StepId>());
 
   const { data: profile } = useLearningProfile();
+  // Exam Prep (default-off flag): offers the "Exam Preparation" goal and a
+  // "Set up my exam plan" hand-off on the celebration screen.
+  const examPrepEnabled = useFeature("exam_prep", false);
   const saveMutation = useSaveLearningProfile();
   const skipMutation = useSkipPersonalization();
   const busy = saveMutation.isPending || skipMutation.isPending;
@@ -465,6 +472,7 @@ export function OnboardingFlow({
                   <Question
                     step={step}
                     answers={answers}
+                    examPrepEnabled={examPrepEnabled}
                     onPick={pick}
                     onCustom={(s, text) =>
                       setAnswers(setCustom(answersRef.current, s.id, text))
@@ -522,7 +530,11 @@ export function OnboardingFlow({
         )}
 
         {screen === "done" && (
-          <Celebration summary={personalizationSummary(answers)} onStart={onDone} />
+          <Celebration
+            summary={personalizationSummary(answers)}
+            examPrep={examPrepEnabled && isExamPrepGoal(answers)}
+            onStart={onDone}
+          />
         )}
       </DialogContent>
     </Dialog>
@@ -538,6 +550,7 @@ const revealOnFocus = (e: FocusEvent<HTMLInputElement>) => {
 function Question({
   step,
   answers,
+  examPrepEnabled = false,
   onPick,
   onCustom,
   onToggleFocus,
@@ -545,6 +558,8 @@ function Question({
 }: {
   step: StepDef;
   answers: Answers;
+  /** Shows the Exam Prep goal option (hidden while the flag is off). */
+  examPrepEnabled?: boolean;
   onPick: (step: SingleStep, id: string) => void;
   onCustom: (step: SingleStep, text: string) => void;
   onToggleFocus: (label: string) => void;
@@ -567,6 +582,7 @@ function Question({
           <SingleOptions
             step={step}
             answers={answers}
+            examPrepEnabled={examPrepEnabled}
             onPick={onPick}
             onCustom={onCustom}
             onSubmit={onSubmit}
@@ -587,18 +603,24 @@ function Question({
 function SingleOptions({
   step,
   answers,
+  examPrepEnabled = false,
   onPick,
   onCustom,
   onSubmit,
 }: {
   step: SingleStep;
   answers: Answers;
+  examPrepEnabled?: boolean;
   onPick: (step: SingleStep, id: string) => void;
   onCustom: (step: SingleStep, text: string) => void;
   onSubmit: () => void;
 }) {
+  // The Exam Prep goal lives in every goal list (so saved labels resolve) but
+  // is offered only while the flag is on: flag-off users see today's lists.
   const options = [
-    ...optionsFor(step, answers),
+    ...optionsFor(step, answers).filter(
+      (o) => examPrepEnabled || o.id !== EXAM_PREP_GOAL_ID,
+    ),
     ...(step.other ? [{ id: OTHER_ID, label: OTHER_LABEL }] : []),
   ];
   const value = answers.single[step.id];
@@ -860,9 +882,12 @@ function Welcome({
 
 function Celebration({
   summary,
+  examPrep = false,
   onStart,
 }: {
   summary: string | null;
+  /** Exam Prep goal chosen with the flag on: offer the plan setup. */
+  examPrep?: boolean;
   onStart: () => void;
 }) {
   return (
@@ -882,11 +907,51 @@ function Celebration({
         {summary ?? "Aeva is now personalized for your learning style."} You can
         update this anytime in Settings.
       </DialogDescription>
+      {examPrep ? (
+        <ExamPrepCelebrationActions onDone={onStart} />
+      ) : (
+        <Button
+          onClick={onStart}
+          className="mt-8 h-12 w-full rounded-xl bg-brand-gradient text-base text-white shadow-glow"
+        >
+          Start Learning
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Hand-off from the first-run celebration into Exam Prep setup. Its own
+ * component because it needs the router: the first-run flow always renders
+ * inside it (ChatPage), while edit mode (Settings) may not — and edit mode
+ * never reaches the celebration screen.
+ */
+function ExamPrepCelebrationActions({ onDone }: { onDone: () => void }) {
+  const navigate = useNavigate();
+  const setUp = () => {
+    analytics.track(AnalyticsEvent.EXAM_PREP_CTA_CLICKED, {
+      source: "onboarding",
+      has_plan: false,
+    });
+    onDone();
+    navigate("/exam/setup");
+  };
+  return (
+    <div className="mt-8 w-full space-y-2">
       <Button
-        onClick={onStart}
-        className="mt-8 h-12 w-full rounded-xl bg-brand-gradient text-base text-white shadow-glow"
+        onClick={setUp}
+        data-analytics-name="Set up my exam plan"
+        className="h-12 w-full gap-2 rounded-xl bg-brand-gradient text-base text-white shadow-glow"
       >
-        Start Learning
+        <Target className="h-4 w-4" /> Set up my exam plan
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={onDone}
+        className="h-11 w-full rounded-xl text-muted-foreground"
+      >
+        Maybe later
       </Button>
     </div>
   );

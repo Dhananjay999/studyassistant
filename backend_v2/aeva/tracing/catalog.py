@@ -49,6 +49,10 @@ _ORCHESTRATOR = "aeva/orchestration/assistant_orchestrator.py"
 _RUNNER = "aeva/orchestration/agent_runner.py"
 _RETRIEVAL = "aeva/media/retrieval.py"
 _TOOLS = "aeva/mcp/tools"
+_EXAM_CONTROLLER = "aeva/exam_prep/exam_prep_controller.py"
+_EXAM_SERVICE = "aeva/exam_prep/exam_prep_service.py"
+_EXAM_REPOSITORY = "aeva/exam_prep/exam_prep_repository.py"
+_EXAM_ORCHESTRATOR = "aeva/exam_prep/exam_prep_orchestrator.py"
 
 # Stage a template belongs to when nothing registered it (a new template
 # whose author forgot :data:`PROMPT_USAGE`; the tests fail on it).
@@ -375,6 +379,60 @@ PROMPT_USAGE: dict[str, PromptUsage] = {
             "submission is scored without an LLM call."
         ),
         live=False,
+    ),
+    "exam_syllabus_research": PromptUsage(
+        stage="exam_prep",
+        description=(
+            "Web-grounded research run before the roadmap: the official "
+            "syllabus units, weightage and paper pattern of this exact "
+            "exam, class and board. Best effort — the roadmap is built "
+            "without it when the search fails. Not part of a chat turn."
+        ),
+        site=(_EXAM_SERVICE, "research_syllabus"),
+        llm_method="generate",
+        config_key="LLM_WEB_SEARCH_MODEL",
+        upstream=("POST /exam-prep/plan",),
+        downstream=("Exam plan roadmap",),
+    ),
+    "exam_plan": PromptUsage(
+        stage="exam_prep",
+        description=(
+            "The Exam Prep roadmap: one structured call at setup turns the "
+            "exam, date, subjects, daily time and optional syllabus into a "
+            "day-by-day list of topics. Not part of a chat turn."
+        ),
+        site=(_EXAM_SERVICE, "create_plan"),
+        llm_method="generate_structured",
+        config_key="LLM_EXAM_PLAN_MODEL",
+        upstream=("POST /exam-prep/plan",),
+        downstream=("Save the roadmap",),
+    ),
+    "exam_topic_lesson": PromptUsage(
+        stage="exam_prep",
+        description=(
+            "The lesson Aeva teaches when the student opens a topic: a "
+            "complete exam-oriented explanation with worked examples, "
+            "streamed as markdown and cached on the topic row. Not part of "
+            "a chat turn."
+        ),
+        site=(_EXAM_SERVICE, "stream_topic_lesson"),
+        llm_method="generate_stream",
+        config_key="LLM_EXAM_PLAN_MODEL",
+        upstream=("POST /exam-prep/topics/<id>/lesson/stream",),
+        downstream=("Save the lesson",),
+    ),
+    "exam_day_detail": PromptUsage(
+        stage="exam_prep",
+        description=(
+            "One day's detailed study plan (time blocks, objectives, key "
+            "points, practice), generated the first time the student opens "
+            "that day and cached on the day row."
+        ),
+        site=(_EXAM_SERVICE, "get_day_detail"),
+        llm_method="generate_structured",
+        config_key="LLM_EXAM_PLAN_MODEL",
+        upstream=("GET /exam-prep/plan/<id>/days/<id>",),
+        downstream=("Save the day detail",),
     ),
 }
 
@@ -1351,6 +1409,179 @@ FLOW: tuple[FlowStage, ...] = (
                     "aeva/quiz/quiz_service.py",
                     "QuizService._generate_analysis",
                 ),
+            ),
+        ),
+    ),
+    FlowStage(
+        id="exam_prep",
+        title="Exam Prep",
+        description=(
+            "The separate Exam Prep flow: plan generation at setup, lazy "
+            "day detail, and the exam-coach chat turn that reuses the agent "
+            "runner and tools."
+        ),
+        nodes=(
+            FlowNode(
+                id="exam_http_plan",
+                label="POST /exam-prep/plan",
+                description=(
+                    "The setup form submits the exam, date, subjects, "
+                    "daily time and optional syllabus / material; the "
+                    "service builds the roadmap and returns the dashboard."
+                ),
+                kind="entry",
+                condition=(
+                    "The exam_prep feature flag is on and the student "
+                    "submits the Exam Prep setup form."
+                ),
+                code=(_EXAM_CONTROLLER, "ExamPlanEndpoint.post"),
+            ),
+            FlowNode(
+                id="exam_research_llm",
+                label="Exam syllabus research",
+                description=(
+                    "A search-grounded call looks up the official syllabus "
+                    "units, weightage and paper pattern for the exact exam, "
+                    "class and board; the brief is stored on the plan and "
+                    "handed to the roadmap prompt."
+                ),
+                kind="llm",
+                prompt="exam_syllabus_research",
+                condition=(
+                    "Plan creation with research on (the default); skipped "
+                    "when the student turns it off or the search fails."
+                ),
+                code=(_EXAM_SERVICE, "ExamPrepService.research_syllabus"),
+            ),
+            FlowNode(
+                id="exam_plan_llm",
+                label="Exam plan roadmap",
+                description=(
+                    "One structured call drafts every day of the plan "
+                    "(title, focus, 2-6 topics across 2-3 subjects); the "
+                    "result is normalised before anything is stored."
+                ),
+                kind="llm",
+                prompt="exam_plan",
+                condition="Every plan creation (no cache; one call per plan).",
+                code=(_EXAM_SERVICE, "ExamPrepService.create_plan"),
+            ),
+            FlowNode(
+                id="exam_persist_plan",
+                label="Save the roadmap",
+                description=(
+                    "The plan row, its days (one insert) and its topics "
+                    "(one insert) are written, then the dedicated coach "
+                    "session is created and linked."
+                ),
+                kind="persist",
+                condition="The roadmap call returned a usable plan.",
+                code=(_EXAM_REPOSITORY, "ExamPrepRepository.insert_roadmap"),
+            ),
+            FlowNode(
+                id="exam_http_day",
+                label="GET /exam-prep/plan/<id>/days/<id>",
+                description=(
+                    "Opening a day returns its topics and the detailed "
+                    "plan, generating the detail on first open."
+                ),
+                kind="entry",
+                condition="The student opens a day of their active plan.",
+                code=(_EXAM_CONTROLLER, "ExamDayEndpoint.get"),
+            ),
+            FlowNode(
+                id="exam_day_llm",
+                label="Exam day detail",
+                description=(
+                    "One structured call writes the day's time blocks and, "
+                    "per topic, objectives, key points, practice and "
+                    "common mistakes; unknown topic ids are dropped."
+                ),
+                kind="llm",
+                prompt="exam_day_detail",
+                condition=(
+                    "The day row has no detail yet (a second concurrent "
+                    "open may regenerate once)."
+                ),
+                code=(_EXAM_SERVICE, "ExamPrepService.get_day_detail"),
+            ),
+            FlowNode(
+                id="exam_persist_day",
+                label="Save the day detail",
+                description=(
+                    "The validated detail and its timestamp are cached on "
+                    "the day row, so later opens make no LLM call."
+                ),
+                kind="persist",
+                condition="The day-detail call returned a usable plan.",
+                code=(_EXAM_REPOSITORY, "ExamPrepRepository.save_day_detail"),
+            ),
+            FlowNode(
+                id="exam_http_lesson",
+                label="POST /exam-prep/topics/<id>/lesson/stream",
+                description=(
+                    "The topic page asks for the lesson; a cached lesson is "
+                    "replayed in one frame, otherwise it is generated and "
+                    "streamed."
+                ),
+                kind="entry",
+                condition="A topic page opens (or the student regenerates).",
+                code=(_EXAM_CONTROLLER, "ExamTopicLessonStreamEndpoint.post"),
+            ),
+            FlowNode(
+                id="exam_lesson_llm",
+                label="Exam topic lesson",
+                description=(
+                    "One streamed call writes the lesson: why it matters, "
+                    "core ideas, worked examples, things to remember, common "
+                    "mistakes and a self-check — pitched at the exam and "
+                    "class, informed by the researched syllabus."
+                ),
+                kind="llm",
+                prompt="exam_topic_lesson",
+                condition="No cached lesson for the topic, or regenerate.",
+                code=(_EXAM_SERVICE, "ExamPrepService.stream_topic_lesson"),
+            ),
+            FlowNode(
+                id="exam_persist_lesson",
+                label="Save the lesson",
+                description=(
+                    "The streamed markdown is cached on the topic row and a "
+                    "fresh topic becomes in-progress."
+                ),
+                kind="persist",
+                condition="The lesson stream finished with text.",
+                code=(_EXAM_REPOSITORY, "ExamPrepRepository.save_topic_lesson"),
+            ),
+            FlowNode(
+                id="exam_http_chat",
+                label="POST /exam-prep/plan/<id>/chat/stream",
+                description=(
+                    "The Ask Aeva panel sends a message with optional topic "
+                    "/ day context into the plan's dedicated session; the "
+                    "turn streams the same SSE frames as /assistant/stream."
+                ),
+                kind="entry",
+                condition=(
+                    "The student sends a message from the Exam Prep "
+                    "dashboard, a day page or a topic sheet."
+                ),
+                code=(_EXAM_CONTROLLER, "ExamChatStreamEndpoint.post"),
+            ),
+            FlowNode(
+                id="exam_route",
+                label="Exam coach routing",
+                description=(
+                    "Deterministic routing, no planner LLM: popover options "
+                    "force a generator; quiz / flashcard words pick the "
+                    "generator on the current topic; material words with "
+                    "uploaded files pick media_llm; fresh-info cues pick "
+                    "web_search (when enabled); everything else is general. "
+                    "The exam block rides the personalization text."
+                ),
+                kind="rule",
+                condition="Every exam-coach turn, after the context loads.",
+                code=(_EXAM_ORCHESTRATOR, "ExamPrepOrchestrator._exam_plan"),
             ),
         ),
     ),

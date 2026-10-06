@@ -103,6 +103,7 @@ export function ChatMessages({
   onRetry,
   onRetryAgent,
   highlightId,
+  followOnLoad = true,
 }: {
   messages: Message[];
   mediaAvailable: boolean;
@@ -130,6 +131,11 @@ export function ChatMessages({
   onRetryAgent: (messageId: string, agent: AgentInfo) => void;
   /** Message to scroll to and flash-highlight (e.g. opened from a bookmark). */
   highlightId?: string | null;
+  /** Scroll to the newest message when the conversation first loads or
+   *  switches (default). Pass false where the thread sits below other
+   *  content the user came for (the exam topic page): loading history then
+   *  leaves the viewport alone, while sends and streaming still follow. */
+  followOnLoad?: boolean;
 }) {
   // Developer Mode: the single switch for every debug-only element here (tool
   // badge, diagnostics panel). Normal users get a production-clean bubble.
@@ -181,7 +187,8 @@ export function ChatMessages({
   // so it doesn't fight the jump-to-message scroll (opened from a bookmark).
   useEffect(() => {
     const convoKey = messages[0]?.id ?? null;
-    if (convoKey !== convoKeyRef.current) {
+    const convoChanged = convoKey !== convoKeyRef.current;
+    if (convoChanged) {
       convoKeyRef.current = convoKey;
       nearBottomRef.current = true;
     }
@@ -198,8 +205,11 @@ export function ChatMessages({
 
     if (highlightId && appliedHighlight.current !== highlightId) return;
     if (!userSent && !nearBottomRef.current) return;
+    // A thread that loads below other content must not pull the page down;
+    // its first send is scrolled by the page itself.
+    if (!followOnLoad && convoChanged) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, highlightId]);
+  }, [messages, highlightId, followOnLoad]);
 
   // Scroll to and briefly flash the highlighted message once it's rendered.
   // The scroll is deferred to the next frame so it runs *after* the mount's

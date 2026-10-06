@@ -61,6 +61,8 @@ export type {
   ClickProps,
   PopupOpenedProps,
   PopupClosedProps,
+  ExamPrepCtaSource,
+  ExamPrepActionSource,
 } from "./events";
 export type { AnalyticsUser, TrackPayload } from "./types";
 export { publicPath, routeName } from "./routeName";
