@@ -98,18 +98,33 @@ class LlamaParseService:
             self._client_key = key
         return self._client
 
+    @property
+    def tier(self) -> str:
+        """The default parse tier (LLAMAPARSE_MODE)."""
+        return self._tier
+
+    @property
+    def ocr_tier(self) -> str:
+        """Tier for the OCR fallback (LLAMAPARSE_OCR_MODE); '' disables it."""
+        return str(current_app.config.get("LLAMAPARSE_OCR_MODE", "") or "")
+
     def submit(
         self,
         file_bytes: bytes,
         file_name: str,
         mime_type: str,
+        tier: str | None = None,
     ) -> str:
-        """Upload a file, create a parse job, and return its job id."""
+        """Upload a file, create a parse job, and return its job id.
+
+        ``tier`` overrides the configured one (the OCR fallback uses it).
+        """
+        tier = tier or self._tier
         logger.info(
             "LlamaParse submit | file=%s | %d bytes | tier=%s",
             file_name,
             len(file_bytes),
-            self._tier,
+            tier,
         )
         file_obj = self.client.files.create(
             file=(file_name, file_bytes, mime_type),
@@ -117,7 +132,7 @@ class LlamaParseService:
         )
         job = self.client.parsing.create(
             file_id=file_obj.id,
-            tier=self._tier,
+            tier=tier,
             version=_TIER_VERSION,
         )
         if not job.id:

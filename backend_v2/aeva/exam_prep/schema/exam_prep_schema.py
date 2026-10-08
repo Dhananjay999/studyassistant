@@ -268,6 +268,9 @@ class ExamChatRequestData:
     day_id: str | None = None
     quiz_options: QuizOptions | None = None
     flashcard_options: FlashcardOptions | None = None
+    # Study material the student has selected as context on the topic page
+    # (the plan's materials by default). None/empty = no explicit selection.
+    media_ids: list[str] | None = None
 
 
 class ExamChatRequestSchema(Schema):
@@ -278,6 +281,12 @@ class ExamChatRequestSchema(Schema):
     day_id = _uuid_field(load_default=None, allow_none=True)
     quiz_options = fields.Nested(QuizOptionsSchema, load_default=None)
     flashcard_options = fields.Nested(FlashcardOptionsSchema, load_default=None)
+    media_ids = fields.List(
+        _uuid_field(),
+        load_default=None,
+        allow_none=True,
+        validate=validate.Length(max=20),
+    )
 
     @post_load
     def make_data(self, data: dict, **_kwargs: object) -> ExamChatRequestData:
@@ -297,4 +306,6 @@ class ExamChatRequestSchema(Schema):
         fc = data.get("flashcard_options")
         if isinstance(fc, dict):
             data["flashcard_options"] = FlashcardOptions(count=fc.get("count"))
+        if data.get("media_ids") is not None:
+            data["media_ids"] = list(dict.fromkeys(data["media_ids"])) or None
         return ExamChatRequestData(**data)

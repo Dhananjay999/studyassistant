@@ -41,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ExamContextPanel } from "@/components/exam/ExamContextPanel";
 import { NextUpSheet } from "@/components/exam/NextUpSheet";
 import { StudyBar } from "@/components/exam/StudyBar";
 import { formatMinutes, subjectTone } from "@/components/exam/examFormat";
@@ -48,6 +49,7 @@ import {
   ExamArtifactsProvider,
   useExamArtifacts,
 } from "@/components/exam/useExamArtifacts";
+import { useExamContextMedia } from "@/components/exam/useExamContextMedia";
 import { useExamConversation } from "@/components/exam/useExamConversation";
 import { useStudyTimer } from "@/components/exam/useStudyTimer";
 import { useTopicActions } from "@/components/exam/useTopicActions";
@@ -216,10 +218,15 @@ function TopicView({
   const confirm = useConfirm();
   const artifacts = useExamArtifacts();
   const actions = useTopicActions(topic, plan.exam_name, "topic");
+  // Uploads the coach answers from: the plan's material by default, any
+  // other upload on demand. Read at send time so toggles apply at once.
+  const context = useExamContextMedia(plan);
+  const hasContext = context.selected.size > 0;
   const convo = useExamConversation({
     planId: plan.id,
     topicId: topic.id,
     dayId: topic.day_id,
+    mediaIds: context.selectedRef,
   });
   const tone = subjectTone(topic.subject);
   const done = actions.status === "completed";
@@ -575,7 +582,12 @@ function TopicView({
         </h3>
         <p className="mb-3 px-1 text-xs text-muted-foreground">
           Doubts you ask here stay with this topic.
+          {hasContext && " Answers come from your selected material."}
         </p>
+
+        <div className="mb-3">
+          <ExamContextPanel context={context} />
+        </div>
 
         {convo.historyLoading && convo.messages.length === 0 ? (
           <div className="space-y-3">
@@ -606,7 +618,7 @@ function TopicView({
           <div className="-mx-4" data-analytics-private>
             <ChatMessages
               messages={convo.messages}
-              mediaAvailable={false}
+              mediaAvailable={hasContext}
               quizBusy={convo.streaming}
               thinkingHint={convo.thinkingHint}
               followOnLoad={false}

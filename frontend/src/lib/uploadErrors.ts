@@ -16,15 +16,10 @@ export const ACCEPTED_UPLOAD_TYPES: readonly string[] = [
 /** `accept` value for the file inputs, so pickers grey out other formats. */
 export const UPLOAD_ACCEPT = ACCEPTED_UPLOAD_TYPES.join(",");
 
-// The hosting platform refuses a request body above about 4.5 MB before the
-// backend runs, so a larger file can never arrive whatever the backend allows.
-// A little room is left for the multipart envelope around the file.
-const PLATFORM_BODY_LIMIT_MB = 4.4;
-/** The backend's MAX_UPLOAD_MB, capped at what the platform lets through. */
-export const MAX_UPLOAD_MB = Math.min(
-  Number(import.meta.env.VITE_MAX_UPLOAD_MB) || 10,
-  PLATFORM_BODY_LIMIT_MB,
-);
+// Files go straight from the browser to storage (see `uploadFileWithProgress`),
+// so the backend's request-body cap no longer applies: the limit is the
+// backend's MAX_UPLOAD_MB, mirrored here as VITE_MAX_UPLOAD_MB.
+export const MAX_UPLOAD_MB = Number(import.meta.env.VITE_MAX_UPLOAD_MB) || 10;
 const MAX_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const PDF_HEADER = "%PDF-";
 const PDF_HEADER_WINDOW = 1024;
@@ -104,7 +99,7 @@ export function reasonFromResponse(
   status: number,
   serverMessage = "",
 ): UploadFailureReason {
-  // A body over the hosting platform's limit is refused before our code runs.
+  // Storage (or a proxy in front of it) refused the body outright.
   if (status === 413) return "too_large";
   if (status === 415) return "unsupported_type";
   if (status === 401) return "unauthorized";

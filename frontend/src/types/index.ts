@@ -1335,6 +1335,8 @@ export interface ExamChatRequest {
   day_id?: string | null;
   quiz_options?: QuizOptions;
   flashcard_options?: { count?: number };
+  /** Uploads selected as context on the topic page (RAG over these). */
+  media_ids?: string[];
 }
 
 /** Body of `POST /exam-prep/topics/:id/lesson/stream`. */

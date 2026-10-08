@@ -13,6 +13,10 @@ from aeva.media.media_repository import MediaRepository
 from aeva.media.schema.media_schema import (
     AttachMediaData,
     AttachMediaSchema,
+    CompleteUploadData,
+    CompleteUploadSchema,
+    UploadUrlData,
+    UploadUrlSchema,
 )
 
 blueprint = Blueprint(
@@ -46,6 +50,36 @@ class MediaUpload(MethodView):
         session_id = request.args.get("session_id")
         space_id = request.args.get("space_id")
         return MediaRepository.list_media(current_user, session_id, space_id)
+
+
+class MediaUploadUrl(MethodView):
+    """Direct upload, step 1: a signed URL the browser PUTs the file to."""
+
+    @staticmethod
+    @blueprint.arguments(UploadUrlSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def post(
+        current_user: UserData,
+        request_data: UploadUrlData,
+    ) -> dict[str, Any]:
+        """Validate the file's type and size, then mint the upload URL."""
+        return MediaRepository.create_upload_url(current_user, request_data)
+
+
+class MediaComplete(MethodView):
+    """Direct upload, step 2: register the object now in storage."""
+
+    @staticmethod
+    @blueprint.arguments(CompleteUploadSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def post(
+        current_user: UserData,
+        request_data: CompleteUploadData,
+    ) -> dict[str, Any]:
+        """Check the stored object and create its media record."""
+        return MediaRepository.complete_upload(current_user, request_data)
 
 
 class MediaAttach(MethodView):
@@ -122,6 +156,12 @@ class MediaProcess(MethodView):
 
 blueprint.add_url_rule(
     "/", view_func=MediaUpload, endpoint="media_upload"
+)
+blueprint.add_url_rule(
+    "/upload-url", view_func=MediaUploadUrl, endpoint="media_upload_url"
+)
+blueprint.add_url_rule(
+    "/complete", view_func=MediaComplete, endpoint="media_complete"
 )
 blueprint.add_url_rule(
     "/attach", view_func=MediaAttach, endpoint="media_attach"

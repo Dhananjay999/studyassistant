@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import uuid
 from collections.abc import Generator
 from typing import Any
@@ -16,7 +17,11 @@ from aeva.media.compression import (
     ALLOWED_PDF_TYPE,
     compress_media,
 )
-from aeva.media.schema.media_schema import AttachMediaData
+from aeva.media.schema.media_schema import (
+    AttachMediaData,
+    CompleteUploadData,
+    UploadUrlData,
+)
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
@@ -25,6 +30,77 @@ logger = logging.getLogger(__name__)
 _PARSED_PATH_KEYS = ("parsed_json_path", "parsed_md_path", "parsed_text_path")
 
 ALLOWED_TYPES = ALLOWED_IMAGE_TYPES | {ALLOWED_PDF_TYPE}
+
+# Extension used in the storage path when the file name has none we trust.
+_EXT_FOR_MIME = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    ALLOWED_PDF_TYPE: "pdf",
+}
+_EXT_RE = re.compile(r"^[a-z0-9]{1,8}$")
+# Shape of every path this server mints: <user id>/<32 hex>.<ext>.
+_DIRECT_PATH_RE = re.compile(r"^[0-9a-f-]{36}/[0-9a-f]{32}\.[a-z0-9]{1,8}$")
+
+
+def _max_upload_bytes() -> int:
+    return int(current_app.config["MAX_UPLOAD_MB"]) * 1024 * 1024
+
+
+def _check_upload(mime_type: str, size_bytes: int) -> None:
+    """Refuse a file the server would not store, before any bytes move."""
+    if mime_type not in ALLOWED_TYPES:
+        raise CustomError(
+            ERROR_CODES["VALIDATION_ERROR"],
+            details=f"Unsupported file type: {mime_type}",
+        )
+    if size_bytes <= 0:
+        raise CustomError(
+            ERROR_CODES["VALIDATION_ERROR"], details="File is empty"
+        )
+    if size_bytes > _max_upload_bytes():
+        limit = current_app.config["MAX_UPLOAD_MB"]
+        raise CustomError(
+            ERROR_CODES["VALIDATION_ERROR"],
+            details=f"File exceeds max size of {limit}MB",
+        )
+
+
+def _storage_path(user_id: str, file_name: str, mime_type: str) -> str:
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    if not _EXT_RE.match(ext):
+        ext = _EXT_FOR_MIME.get(mime_type, "bin")
+    return f"{user_id}/{uuid.uuid4().hex}.{ext}"
+
+
+def _object_meta(info: dict[str, Any]) -> dict[str, Any]:
+    meta = info.get("metadata")
+    return meta if isinstance(meta, dict) else {}
+
+
+def _object_size(info: dict[str, Any]) -> int:
+    """Byte size as storage reports it (``size`` on the object-info call)."""
+    meta = _object_meta(info)
+    for value in (info.get("size"), meta.get("size")):
+        try:
+            if value is not None:
+                return int(value)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _object_mime(info: dict[str, Any]) -> str:
+    """Content type as storage reports it (``content_type`` on object info)."""
+    meta = _object_meta(info)
+    value = (
+        info.get("content_type")
+        or info.get("contentType")
+        or meta.get("mimetype")
+        or ""
+    )
+    return str(value).split(";", 1)[0].strip().lower()
 
 
 class MediaRepository:
@@ -90,6 +166,78 @@ class MediaRepository:
             )
 
         return success_response("Media uploaded", uploaded)
+
+    @staticmethod
+    def create_upload_url(
+        current_user: UserData, data: UploadUrlData
+    ) -> dict[str, Any]:
+        """Step 1 of a direct upload: validate, then mint a signed PUT URL.
+
+        The browser sends the file to storage itself (``POST /media/complete``
+        registers it afterwards), so the size limit is ``MAX_UPLOAD_MB``
+        rather than what this server's host lets through in one request.
+        """
+        mime_type = data.mime_type.split(";", 1)[0].strip().lower()
+        _check_upload(mime_type, data.size_bytes)
+        storage_path = _storage_path(current_user.id, data.file_name, mime_type)
+        ticket = SupabaseService().create_signed_upload_url(storage_path)
+        ticket["max_bytes"] = _max_upload_bytes()
+        return success_response("Upload URL created", ticket)
+
+    @staticmethod
+    def complete_upload(
+        current_user: UserData, data: CompleteUploadData
+    ) -> dict[str, Any]:
+        """Step 2 of a direct upload: check the stored object, record it.
+
+        Only a path this server minted for this user is accepted, and the
+        object's real size and type (as storage reports them) are what get
+        checked and recorded, not what the client claims. An object over the
+        limit is removed again.
+
+        Images are not re-compressed here: the browser already scales them
+        to the same 2048px bound the multipart route used.
+        """
+        storage_path = data.storage_path.strip()
+        if not storage_path.startswith(f"{current_user.id}/") or not (
+            _DIRECT_PATH_RE.match(storage_path)
+        ):
+            raise CustomError(
+                ERROR_CODES["VALIDATION_ERROR"], details="Invalid storage path"
+            )
+
+        supabase = SupabaseService()
+        info = supabase.storage_object_info(storage_path)
+        if info is None:
+            raise CustomError(
+                ERROR_CODES["UPLOAD_ERROR"],
+                details="The file never reached storage. Please retry.",
+            )
+        size_bytes = _object_size(info) or int(data.size_bytes or 0)
+        mime_type = (
+            _object_mime(info) or data.mime_type.split(";", 1)[0].lower()
+        )
+        try:
+            _check_upload(mime_type, size_bytes)
+        except CustomError:
+            supabase.delete_storage_file(storage_path)
+            raise
+
+        resolved_space = supabase.resolve_space(
+            current_user.id, data.space_id, data.session_id
+        )
+        record = supabase.create_media_record(
+            user_id=current_user.id,
+            file_name=data.file_name,
+            mime_type=mime_type,
+            storage_path=storage_path,
+            size_bytes=size_bytes,
+            session_id=data.session_id,
+            space_id=resolved_space,
+        )
+        record["signed_url"] = supabase.get_signed_url(storage_path)
+        logger.info("Registered direct upload: %s", data.file_name)
+        return success_response("Media uploaded", record)
 
     @staticmethod
     def list_media(

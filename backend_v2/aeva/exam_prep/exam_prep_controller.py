@@ -253,6 +253,7 @@ class ExamChatStreamEndpoint(MethodView):
             message=request_data.message,
             quiz_options=request_data.quiz_options,
             flashcard_options=request_data.flashcard_options,
+            media_ids=request_data.media_ids or None,
             plan=parts["plan"],
             day=parts["day"],
             topic=parts["topic"],

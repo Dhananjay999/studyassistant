@@ -179,6 +179,7 @@ export enum AnalyticsEvent {
   EXAM_PREP_PLAN_ARCHIVED = "EXAM_PREP_PLAN_ARCHIVED",
   EXAM_PREP_NEXT_UP_CLICKED = "EXAM_PREP_NEXT_UP_CLICKED",
   EXAM_PREP_TIMER_TOGGLED = "EXAM_PREP_TIMER_TOGGLED",
+  EXAM_PREP_CONTEXT_MEDIA_TOGGLED = "EXAM_PREP_CONTEXT_MEDIA_TOGGLED",
 
   // ---- Sharing (public) --------------------------------------------------
   SHARE_VIEWED = "SHARE_VIEWED",
@@ -1058,6 +1059,14 @@ export interface EventPropsMap {
     has_topic: boolean;
     has_day: boolean;
     intent: "text" | "quiz" | "flashcards" | "followup" | "learn";
+    /** Uploads sent as context for this turn (0 = none selected). */
+    media_count?: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_CONTEXT_MEDIA_TOGGLED]: {
+    plan_id: string;
+    selected: boolean;
+    selected_count: number;
+    source: "plan" | "other";
   };
   [AnalyticsEvent.EXAM_PREP_RESPONSE_COMPLETED]: {
     plan_id: string;

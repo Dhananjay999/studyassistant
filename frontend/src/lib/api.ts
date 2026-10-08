@@ -88,6 +88,8 @@ export const ENDPOINTS = {
   MEDIA_STATUS: (id: string) => `/media/${id}/status`,
   MEDIA_PROCESS: (id: string) => `/media/${id}/process`,
   MEDIA_ATTACH: "/media/attach",
+  MEDIA_UPLOAD_URL: "/media/upload-url",
+  MEDIA_COMPLETE: "/media/complete",
   ASSISTANT_STREAM: "/assistant/stream",
   QUIZZES: "/quiz/",
   QUIZ_EXAM_PATTERNS: "/quiz/exam-patterns",
@@ -429,75 +431,110 @@ export async function getMessages(id: string): Promise<Message[]> {
 
 /* ---------------------------------- media --------------------------------- */
 
-export async function uploadMedia(
+/* Uploads go straight from the browser to Supabase Storage. The backend only
+ * mints a signed URL for the exact path (step 1) and records the stored
+ * object once it has checked its real size and type (step 3), so the limit is
+ * the backend's MAX_UPLOAD_MB, not the request-body cap of its serverless
+ * host. Both backend calls keep their HTTP status so the upload card can name
+ * the cause (see `reasonFromResponse`). */
+
+interface UploadTicket {
+  upload_url: string;
+  token: string;
+  storage_path: string;
+  max_bytes: number;
+}
+
+async function postForUpload<T>(path: string, body: object): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new UploadError("network");
+  }
+  if (!res.ok) {
+    if (res.status === 401) onUnauthorized();
+    const err = (await res.json().catch(() => ({}))) as { msg?: string };
+    throw new UploadError(reasonFromResponse(res.status, err.msg), res.status);
+  }
+  return ((await res.json()) as { data: T }).data;
+}
+
+/** PUT the file to its signed storage URL, reporting upload progress. */
+function putToStorage(
+  ticket: UploadTicket,
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", ticket.upload_url);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader("x-upsert", "false");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      let body: { message?: string; error?: string } = {};
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        /* keep empty */
+      }
+      const text = body.message || body.error || "";
+      // Storage names its own limit differently from the backend.
+      const reason = /maximum allowed size|too large|payload/i.test(text)
+        ? "too_large"
+        : reasonFromResponse(xhr.status, text);
+      reject(new UploadError(reason, xhr.status));
+    };
+    xhr.onerror = () => reject(new UploadError("network"));
+    xhr.onabort = () => reject(new UploadError("network"));
+    xhr.send(file);
+  });
+}
+
+/** Upload a single file with progress events. */
+export async function uploadFileWithProgress(
+  file: File,
+  sessionId: string | undefined,
+  onProgress: (percent: number) => void,
+): Promise<MediaItem> {
+  const ticket = await postForUpload<UploadTicket>(ENDPOINTS.MEDIA_UPLOAD_URL, {
+    file_name: file.name,
+    mime_type: file.type,
+    size_bytes: file.size,
+    session_id: sessionId ?? null,
+  });
+  await putToStorage(ticket, file, onProgress);
+  return postForUpload<MediaItem>(ENDPOINTS.MEDIA_COMPLETE, {
+    storage_path: ticket.storage_path,
+    file_name: file.name,
+    mime_type: file.type,
+    size_bytes: file.size,
+    session_id: sessionId ?? null,
+  });
+}
+
+/** Upload several files (no progress); each goes straight to storage. */
+export function uploadMedia(
   files: File[],
   sessionId?: string,
 ): Promise<MediaItem[]> {
-  const form = new FormData();
-  files.forEach((f) => form.append("files", f));
-  if (sessionId) form.append("session_id", sessionId);
-
-  const res = await fetch(`${API_BASE_URL}${ENDPOINTS.MEDIA}`, {
-    method: "POST",
-    headers: authHeaders(false),
-    body: form,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.msg || "Upload failed");
-  }
-  return (await res.json()).data as MediaItem[];
+  return Promise.all(
+    files.map((file) => uploadFileWithProgress(file, sessionId, () => {})),
+  );
 }
 
 export const listMedia = (sessionId?: string) =>
   unwrap<MediaItem[]>(
     `${ENDPOINTS.MEDIA}${sessionId ? `?session_id=${sessionId}` : ""}`,
   );
-
-/** Upload a single file with progress events (XHR; fetch lacks upload progress). */
-export function uploadFileWithProgress(
-  file: File,
-  sessionId: string | undefined,
-  onProgress: (percent: number) => void,
-): Promise<MediaItem> {
-  return new Promise((resolve, reject) => {
-    const form = new FormData();
-    form.append("files", file);
-    if (sessionId) form.append("session_id", sessionId);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_BASE_URL}${ENDPOINTS.MEDIA}`);
-    const token = getAuthToken();
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const items = JSON.parse(xhr.responseText).data as MediaItem[];
-          resolve(items[0]);
-        } catch {
-          reject(new UploadError("unknown", xhr.status));
-        }
-      } else {
-        // The platform can answer with a non-JSON body (e.g. a 413 page).
-        let body: { msg?: string } = {};
-        try {
-          body = JSON.parse(xhr.responseText);
-        } catch {
-          /* keep empty */
-        }
-        reject(
-          new UploadError(reasonFromResponse(xhr.status, body.msg), xhr.status),
-        );
-      }
-    };
-    xhr.onerror = () => reject(new UploadError("network"));
-    xhr.send(form);
-  });
-}
 
 export const deleteMedia = (id: string) =>
   unwrap<{ id: string }>(ENDPOINTS.MEDIA_ITEM(id), { method: "DELETE" });

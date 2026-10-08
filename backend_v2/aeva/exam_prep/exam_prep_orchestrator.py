@@ -22,6 +22,7 @@ from aeva.feature_flag import feature_flag_service
 from aeva.llm import prompts
 from aeva.orchestration.assistant_orchestrator import (
     AssistantOrchestrator,
+    _is_small_talk,
     _needs_fresh_info,
 )
 from aeva.orchestration.models import AssistantContext
@@ -191,6 +192,38 @@ class ExamPrepOrchestrator(AssistantOrchestrator):
             return self._single_step("quiz_generator", params)
         return None
 
+    def _material_plan(
+        self, ctx: ExamPrepContext, message: str
+    ) -> dict[str, Any] | None:
+        """Return a retrieval plan over the student's material, or None.
+
+        Material selected on the topic page is the student's instruction to
+        answer from it: any study question runs ``media_llm`` over those ids
+        (relevant chunks only, never the whole document); small talk and
+        fresh-information questions keep their usual routes. Without a
+        selection, the plan's own material is used only when the message
+        asks for it ("my notes", "the pdf", ...).
+        """
+        selected = [str(m) for m in ctx.media_ids or [] if m]
+        if selected:
+            if _is_small_talk(message) or (
+                _needs_fresh_info(message)
+                and feature_flag_service.is_enabled("web_search")
+            ):
+                return None
+            return self._single_step(
+                "media_llm", {"query": message, "media_ids": selected}
+            )
+        plan = ctx.plan or {}
+        material = [str(m) for m in plan.get("material_media_ids") or [] if m]
+        text = message.lower()
+        if material and any(word in text for word in _MATERIAL_WORDS):
+            ctx.media_ids = material
+            return self._single_step(
+                "media_llm", {"query": message, "media_ids": material}
+            )
+        return None
+
     def _exam_plan(self, ctx: ExamPrepContext, message: str) -> dict[str, Any]:
         """Deterministic routing table for an exam-coach message."""
         plan = ctx.plan or {}
@@ -216,12 +249,9 @@ class ExamPrepOrchestrator(AssistantOrchestrator):
                     **exam_params,
                 },
             )
-        material = [str(m) for m in plan.get("material_media_ids") or [] if m]
-        if material and any(word in text for word in _MATERIAL_WORDS):
-            ctx.media_ids = material
-            return self._single_step(
-                "media_llm", {"query": message, "media_ids": material}
-            )
+        material = self._material_plan(ctx, message)
+        if material is not None:
+            return material
         if _needs_fresh_info(message) and feature_flag_service.is_enabled(
             "web_search"
         ):

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from marshmallow import Schema, fields, post_load
+from marshmallow import Schema, fields, post_load, validate
 
 
 @dataclass
@@ -23,6 +23,70 @@ class AttachMediaSchema(Schema):
     def make_data(self, data: dict, **_kwargs: object) -> AttachMediaData:
         """Convert to dataclass."""
         return AttachMediaData(**data)
+
+
+@dataclass
+class UploadUrlData:
+    """Ask for a signed URL to upload one file straight to storage."""
+
+    file_name: str
+    mime_type: str
+    size_bytes: int
+    session_id: str | None = None
+    space_id: str | None = None
+
+
+class UploadUrlSchema(Schema):
+    """POST /media/upload-url request."""
+
+    file_name = fields.Str(
+        required=True, validate=validate.Length(min=1, max=255)
+    )
+    mime_type = fields.Str(
+        required=True, validate=validate.Length(min=1, max=100)
+    )
+    size_bytes = fields.Int(required=True, validate=validate.Range(min=0))
+    session_id = fields.Str(load_default=None, allow_none=True)
+    space_id = fields.Str(load_default=None, allow_none=True)
+
+    @post_load
+    def make_data(self, data: dict, **_kwargs: object) -> UploadUrlData:
+        """Convert to dataclass."""
+        return UploadUrlData(**data)
+
+
+@dataclass
+class CompleteUploadData:
+    """Register a file the browser has put in storage."""
+
+    storage_path: str
+    file_name: str
+    mime_type: str
+    size_bytes: int = 0
+    session_id: str | None = None
+    space_id: str | None = None
+
+
+class CompleteUploadSchema(Schema):
+    """POST /media/complete request."""
+
+    storage_path = fields.Str(
+        required=True, validate=validate.Length(min=1, max=300)
+    )
+    file_name = fields.Str(
+        required=True, validate=validate.Length(min=1, max=255)
+    )
+    mime_type = fields.Str(
+        required=True, validate=validate.Length(min=1, max=100)
+    )
+    size_bytes = fields.Int(load_default=0, validate=validate.Range(min=0))
+    session_id = fields.Str(load_default=None, allow_none=True)
+    space_id = fields.Str(load_default=None, allow_none=True)
+
+    @post_load
+    def make_data(self, data: dict, **_kwargs: object) -> CompleteUploadData:
+        """Convert to dataclass."""
+        return CompleteUploadData(**data)
 
 
 class MediaSchema(Schema):

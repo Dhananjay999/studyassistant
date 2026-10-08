@@ -45,10 +45,14 @@ export function useExamConversation({
   planId,
   topicId,
   dayId,
+  mediaIds,
 }: {
   planId: string;
   topicId: string;
   dayId: string;
+  /** Uploads selected as context; read at send time so a toggle made
+   *  between turns applies to the next turn without re-creating `send`. */
+  mediaIds?: React.MutableRefObject<string[]>;
 }): ExamConversation {
   const history = useExamMessages(planId, topicId);
   const { start, streaming } = useAssistantStream(examChatStreamUrl(planId));
@@ -85,12 +89,14 @@ export function useExamConversation({
             : "text");
       const display = opts.displayText ?? trimmed;
 
+      const contextIds = mediaIds?.current ?? [];
       analytics.track(AnalyticsEvent.EXAM_PREP_MESSAGE_SENT, {
         plan_id: planId,
         message_length: trimmed.length,
         has_topic: true,
         has_day: true,
         intent,
+        media_count: contextIds.length,
       });
 
       const streamId = `stream-${uid()}`;
@@ -123,6 +129,7 @@ export function useExamConversation({
         message: trimmed,
         topic_id: topicId,
         day_id: dayId,
+        ...(contextIds.length ? { media_ids: contextIds } : {}),
         ...(opts.quizOptions ? { quiz_options: opts.quizOptions } : {}),
         ...(opts.flashcardOptions
           ? { flashcard_options: opts.flashcardOptions }
@@ -211,7 +218,7 @@ export function useExamConversation({
         },
       });
     },
-    [dayId, planId, start, topicId],
+    [dayId, mediaIds, planId, start, topicId],
   );
 
   const retry = useCallback(

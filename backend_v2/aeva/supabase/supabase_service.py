@@ -771,6 +771,36 @@ class SupabaseService:
         )
         return storage_path
 
+    def create_signed_upload_url(self, storage_path: str) -> dict[str, str]:
+        """Mint a one-shot signed URL the browser can PUT one file to.
+
+        The file then goes straight to storage, never through this server
+        (whose host caps request bodies well under MAX_UPLOAD_MB). The token
+        is bound to exactly ``storage_path`` and expires on its own.
+        """
+        bucket = current_app.config["SUPABASE_STORAGE_BUCKET"]
+        logger.info("Storage signed upload | %s", storage_path)
+        result = self.client.storage.from_(bucket).create_signed_upload_url(
+            storage_path
+        )
+        return {
+            "upload_url": result["signed_url"],
+            "token": result["token"],
+            "storage_path": storage_path,
+        }
+
+    def storage_object_info(self, storage_path: str) -> dict[str, Any] | None:
+        """Metadata of a stored object, or None when there is no such object."""
+        bucket = current_app.config["SUPABASE_STORAGE_BUCKET"]
+        try:
+            return self.client.storage.from_(bucket).info(storage_path)
+        except Exception as exc:  # only "missing" is expected; rest re-raised
+            status = str(getattr(exc, "status", "") or "")
+            text = str(exc).lower()
+            if status == "404" or "not found" in text or "not_found" in text:
+                return None
+            raise
+
     def download_file(self, storage_path: str) -> bytes:
         """Download file from Supabase Storage."""
         bucket = current_app.config["SUPABASE_STORAGE_BUCKET"]

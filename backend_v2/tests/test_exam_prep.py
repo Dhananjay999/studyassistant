@@ -466,6 +466,37 @@ class TestExamRouting:
         assert params == {"query": message, "media_ids": ["m1", "m2"]}
         assert ctx.media_ids == ["m1", "m2"]
 
+    def test_selected_material_routes_study_questions_to_media(self, orch):
+        # Context picked on the topic page: retrieval over those files, no
+        # keyword needed, and the plan's own material list is not what runs.
+        message = "explain projectile motion step by step"
+        ctx = _ctx(message, topic=TOPIC, media_ids=["sel-1", "sel-2"])
+        ctx.plan = {**PLAN, "material_media_ids": ["m1"]}
+        tool, params = _step(orch._exam_plan(ctx, message))
+        assert tool == "media_llm"
+        assert params == {"query": message, "media_ids": ["sel-1", "sel-2"]}
+
+    def test_selected_material_does_not_hijack_generators_or_small_talk(
+        self, orch
+    ):
+        ctx = _ctx("quiz me on this", topic=TOPIC, media_ids=["sel-1"])
+        tool, _ = _step(orch._exam_plan(ctx, ctx.message))
+        assert tool == "quiz_generator"
+
+        ctx = _ctx("make flashcards", topic=TOPIC, media_ids=["sel-1"])
+        tool, _ = _step(orch._exam_plan(ctx, ctx.message))
+        assert tool == "flashcard_generator"
+
+        ctx = _ctx("thanks!", media_ids=["sel-1"])
+        tool, _ = _step(orch._exam_plan(ctx, ctx.message))
+        assert tool == "general"
+
+    def test_selected_material_yields_to_fresh_info_web_search(self, orch):
+        message = "what is the latest JEE exam date notification"
+        ctx = _ctx(message, media_ids=["sel-1"])
+        tool, _ = _step(orch._exam_plan(ctx, message))
+        assert tool == "web_search"
+
     def test_fresh_info_goes_to_web_search_when_enabled(self, orch, monkeypatch):
         message = "what is the latest JEE exam date notification"
         tool, params = _step(orch._exam_plan(_ctx(message), message))
@@ -1380,3 +1411,26 @@ class TestStreamedExamTurn:
             list(orch.run_stream(ctx))
         assert err.value.code == "NOT_FOUND"
         assert supabase.added == []
+
+
+class TestExamChatRequestMediaIds:
+    def _load(self, body):
+        from aeva.exam_prep.schema.exam_prep_schema import ExamChatRequestSchema
+
+        return ExamChatRequestSchema().load(body)
+
+    def test_media_ids_are_optional_and_deduped(self):
+        assert self._load({"message": "hi"}).media_ids is None
+        mid = "11111111-1111-4111-8111-111111111111"
+        data = self._load({"message": "hi", "media_ids": [mid, mid]})
+        assert data.media_ids == [mid]
+        assert self._load({"message": "hi", "media_ids": []}).media_ids is None
+
+    def test_media_ids_must_be_uuids_and_bounded(self):
+        from marshmallow import ValidationError
+
+        with pytest.raises(ValidationError):
+            self._load({"message": "hi", "media_ids": ["not-an-id"]})
+        many = [f"11111111-1111-4111-8111-1111111111{i:02d}" for i in range(21)]
+        with pytest.raises(ValidationError):
+            self._load({"message": "hi", "media_ids": many})

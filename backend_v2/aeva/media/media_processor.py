@@ -38,6 +38,7 @@ from aeva.media.llamaparse_service import (
     LlamaParseService,
     ParsedDocument,
 )
+from aeva.media.text_quality import score_document
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,8 @@ _MAX_POLL_SECONDS = 240
 
 # While LlamaParse works, cycle these so a long parse still feels alive.
 _PARSE_HINTS = ("Reading pages…", "Understanding document structure…")
+# The OCR re-parse reads page images, which is slower; say so.
+_OCR_HINTS = ("Reading page images…", "Recognising text on each page…")
 
 Event = dict[str, Any]
 
@@ -247,6 +250,25 @@ class MediaProcessor:
         yield self._event("extracting", 45, "Extracting tables and text…")
         logger.info("Stage: extracting | media=%s | job=%s", media_id, job_id)
         doc = self.llamaparse.fetch_result(job_id)
+
+        # A text-layer parse of a symbol-font PDF or a scan comes back as
+        # junk or nothing. Re-parse once at the OCR tier rather than index it.
+        ocr_tier = self._ocr_tier_for(record, doc)
+        if ocr_tier:
+            yield self._event(
+                "parsing", 30, "Text unclear, reading page images…"
+            )
+            job_id = yield from self._parse(
+                user_id, record, tier=ocr_tier, fresh=True
+            )
+            yield self._event("extracting", 45, "Extracting tables and text…")
+            doc = self.llamaparse.fetch_result(job_id)
+            logger.info(
+                "OCR re-parse done | media=%s | job=%s | %s",
+                media_id,
+                job_id,
+                score_document(doc).summary(),
+            )
         self._persist_artifacts(user_id, record, doc)
 
         yield self._event("chunking", 65, "Creating semantic chunks…")
@@ -379,24 +401,58 @@ class MediaProcessor:
             output_dimensionality=current_app.config["RAG_EMBEDDING_DIM"],
         )
 
+    def _ocr_tier_for(
+        self, record: dict[str, Any], doc: ParsedDocument
+    ) -> str | None:
+        """Return the OCR tier to re-parse at, or None when the parse is fine.
+
+        None when the fallback is disabled, when this parse already ran at
+        the OCR tier (a resumed run must not loop), or when the text reads
+        as real words.
+        """
+        ocr_tier = self.llamaparse.ocr_tier
+        if not ocr_tier or record.get("parse_tier") == ocr_tier:
+            return None
+        quality = score_document(doc)
+        if not quality.needs_ocr:
+            return None
+        logger.info(
+            "Text layer unusable, OCR fallback | media=%s | %s | tier=%s",
+            record["id"],
+            quality.summary(),
+            ocr_tier,
+        )
+        return ocr_tier
+
     def _parse(
-        self, user_id: str, record: dict[str, Any]
+        self,
+        user_id: str,
+        record: dict[str, Any],
+        tier: str | None = None,
+        *,
+        fresh: bool = False,
     ) -> Generator[Event, None, str]:
-        """Submit (or resume) the LlamaParse job and poll to completion."""
+        """Submit (or resume) the LlamaParse job and poll to completion.
+
+        ``fresh`` ignores a stored job id and submits again (the OCR retry);
+        ``tier`` overrides the configured parse tier for that submission.
+        """
         media_id = record["id"]
-        job_id = record.get("llamaparse_job_id")
+        job_id = None if fresh else record.get("llamaparse_job_id")
         if not job_id:
+            tier = tier or self.llamaparse.tier
             file_bytes = self.supabase.download_file(record["storage_path"])
             job_id = self.llamaparse.submit(
-                file_bytes, record["file_name"], record["mime_type"]
+                file_bytes, record["file_name"], record["mime_type"], tier=tier
             )
-            # Persist the job id BEFORE polling so a reconnect resumes here.
-            self.supabase.update_media_processing(
-                media_id,
-                user_id,
-                processing_status="parsing",
-                llamaparse_job_id=job_id,
-            )
+            # Persist the job id (and its tier) BEFORE polling so a reconnect
+            # resumes here, and a resumed OCR job is not re-checked for OCR.
+            self._record_parse_job(media_id, user_id, job_id, tier)
+            record["llamaparse_job_id"] = job_id
+            record["parse_tier"] = tier
+        hints = _OCR_HINTS if tier and tier == self.llamaparse.ocr_tier else (
+            _PARSE_HINTS
+        )
 
         waited = 0
         while waited < _MAX_POLL_SECONDS:
@@ -409,7 +465,7 @@ class MediaProcessor:
             # Creep the bar forward and rotate hints so the wait feels alive.
             ticks = waited // _POLL_INTERVAL_SECONDS
             pct = min(40, 18 + ticks * 2)
-            hint = _PARSE_HINTS[ticks % len(_PARSE_HINTS)]
+            hint = hints[ticks % len(hints)]
             yield self._event("parsing", pct, hint)
             time.sleep(_POLL_INTERVAL_SECONDS)
             waited += _POLL_INTERVAL_SECONDS
@@ -417,6 +473,29 @@ class MediaProcessor:
         # The job is still running server-side — a reconnect can resume it.
         msg = "Parsing is taking longer than expected; please retry."
         raise MediaProcessingError(msg, recoverable=True)
+
+    def _record_parse_job(
+        self, media_id: str, user_id: str, job_id: str, tier: str
+    ) -> None:
+        """Store the job id and tier; tolerate a DB without migration 032."""
+        try:
+            self.supabase.update_media_processing(
+                media_id,
+                user_id,
+                processing_status="parsing",
+                llamaparse_job_id=job_id,
+                parse_tier=tier,
+            )
+        except Exception as exc:
+            if "parse_tier" not in str(exc):
+                raise
+            logger.warning("media.parse_tier missing (migration 032)")
+            self.supabase.update_media_processing(
+                media_id,
+                user_id,
+                processing_status="parsing",
+                llamaparse_job_id=job_id,
+            )
 
     def _persist_artifacts(
         self,

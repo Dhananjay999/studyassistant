@@ -231,6 +231,12 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["LLAMAPARSE_MODE"] = os.environ.get(
         "LLAMAPARSE_MODE", "agentic"
     )
+    # OCR fallback: when the first parse yields glyph junk (symbol-font PDFs)
+    # or no text (scans), re-parse at this tier, which reads the page images.
+    # Blank disables the fallback. Only files that need it pay for it.
+    app.config["LLAMAPARSE_OCR_MODE"] = os.environ.get(
+        "LLAMAPARSE_OCR_MODE", "agentic"
+    )
     app.config["RAG_EMBEDDING_DIM"] = int(
         os.environ.get("RAG_EMBEDDING_DIM", "768")
     )
