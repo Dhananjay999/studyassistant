@@ -25,6 +25,7 @@ from aeva.admin.schema.admin_schema import (
     DebugUserToggleData,
     DebugUserToggleSchema,
     EditProfileSchema,
+    EngagementQuerySchema,
     FeatureFlagToggleData,
     FeatureFlagToggleSchema,
     ResourceListQuery,
@@ -89,6 +90,23 @@ class AdminOverview(MethodView):
     def get(_admin: str) -> dict[str, Any]:
         """Platform-wide counters."""
         return repo.overview()
+
+
+class AdminEngagement(MethodView):
+    """Daily user timeline and returning-user rates for the dashboard."""
+
+    @staticmethod
+    @blueprint.arguments(EngagementQuerySchema, location="query")
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str, query: dict[str, Any]) -> dict[str, Any]:
+        """Active/new users per day over ``days`` (7 by default, 90 at most).
+
+        The retention cohort covers at least 30 days, and the whole range
+        when a longer one is picked.
+        """
+        days = int(query.get("days") or 7)
+        return repo.engagement(days=days, cohort_days=max(30, days))
 
 
 class AdminUsers(MethodView):
@@ -358,6 +376,11 @@ blueprint.add_url_rule(
 )
 blueprint.add_url_rule(
     "/overview", view_func=AdminOverview, endpoint="admin_overview"
+)
+blueprint.add_url_rule(
+    "/overview/engagement",
+    view_func=AdminEngagement,
+    endpoint="admin_engagement",
 )
 blueprint.add_url_rule(
     "/users", view_func=AdminUsers, endpoint="admin_users"

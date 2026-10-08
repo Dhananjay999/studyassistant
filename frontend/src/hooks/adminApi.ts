@@ -20,6 +20,7 @@ import type {
 
 export const adminQk = {
   overview: ["admin", "overview"] as const,
+  engagement: (days: number) => ["admin", "engagement", days] as const,
   users: (params: AdminUsersParams) => ["admin", "users", params] as const,
   user: (id: string) => ["admin", "user", id] as const,
   session: (id: string) => ["admin", "session", id] as const,
@@ -40,6 +41,17 @@ export const adminQk = {
 
 export function useAdminOverview() {
   return useQuery({ queryKey: adminQk.overview, queryFn: adminApi.overview });
+}
+
+export function useAdminEngagement(days = 7) {
+  return useQuery({
+    queryKey: adminQk.engagement(days),
+    queryFn: () => adminApi.engagement(days),
+    // Keep the last range on screen while the next one loads.
+    placeholderData: keepPreviousData,
+    // The query reads weeks of activity; a minute of staleness is fine.
+    staleTime: 60_000,
+  });
 }
 
 export function useAdminUsers(params: AdminUsersParams) {

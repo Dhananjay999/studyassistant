@@ -80,6 +80,12 @@ class AuditLogQuerySchema(Schema):
     )
 
 
+class EngagementQuerySchema(Schema):
+    """Range for ``GET /admin/overview/engagement`` (days, 1..90)."""
+
+    days = fields.Int(load_default=7, validate=validate.Range(min=1, max=90))
+
+
 class UserSearchQuerySchema(Schema):
     """Per-user search query."""
 

@@ -12,6 +12,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
+import { EngagementPanel } from "@/components/admin/EngagementPanel";
 import { StatCard } from "@/components/admin/StatCard";
 import { useAdminOverview } from "@/hooks/adminApi";
 import type { AdminOverview as Overview } from "@/types/admin";
@@ -63,6 +64,8 @@ export function AdminOverview() {
           />
         ))}
       </div>
+
+      <EngagementPanel />
     </div>
   );
 }

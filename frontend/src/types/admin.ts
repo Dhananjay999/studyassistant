@@ -16,6 +16,39 @@ export interface AdminOverview {
   new_users_today: number;
 }
 
+/** One day of the dashboard timeline (GET /admin/overview/engagement). */
+export interface AdminEngagementDay {
+  /** YYYY-MM-DD, UTC. */
+  day: string;
+  active_users: number;
+  new_users: number;
+}
+
+export interface AdminEngagement {
+  /** False when migration 030 (admin_engagement) is not applied. */
+  available: boolean;
+  days: number;
+  daily: AdminEngagementDay[];
+  window: {
+    active_users: number;
+    new_users: number;
+    returning_users: number;
+    /** returning_users / active_users, or null when nobody was active. */
+    returning_rate: number | null;
+  };
+  retention: {
+    cohort_days: number;
+    cohort_size: number;
+    returned_any: number;
+    returned_any_rate: number | null;
+    returned_d1: number;
+    d1_rate: number | null;
+    eligible_d7: number;
+    returned_d7: number;
+    d7_rate: number | null;
+  };
+}
+
 export type PersonalizationStatus = "pending" | "completed" | "skipped";
 
 export interface AdminUserRow {

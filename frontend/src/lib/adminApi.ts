@@ -15,6 +15,7 @@ import type {
   AdminFlashcardSetDetail,
   AdminLoginResult,
   AdminMediaFullDetail,
+  AdminEngagement,
   AdminOverview,
   AdminQuizFullDetail,
   AdminResourceList,
@@ -132,6 +133,8 @@ export const adminApi = {
     }),
   verify: () => unwrap<{ username: string }>("/auth/verify"),
   overview: () => unwrap<AdminOverview>("/overview"),
+  engagement: (days = 7) =>
+    unwrap<AdminEngagement>(`/overview/engagement?days=${days}`),
   listUsers: (params: AdminUsersParams) =>
     unwrap<AdminUserList>(`/users?${usersQuery(params)}`),
   getUser: (id: string) => unwrap<AdminUserDetail>(`/users/${id}`),

@@ -94,6 +94,93 @@ _RESOURCE_CONFIG: dict[str, dict[str, Any]] = {
 }
 
 
+# PostgREST / Postgres codes for "that function does not exist" (migration
+# 030 not applied).
+_MISSING_FUNCTION_CODES = frozenset({"PGRST202", "42883"})
+_ENGAGEMENT_FUNCTION = "admin_engagement"
+_MAX_TIMELINE_DAYS = 90
+_MAX_COHORT_DAYS = 365
+
+
+def _is_missing_function(exc: Exception) -> bool:
+    """Whether ``exc`` says the engagement function is not in the database."""
+    code = getattr(exc, "code", None)
+    if code is not None:
+        return str(code) in _MISSING_FUNCTION_CODES
+    text = f"{getattr(exc, 'message', '') or ''} {exc}".lower()
+    return _ENGAGEMENT_FUNCTION in text and (
+        "could not find" in text or "does not exist" in text
+    )
+
+
+def _rate(numerator: Any, denominator: Any) -> float | None:
+    """``numerator / denominator`` rounded to 4 places; None when undefined."""
+    try:
+        num = int(numerator or 0)
+        den = int(denominator or 0)
+    except (TypeError, ValueError):
+        return None
+    if den <= 0:
+        return None
+    return round(num / den, 4)
+
+
+def _int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _shape_engagement(
+    raw: Any, days: int, cohort_days: int, *, available: bool = True
+) -> dict[str, Any]:
+    """Normalise the ``admin_engagement()`` payload and add the rates."""
+    if isinstance(raw, list):
+        raw = raw[0] if raw and isinstance(raw[0], dict) else {}
+    if not isinstance(raw, dict):
+        raw = {}
+    window = raw.get("window") if isinstance(raw.get("window"), dict) else {}
+    ret = (
+        raw.get("retention") if isinstance(raw.get("retention"), dict) else {}
+    )
+    daily = [
+        {
+            "day": str(row.get("day", "")),
+            "active_users": _int(row.get("active_users")),
+            "new_users": _int(row.get("new_users")),
+        }
+        for row in (raw.get("daily") or [])
+        if isinstance(row, dict)
+    ]
+    active = _int(window.get("active_users"))
+    returning = _int(window.get("returning_users"))
+    cohort_size = _int(ret.get("cohort_size"))
+    eligible_d7 = _int(ret.get("eligible_d7"))
+    return {
+        "available": available,
+        "days": _int(raw.get("days")) or days,
+        "daily": daily,
+        "window": {
+            "active_users": active,
+            "new_users": _int(window.get("new_users")),
+            "returning_users": returning,
+            "returning_rate": _rate(returning, active),
+        },
+        "retention": {
+            "cohort_days": _int(ret.get("cohort_days")) or cohort_days,
+            "cohort_size": cohort_size,
+            "returned_any": _int(ret.get("returned_any")),
+            "returned_any_rate": _rate(ret.get("returned_any"), cohort_size),
+            "returned_d1": _int(ret.get("returned_d1")),
+            "d1_rate": _rate(ret.get("returned_d1"), cohort_size),
+            "eligible_d7": eligible_d7,
+            "returned_d7": _int(ret.get("returned_d7")),
+            "d7_rate": _rate(ret.get("returned_d7"), eligible_d7),
+        },
+    }
+
+
 class AdminRepository:
     """Stateless-ish admin operations over the service-role client."""
 
@@ -189,6 +276,44 @@ class AdminRepository:
             "new_users_today": new_today,
         }
         return success_response("Overview loaded", data)
+
+    # ------------------------------------------------------------------
+    # Engagement: daily user timeline + returning rate (migration 030)
+    # ------------------------------------------------------------------
+
+    def engagement(
+        self, days: int = 7, cohort_days: int = 30
+    ) -> dict[str, Any]:
+        """Daily active/new users and returning-user rates.
+
+        One call to ``admin_engagement()``, which reads only the last
+        ``max(days, cohort_days)`` days of sessions, messages and profiles
+        through their time indexes. When the function is missing (migration
+        030 not applied) the dashboard gets an ``available: false`` payload
+        instead of an error, like the trace stats do.
+        """
+        days = max(1, min(int(days), _MAX_TIMELINE_DAYS))
+        cohort_days = max(1, min(int(cohort_days), _MAX_COHORT_DAYS))
+        try:
+            raw = (
+                self.client.rpc(
+                    _ENGAGEMENT_FUNCTION,
+                    {"p_days": days, "p_cohort_days": cohort_days},
+                )
+                .execute()
+                .data
+            )
+        except Exception as exc:  # only the missing-function case is ours
+            if not _is_missing_function(exc):
+                raise
+            logger.info("admin_engagement() not found (migration 030)")
+            return success_response(
+                "Engagement unavailable",
+                _shape_engagement({}, days, cohort_days, available=False),
+            )
+        return success_response(
+            "Engagement loaded", _shape_engagement(raw, days, cohort_days)
+        )
 
     # ------------------------------------------------------------------
     # User list
