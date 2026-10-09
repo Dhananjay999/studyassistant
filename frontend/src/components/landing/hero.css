@@ -1,0 +1,46 @@
+/* Landing hero entrance (Hero.tsx). Scoped to .hero-enter so nothing else on
+   the page changes. transform + opacity only (compositor-friendly on low-end
+   phones); `both` fill keeps the end state. The timings match the framer
+   entrance this replaces (0.6s, staggered). Reduced motion: index.css already
+   collapses every animation under prefers-reduced-motion and html.reduce-motion;
+   the explicit rules below also keep the hero fully visible if that global
+   rule is ever narrowed. */
+@keyframes hero-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-enter {
+  animation: hero-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hero-enter-0 {
+  animation-duration: 0.5s;
+}
+.hero-enter-1 {
+  animation-delay: 0.05s;
+}
+.hero-enter-2 {
+  animation-delay: 0.12s;
+}
+.hero-enter-3 {
+  animation-delay: 0.18s;
+}
+.hero-enter-4 {
+  animation-duration: 0.7s;
+  animation-delay: 0.25s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-enter {
+    animation: none;
+  }
+}
+html.reduce-motion .hero-enter {
+  animation: none;
+}

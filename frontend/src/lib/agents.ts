@@ -80,6 +80,13 @@ export const AGENT_META: Record<ToolUsed, AgentMeta> = {
     icon: Palette,
     accent: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
   },
+  notes_generator: {
+    label: "Notes writer",
+    short: "Notes",
+    verb: "Writing your notes",
+    icon: FileText,
+    accent: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+  },
 };
 
 const FALLBACK: AgentMeta = {

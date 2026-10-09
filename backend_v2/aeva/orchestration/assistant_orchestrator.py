@@ -23,6 +23,7 @@ from aeva.mcp.base import (
     ToolDefinition,
 )
 from aeva.mcp.registry import ToolRegistry
+from aeva.orchestration import exam_offer, heartbeat, notes_intent
 from aeva.orchestration.agent_runner import AgentRunner, TeamOutcome
 from aeva.orchestration.model_candidates import models_for, resolve_model
 from aeva.orchestration.models import (
@@ -96,6 +97,9 @@ _REPEATABLE_TOOLS = frozenset({"quiz_generator", "flashcard_generator"})
 
 # Generator agents per turn (quiz + flashcards + image at most).
 _MAX_GENERATORS = 3
+# Generators a plan may carry: the planner's own, plus the notes generator,
+# which only the deterministic notes route (``notes_intent``) ever plans.
+_GENERATOR_TOOLS = GENERATOR_TOOLS | {notes_intent.TOOL}
 _QUIZ_WORDS = ("quiz", "practice test", "test me")
 
 # Cues that a question hinges on external, up-to-date information Aeva cannot
@@ -104,20 +108,43 @@ _QUIZ_WORDS = ("quiz", "practice test", "test me")
 # so greetings, identity questions, and concept explanations never search.
 # Ambiguous cases still fall through to the planner, which weighs freshness
 # with full context.
+#
+# Every cue is about the SUBJECT being fresh ("latest news", "exam date",
+# "iPhone price"). Bare time adverbs ("today", "currently", "right now",
+# "recently") and four-digit years are deliberately absent: students use
+# them to describe their own situation ("exam today", "I'm currently on
+# WW2", "class of 2026"), and each one used to force a 40-90 s web search.
 _FRESH_INFO_RE = re.compile(
-    r"\b(latest|newest|current(?:ly)?|today|tonight|right now|as of|"
-    r"recent(?:ly)?|up[- ]?to[- ]?date|this (?:week|month|year)|"
-    r"news|headlines?|weather|forecast|temperature|"
-    r"stock|share price|prices?|cost|exchange rate|score|standings|"
-    r"who won|winner of|release date|released|launching|"
-    r"schedule|deadline|exam date|admit card|result date|notification|"
+    r"\b(latest|newest|up[- ]?to[- ]?date|current affairs|"
+    r"news|headlines?|announced|announcement|weather|forecast|"
+    r"stock|share price|prices?|exchange rate|live scores?|match scores?|"
+    r"standings|who won|winner of|release date|launch date|launching|"
+    r"newly released|exam date|result date|results? (?:out|declared)|"
+    r"admit card|cut-?off|last date|"
     # Commerce cues: nobody wants a from-memory guess at specs or prices.
     r"specs?|specifications?|reviews?|cheapest|budget|worth (?:buying|it)|"
     r"which (?:one )?should i (?:buy|get|choose|pick)|"
     r"iphone|galaxy|pixel|macbook|ipad|oneplus|playstation|xbox|airpods)\b"
-    r"|\b20\d{2}\b|\bsearch (?:the web|online|for)\b|\bgoogle it\b",
+    r"|\bsearch (?:the web|online|for)\b|\bgoogle it\b",
     re.IGNORECASE,
 )
+
+# A message shaped like study work: it names the material or the task
+# (chapter, formula sheet, notes, syllabus, revision, homework…). Such a
+# message is answered from Aeva's own knowledge even when it also carries a
+# cue word — "give me the formula sheet, exam is today" is not a search.
+_STUDY_SHAPE_RE = re.compile(
+    r"\b(chapters?|formulae?|formulas?|notes|syllabus|revision|revis(?:e|ing)|"
+    r"homework|assignments?|worksheets?|textbooks?|lessons?|theorems?|"
+    r"derivations?|numericals?|mcqs?|important questions|"
+    r"study (?:plan|material|guide)|"
+    r"exam (?:prep|preparation|tomorrow|today|tonight|questions?|paper)|"
+    r"for (?:my|the|our) exams?|grade \d{1,2}|class \d{1,2}|cbse|icse|ncert)\b",
+    re.IGNORECASE,
+)
+# Longer than this (in words) is a study request or pasted content, never a
+# product/choice question; the planner's own routing stands.
+_LONG_REQUEST_WORDS = 25
 
 # "best/top/cheapest/latest <thing>" and "<model number> vs" — product or
 # choice questions whose honest answer needs current data, even when no
@@ -159,17 +186,58 @@ def _is_pasted_material(text: str) -> bool:
     )
 
 
+def _is_study_shaped(text: str) -> bool:
+    """Report whether a message is study work rather than a lookup.
+
+    True for a message that names study material or a study task, or that
+    is long (a detailed request is never a product question). An explicit
+    "search the web" / "google it" always wins.
+    """
+    if _EXPLICIT_SEARCH_RE.search(text):
+        return False
+    return (
+        bool(_STUDY_SHAPE_RE.search(text))
+        or len(text.split()) > _LONG_REQUEST_WORDS
+    )
+
+
 def _needs_web_upgrade(text: str) -> bool:
     """Report whether a `general` plan should be promoted to `web_search`.
 
     Catches product/choice questions ("suggest the best iPhone 17 model",
     "top colleges for CSE", "Pixel 9 vs iPhone 16") that the planner tends
-    to answer from memory; concept questions and pasted study material
-    never match.
+    to answer from memory; concept questions, pasted study material and
+    study-shaped requests never match — the planner's choice stands.
     """
-    if _is_pasted_material(text):
+    if _is_pasted_material(text) or _is_study_shaped(text):
         return False
     return bool(_PRODUCT_INTENT_RE.search(text)) or _needs_fresh_info(text)
+
+
+# Quiz / flashcard words that fix a turn's intent before any file question.
+_FLASHCARD_WORDS = ("flashcard", "flash card")
+
+
+def _generator_intent(text: str) -> str | None:
+    """Return the generator tool a message asks for by keyword, or ``None``."""
+    lowered = text.lower()
+    if any(w in lowered for w in _FLASHCARD_WORDS):
+        return "flashcard_generator"
+    if any(w in lowered for w in _QUIZ_WORDS):
+        return "quiz_generator"
+    return None
+
+
+# One-line note prepended to an answer when a selected file id could not be
+# resolved (an upload that never finished, or a deleted file).
+_STALE_MEDIA_NOTE = (
+    "_(The selected file is no longer available, so this answer does not "
+    "use it.)_"
+)
+_STALE_MEDIA_NOTE_SOME = (
+    "_(Some of the selected files are no longer available, so this answer "
+    "uses only the ones that are.)_"
+)
 
 
 # Messages that are ONLY pleasantries — the one case cheap enough for the
@@ -208,6 +276,27 @@ _LANGUAGE_WORD_RE = re.compile(
 )
 
 
+def _is_image_file(file: dict[str, str]) -> bool:
+    """Whether a selected file is an image.
+
+    The stored ``mime_type`` is authoritative (camera and paste uploads are
+    named "blob", with no suffix); the suffix is only a fallback for rows
+    without one.
+    """
+    mime = file.get("mime_type") or ""
+    if mime:
+        return mime.startswith("image/")
+    return file["name"].lower().endswith(_IMAGE_SUFFIXES)
+
+
+def _row_id(row: object) -> str | None:
+    """Id of a persisted row, or ``None`` when there is no usable one."""
+    if isinstance(row, dict):
+        value = row.get("id")
+        return str(value) if isinstance(value, str) and value else None
+    return None
+
+
 def _standing_language_request(text: str) -> str | None:
     """Language the user asked to switch to permanently, or ``None``.
 
@@ -238,6 +327,17 @@ class AssistantOrchestrator:
         # users pay no extra lookup. One orchestrator instance serves one
         # request (see assistant_repository), so instance state is safe.
         self._debug_enabled = False
+        # Id of the user message persisted this turn (None on a
+        # clarification reply, which persists no user bubble).
+        self._user_message_id: str | None = None
+        # Note for the student when a selected file id did not resolve.
+        self._media_note: str | None = None
+        # The user's media rows by id, fetched once per turn on demand.
+        self._media_by_id: dict[str, dict[str, Any]] | None = None
+        # Last repeatable generator tool per "again" message, looked up once.
+        self._repeat_cache: dict[str, str | None] = {}
+        # Exam-soon hand-off for this turn ("my exam is tomorrow"), or None.
+        self._exam_offer: dict[str, Any] | None = None
 
     @property
     def llm(self) -> LLMClient:
@@ -300,6 +400,7 @@ class AssistantOrchestrator:
             tools_used=outcome.tools_used,
             content=outcome.result,
             message_id=msg["id"],
+            user_message_id=self._user_message_id,
             display_text=display_text,
         )
 
@@ -337,7 +438,7 @@ class AssistantOrchestrator:
         if plan.get("action") == "clarify":
             logger.info("Turn → clarification requested")
             clar = self._handle_clarification(ctx, plan, enriched_message)
-            yield self._clarification_frame(clar)
+            yield self._clarification_frame(clar, self._user_message_id)
             return
 
         steps = self._normalize_steps(plan, enriched_message)
@@ -348,8 +449,12 @@ class AssistantOrchestrator:
         runner = self._runner(
             ctx, session, history, enriched_message, personalization
         )
+        if self._media_note:
+            yield LLMClient.format_sse_chunk(f"{self._media_note}\n\n")
         t_tool = time.perf_counter()
-        outcome = yield from runner.run(steps)
+        # Silent stretches (a tool waiting on its model) get ``ping`` frames
+        # so mobile browsers and proxies keep the stream open.
+        outcome = yield from heartbeat.keep_alive(runner.run(steps))
         tool_ms = int((time.perf_counter() - t_tool) * 1000)
 
         display_text, badge = self._finish_turn(
@@ -357,8 +462,17 @@ class AssistantOrchestrator:
             debug_enabled=debug_enabled,
         )
         if badge:
-            yield LLMClient.format_sse_chunk(badge)
-        self._persist_answer(
+            # Developer Mode only: a typed frame, never answer text, so the
+            # badge is neither persisted nor copied into notes/bookmarks.
+            yield LLMClient.format_sse_chunk(
+                "",
+                extra={
+                    "type": "model_badge",
+                    "model": outcome.primary_model,
+                    "badge": badge,
+                },
+            )
+        msg = self._persist_answer(
             ctx,
             session,
             outcome.tool_used,
@@ -381,6 +495,10 @@ class AssistantOrchestrator:
                 "tool_used": outcome.tool_used,
                 "tools_used": outcome.tools_used,
                 "content": outcome.result,
+                # Persisted ids, so the client can replace its optimistic
+                # placeholder and bookmark / save the real message.
+                "assistant_message_id": _row_id(msg),
+                "user_message_id": self._user_message_id,
             },
         )
 
@@ -449,7 +567,17 @@ class AssistantOrchestrator:
         retrieval_diag = result.pop("_retrieval", None)
         self._attach_actions(outcome.tool_used, result, meta=outcome.meta)
         self._add_generator_actions(result)
+        if self._exam_offer:
+            # Beside the answer, never instead of it (see ``exam_offer``).
+            result["exam_prep_offer"] = turn_trace.exam_prep_offer(
+                self._exam_offer
+            )
         display_text = outcome.display_text
+        if self._media_note:
+            display_text = f"{self._media_note}\n\n{display_text}".strip()
+            result["answer"] = (
+                f"{self._media_note}\n\n{result.get('answer', '')}".strip()
+            )
         dropped = plan.get("_dropped") or []
         if dropped:
             note = self._dropped_note(dropped)
@@ -467,8 +595,9 @@ class AssistantOrchestrator:
                 result["debug"]["retrieval"] = retrieval_diag
         badge = self._model_badge(outcome.primary_model, debug_enabled)
         if badge:
+            # Display-only: travels as its own SSE frame (run_stream), never
+            # inside the text that _persist_answer stores.
             result["model"] = outcome.primary_model
-            display_text = (display_text or "") + badge
         return display_text, badge
 
     @staticmethod
@@ -572,7 +701,7 @@ class AssistantOrchestrator:
                     )
                 continue
             if (
-                name not in GENERATOR_TOOLS
+                name not in _GENERATOR_TOOLS
                 or any(g.tool == name for g in generators)
                 or len(generators) >= _MAX_GENERATORS
             ):
@@ -664,17 +793,23 @@ class AssistantOrchestrator:
         self._debug_enabled = bool((profile or {}).get("is_debug_user"))
         profile = self._persist_standing_language(ctx, profile)
         # Identity first: the student's name applies even when onboarding was
-        # skipped, so Aeva never "forgets" who she is talking to.
-        personalization = prompts.build_identity_block(profile)
-        personalization += prompts.build_personalization_block(profile)
-        # Study Space context rides the session fetch (embedded relation, no
-        # extra query). General/legacy sessions contribute nothing, so
+        # skipped, so Aeva never "forgets" who she is talking to. Study Space
+        # context rides the session fetch (embedded relation, no extra
+        # query). General/legacy sessions contribute nothing, so
         # non-adopters get byte-identical prompts.
-        personalization += prompts.build_space_block(
-            session.get("study_spaces")
+        personalization = (
+            prompts.build_identity_block(profile)
+            + prompts.build_personalization_block(profile)
+            + prompts.build_space_block(session.get("study_spaces"))
         )
         history = self._get_history(ctx.session_id)
         enriched_message = ctx.message
+        # A selected id that no longer resolves (an upload that never
+        # finished, a deleted file) is dropped before planning, so the turn
+        # plans as a no-file turn instead of a canned "no materials" refusal.
+        self._drop_stale_media(ctx)
+        # "My exam is tomorrow" -> a cram-plan offer that rides the answer.
+        self._exam_offer = exam_offer.for_turn(ctx, self.supabase)
 
         # An action targeting a specific card carries its own content. Ground
         # the turn ONLY on that content and drop conversation history so the
@@ -716,21 +851,40 @@ class AssistantOrchestrator:
         # Clarification replies are invisible: the answers are folded into the
         # enriched message for the tool, but no user bubble is persisted — on
         # reload the answer reads as a direct continuation of the original ask.
+        # The saved row's id goes back to the client in the final frame.
         if not (ctx.run_id and ctx.clarification):
-            turn_trace.user_message(
-                self.supabase.add_message(ctx.session_id, "user", ctx.message)
+            self._user_message_id = _row_id(
+                turn_trace.user_message(
+                    self.supabase.add_message(
+                        ctx.session_id,
+                        "user",
+                        ctx.message,
+                        user_id=ctx.user_id,
+                    )
+                )
             )
 
         # Deterministic plans (resolved file choice, popover-driven quiz/flash)
         # skip LLM planning entirely. Each path stamps `_source` (internal,
         # never persisted) so Developer Mode can show WHY a tool was chosen.
-        forced = self._forced_plan(ctx, media_choice_ids, media_choice_query)
+        forced = self._forced_plan(
+            ctx, media_choice_ids, media_choice_query, history
+        )
         if forced is not None:
             forced["_source"] = "forced"
             return session, history, enriched_message, forced, personalization
 
         # Several files selected + a vague request -> ask which file to use.
-        if not ctx.clarification and ctx.media_ids and len(ctx.media_ids) > 1:
+        # Never for a quiz/flashcard request, nor for a "do another" that
+        # repeats the last generator: those take every selected file (the
+        # planner / popover still collects the settings).
+        if (
+            not ctx.clarification
+            and ctx.media_ids
+            and len(ctx.media_ids) > 1
+            and _generator_intent(enriched_message) is None
+            and self._repeated_generator(ctx, enriched_message) is None
+        ):
             decision = self._disambiguate_media(
                 ctx, enriched_message, history
             )
@@ -763,8 +917,66 @@ class AssistantOrchestrator:
         )
         plan = self._refine_plan(plan, ctx, enriched_message, history)
         plan["_source"] = "planner"
-        plan = self._media_routing_guard(plan, ctx, enriched_message)
+        plan = self._general_without_media(
+            self._media_routing_guard(plan, ctx, enriched_message),
+            ctx,
+            enriched_message,
+        )
         return session, history, enriched_message, plan, personalization
+
+    def _drop_stale_media(self, ctx: AssistantContext) -> None:
+        """Narrow ``ctx.media_ids`` to the ids that exist for this user.
+
+        The client can hold on to an id from an upload that never finished
+        or a file that was deleted. Planning with it biases the planner to
+        ``media_llm`` and that tool then answers "No study materials are
+        available". Dropping the id here makes the turn a normal (or
+        fewer-file) turn; ``_media_note`` tells the student in one line.
+        """
+        if not ctx.media_ids:
+            return
+        resolved = [f["id"] for f in self._selected_media(ctx)]
+        missing = len(ctx.media_ids) - len(resolved)
+        if missing <= 0:
+            return
+        logger.info(
+            "Dropping %d unresolved media id(s) before planning", missing
+        )
+        self._media_note = (
+            _STALE_MEDIA_NOTE_SOME if resolved else _STALE_MEDIA_NOTE
+        )
+        ctx.media_ids = resolved or None
+
+    def _general_without_media(
+        self, plan: dict[str, Any], ctx: AssistantContext, message: str
+    ) -> dict[str, Any]:
+        """Swap a ``media_llm`` answer step for ``general`` if no file is left.
+
+        Acts only when a selected id was dropped as stale and nothing
+        resolved: the planner may still name ``media_llm`` from habit, and
+        that tool would refuse instead of answering the (self-contained)
+        question. Every other plan passes through untouched.
+        """
+        if (
+            not self._media_note
+            or ctx.media_ids
+            or plan.get("action") != "run_tool"
+        ):
+            return plan
+        steps = AssistantOrchestrator._plan_steps(plan)
+        index = AssistantOrchestrator._answer_index(steps)
+        if index is None or steps[index].get("tool") != "media_llm":
+            return plan
+        params = steps[index].get("params") or {}
+        steps[index] = {
+            **steps[index],
+            "tool": "general",
+            "params": {"query": params.get("query") or message},
+        }
+        plan["steps"] = steps
+        plan.pop("tool", None)
+        plan["_source"] = f"{plan.get('_source', 'planner')}+stale_media"
+        return plan
 
     @turn_trace.branch_forced
     def _forced_plan(
@@ -772,15 +984,28 @@ class AssistantOrchestrator:
         ctx: AssistantContext,
         media_choice_ids: list[str] | None,
         media_choice_query: str | None = None,
+        history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any] | None:
         """Deterministic plan that bypasses the planner, or None to plan.
 
         ``media_choice_query`` is the student's original question when the
         turn resolves a "which file?" clarification; it becomes the retrieval
         query so the vector search is not polluted by the clarification text.
+        ``history`` lets the notes route leave a request with nothing to
+        resolve "this" against ("make notes for this" in an empty chat) to
+        the planner, which asks.
         """
         if media_choice_ids is not None:
-            # A resolved "which file?" answer runs media_llm on the choice.
+            # A resolved "which file?" answer keeps the ORIGINAL intent: a
+            # quiz/flashcard ask becomes that generator over the files (a
+            # media_llm answer cannot produce a quiz object), anything else
+            # runs media_llm on the choice.
+            generator = _generator_intent(media_choice_query or "")
+            if generator is not None:
+                return self._single_step(
+                    generator,
+                    {"topic": media_choice_query, "use_media": True},
+                )
             params: dict[str, Any] = {"media_ids": media_choice_ids}
             if media_choice_query:
                 params["query"] = media_choice_query
@@ -797,6 +1022,12 @@ class AssistantOrchestrator:
                 "quiz_generator",
                 self._quiz_params_from_options(ctx.quiz_options),
             )
+        notes = notes_intent.forced_params(ctx)
+        if notes is not None and not self._has_unresolved_reference(
+            ctx.message, ctx, history or []
+        ):
+            # "Revision sheet" / "important questions" -> a saved note.
+            return self._single_step(notes_intent.TOOL, notes)
         return None
 
     @staticmethod
@@ -951,18 +1182,14 @@ class AssistantOrchestrator:
     def _model_badge(model: str | None, debug_enabled: bool = False) -> str:
         """Return a "powered by: <model>" trailer (empty unless enabled).
 
-        Shown to Developer Mode users (``profiles.is_debug_user``, managed
-        from the admin panel) or when the global ``SHOW_MODEL_BADGE`` env
-        override is on (local dev/QA) — never to normal users. Display-only:
-        it is appended to the display text, never to ``result["answer"]``, so
-        the stored answer stays clean.
+        Shown ONLY to Developer Mode users (``profiles.is_debug_user``,
+        managed from the admin panel) — never to normal users, whatever the
+        environment says: the old ``SHOW_MODEL_BADGE`` override is ignored
+        because it put the badge into every real user's stored answers.
+        Display-only: it travels as a ``model_badge`` SSE frame and is never
+        part of the display text or ``result["answer"]``.
         """
-        from flask import current_app
-
-        enabled = debug_enabled or bool(
-            current_app.config.get("SHOW_MODEL_BADGE")
-        )
-        if not model or not enabled:
+        if not model or not debug_enabled:
             return ""
         return f"\n\n---\n_⚡ powered by: {model}_"
 
@@ -1153,7 +1380,13 @@ class AssistantOrchestrator:
         """Resolve selected media ids to {id, name, mime_type} (one DB call)."""
         if not ctx.media_ids:
             return []
-        by_id = {m["id"]: m for m in self.supabase.list_media(ctx.user_id)}
+        if self._media_by_id is None:
+            # Fetched once per turn: the stale-id check, the file question
+            # and the planner hint all read the same rows.
+            self._media_by_id = {
+                m["id"]: m for m in self.supabase.list_media(ctx.user_id)
+            }
+        by_id = self._media_by_id
         return [
             {
                 "id": mid,
@@ -1188,20 +1421,20 @@ class AssistantOrchestrator:
         """Whether a request that names no file should use every selected one.
 
         True when the message refers to the files as a group, when they are
-        all images (photographed notes are one document), or when the
-        previous turn already asked which file to use: never ask twice.
+        all images (photographed notes are one document), when the previous
+        answer already used every selected file (a follow-up means the same
+        set), or when the previous turn already asked which file to use:
+        never ask twice.
         """
         if _ALL_FILES_RE.search(message.lower()):
             return True
-        if all(
-            (f.get("mime_type") or "").startswith("image/")
-            or f["name"].lower().endswith(_IMAGE_SUFFIXES)
-            for f in files
-        ):
+        if all(_is_image_file(f) for f in files):
             return True
         replies = [m for m in history or [] if m.get("role") == "assistant"]
-        last = replies[-1].get("content") or "" if replies else ""
-        return _MEDIA_CHOICE_REASON in last
+        last = replies[-1] if replies else {}
+        if _MEDIA_CHOICE_REASON in (last.get("content") or ""):
+            return True
+        return last.get("media_count") == str(len(files))
 
     @turn_trace.branch_media_choice
     def _disambiguate_media(
@@ -1328,6 +1561,7 @@ class AssistantOrchestrator:
                 "content": result,
                 **turn_trace.link(),
             },
+            user_id=ctx.user_id,
         )
         if session["title"] == "New chat":
             self.supabase.update_session(
@@ -1387,7 +1621,11 @@ class AssistantOrchestrator:
             return False
         steps = self._plan_steps(plan)
         tools = [str(s.get("tool") or "") for s in steps]
-        if "flashcard_generator" in tools or len(steps) > 1:
+        if (
+            "flashcard_generator" in tools
+            or notes_intent.TOOL in tools
+            or len(steps) > 1
+        ):
             return False
         if tools and tools[0] == "quiz_generator":
             params = steps[0].get("params") or {}
@@ -1452,7 +1690,9 @@ class AssistantOrchestrator:
         return f"data: {json.dumps(payload)}\n\n"
 
     @staticmethod
-    def _clarification_frame(clar: AssistantResult) -> str:
+    def _clarification_frame(
+        clar: AssistantResult, user_message_id: str | None = None
+    ) -> str:
         """Build the SSE clarification frame for the streaming path."""
         request = clar.clarification
         questions = request.questions if request else []
@@ -1469,6 +1709,7 @@ class AssistantOrchestrator:
                     ],
                 },
                 "message_id": clar.message_id,
+                "user_message_id": user_message_id,
             },
             "done": True,
         }
@@ -1519,6 +1760,11 @@ class AssistantOrchestrator:
                 item["tool"] = tool
                 if len(tools) > 1:
                     item["tools"] = ", ".join(str(t) for t in tools)
+                # How many selected files that answer used (media_llm), so a
+                # follow-up can reuse the same set without asking again.
+                count = (meta.get("content") or {}).get("media_count")
+                if isinstance(count, int) and count > 0:
+                    item["media_count"] = str(count)
             history.append(item)
         return history
 
@@ -1833,26 +2079,41 @@ class AssistantOrchestrator:
         web_search. When the previous assistant turn produced a quiz or
         flashcard set, inherit that tool so the follow-up repeats the actual
         last action (a quiz still routes through the setup popover downstream).
-        Messages that already name a tool, carry media, or answer a
-        clarification keep their normal routing.
+        With files selected the repeat runs over them (``use_media``) instead
+        of asking which file to use. Messages that already name a tool or
+        answer a clarification keep their normal routing.
         """
-        if ctx.clarification is not None or ctx.media_ids:
+        last_tool = self._repeated_generator(ctx, message)
+        if last_tool is None:
+            return None
+        params: dict[str, Any] = {"topic": message}
+        if ctx.media_ids:
+            params["use_media"] = True
+        return self._single_step(last_tool, params)
+
+    def _repeated_generator(
+        self, ctx: AssistantContext, message: str
+    ) -> str | None:
+        """Return the generator a short "again" follow-up repeats, else None.
+
+        The answer is cached for the turn: the file-choice branch asks first
+        (to stay out of the way of a repeat) and ``_continuation_plan`` asks
+        again, and the message lookup must run only once.
+        """
+        if ctx.clarification is not None:
             return None
         text = message.lower()
-        if any(
-            w in text
-            for w in ("quiz", "practice test", "test me", "flashcard",
-                      "flash card")
-        ):
+        if _generator_intent(text) is not None:
             return None
         if not _REPEAT_RE.search(text):
             return None
         if len(text.split()) > _REPEAT_MAX_WORDS:
             return None
-        last_tool = self._last_generator_tool(ctx.session_id)
-        if last_tool is None:
-            return None
-        return self._single_step(last_tool, {"topic": message})
+        if message not in self._repeat_cache:
+            self._repeat_cache[message] = self._last_generator_tool(
+                ctx.session_id
+            )
+        return self._repeat_cache[message]
 
     def _last_generator_tool(self, session_id: str) -> str | None:
         """Name of the most recent assistant turn's repeatable generator tool.
@@ -1928,6 +2189,7 @@ class AssistantOrchestrator:
                 },
                 **turn_trace.link(),
             },
+            user_id=ctx.user_id,
         )
         return AssistantResult(
             status=RunStatus.CLARIFICATION_REQUIRED,

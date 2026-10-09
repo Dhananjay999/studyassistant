@@ -64,11 +64,24 @@ class MediaProcessingError(Exception):
     Non-recoverable failures are persisted as ``failed``; the upload is kept.
     """
 
-    def __init__(self, message: str, *, recoverable: bool = False) -> None:
-        """Store the user-facing message and recoverability."""
+    def __init__(
+        self,
+        message: str,
+        *,
+        recoverable: bool = False,
+        reason: str | None = None,
+    ) -> None:
+        """Store the user-facing message, recoverability and reason code."""
         super().__init__(message)
         self.user_message = message
         self.recoverable = recoverable
+        # Closed set shared with the frontend's `ProcessingFailureReason`
+        # (analytics `reason` prop): parse_failed | parse_timeout |
+        # not_found | unexpected. A slow parse is a timeout, anything else
+        # that LlamaParse rejected is a parse failure.
+        self.reason = reason or (
+            "parse_timeout" if recoverable else "parse_failed"
+        )
 
 
 class MediaProcessor:
@@ -105,13 +118,20 @@ class MediaProcessor:
         return {"stage": stage, "pct": pct, "msg": msg}
 
     @staticmethod
-    def _error_event(msg: str, *, recoverable: bool) -> Event:
-        """Build a terminal error event carrying its recoverability."""
+    def _error_event(
+        msg: str, *, recoverable: bool, reason: str = "unexpected"
+    ) -> Event:
+        """Build a terminal error event carrying its recoverability.
+
+        ``reason`` is the machine-readable cause (see MediaProcessingError)
+        so the client can report it without parsing the message.
+        """
         return {
             "stage": "error",
             "pct": 0,
             "msg": msg,
             "recoverable": recoverable,
+            "reason": reason,
             # The upload always survives a failure now; the client keeps the
             # row (with retry/remove) instead of dropping it.
             "kept": True,
@@ -127,7 +147,9 @@ class MediaProcessor:
         record = self.supabase.get_media(media_id, user_id)
         if not record:
             logger.warning("Media processing: file not found | %s", media_id)
-            yield self._error_event("File not found.", recoverable=False)
+            yield self._error_event(
+                "File not found.", recoverable=False, reason="not_found"
+            )
             return
 
         # Already indexed (e.g. a redundant reconnect) -> report ready.
@@ -166,6 +188,7 @@ class MediaProcessor:
                 record,
                 exc.user_message,
                 recoverable=exc.recoverable,
+                reason=exc.reason,
             )
         except Exception:
             logger.exception("Unexpected processing error for %s", media_id)
@@ -183,6 +206,7 @@ class MediaProcessor:
         message: str,
         *,
         recoverable: bool,
+        reason: str = "unexpected",
     ) -> Generator[Event, None, None]:
         """Persist the failure, then emit the error event.
 
@@ -198,7 +222,7 @@ class MediaProcessor:
             # A retry must submit a fresh parse, not poll the dead job.
             fields["llamaparse_job_id"] = None
         self.supabase.update_media_processing(media_id, user_id, **fields)
-        yield self._error_event(message, recoverable=recoverable)
+        yield self._error_event(message, recoverable=recoverable, reason=reason)
 
     def _mark_unindexed(
         self, user_id: str, record: dict[str, Any], reason: str
@@ -327,13 +351,16 @@ class MediaProcessor:
         """
         record = self.supabase.get_media(media_id, user_id)
         if not record:
-            yield self._error_event("File not found.", recoverable=False)
+            yield self._error_event(
+                "File not found.", recoverable=False, reason="not_found"
+            )
             return
         json_path = record.get("parsed_json_path")
         if not json_path:
             yield self._error_event(
                 "No parsed document is stored for this file; re-upload it.",
                 recoverable=False,
+                reason="parse_failed",
             )
             return
         try:
@@ -372,7 +399,9 @@ class MediaProcessor:
             )
         except Exception:
             logger.exception("Re-index failed for %s", media_id)
-            yield self._error_event("Re-index failed.", recoverable=False)
+            yield self._error_event(
+                "Re-index failed.", recoverable=False, reason="parse_failed"
+            )
             return
         logger.info(
             "Media re-indexed | media=%s | %d chunks", media_id, len(chunks)

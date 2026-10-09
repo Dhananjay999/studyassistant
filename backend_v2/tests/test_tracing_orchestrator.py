@@ -177,6 +177,7 @@ class _Supabase:
         role: str,
         content: str,
         metadata: dict | None = None,
+        user_id: str | None = None,
     ) -> dict:
         if role == self.fail_role:
             raise RuntimeError(f"insert of the {role} message failed")
@@ -1079,7 +1080,9 @@ class TestWebUpgradeCue:
                 searched.append(len(text))
                 return real.search(text)
 
-        message = "please help me decide. " * 400 + "best laptops?"
+        # Long in characters but few words: a long WORDY message is study
+        # work and is never upgraded, so the rule must still fire here.
+        message = "x" * (turn_trace._CUE_SCAN_CHARS + 500) + " best laptops?"
         plain = AssistantOrchestrator._web_upgrade(_plan("general"), message)
         tracing.start_turn(user_id="u", message="m", endpoint="stream")
         engine = turn_trace._engine()
@@ -1433,6 +1436,7 @@ class TestRepositoryOutsideARequest:
                 "tool_used": "general",
                 "content": response["data"]["content"],
                 "message_id": _msg_id(2),
+                "user_message_id": _msg_id(1),
             },
         }
         assert saved["writes"] == 0

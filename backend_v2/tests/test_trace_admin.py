@@ -1380,9 +1380,15 @@ class TestCatalogUsage:
             if usage["stage"] in {"answer_tools", "generators"}
         ]
         # One per registered tool, plus the quiz tool's exam research.
-        assert len(step_prompts) == 8
+        assert len(step_prompts) == 9
         for name, usage in step_prompts:
             assert usage["tool"], name
+            if name == "notes_generation":
+                # The one tool the planner never picks: only the forced
+                # notes route plans it.
+                assert "Planner LLM" not in usage["upstream"]
+                assert "Forced plan" in usage["upstream"]
+                continue
             assert "Planner LLM" in usage["upstream"], name
         # The answer prompts feed the follow-up chip parser.
         for name in ("general_answer", "web_search", "product_info", "media_llm"):
@@ -1499,6 +1505,7 @@ class TestCatalogFlow:
             "quiz_generator",
             "flashcard_generator",
             "image_generator",
+            "notes_generator",
         }
         nodes = self.nodes(built)
         assert tool_names <= {n["tool"] for n in nodes}

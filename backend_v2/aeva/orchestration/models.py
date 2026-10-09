@@ -167,6 +167,9 @@ class AssistantResult:
     tool_used: str | None = None
     content: dict[str, Any] | None = None
     message_id: str | None = None
+    # Persisted id of the user's message this turn (None on a clarification
+    # reply, which persists no user bubble).
+    user_message_id: str | None = None
     display_text: str = ""
     # Every tool that ran this turn (``tool_used`` is the primary one).
     tools_used: list[str] = field(default_factory=list)

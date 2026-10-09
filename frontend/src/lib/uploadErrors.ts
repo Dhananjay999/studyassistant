@@ -4,11 +4,15 @@
 // the server still refuses is named from its status and message.
 
 import { inspectPdf } from "@/lib/pdfInspect";
+import { queryClient } from "@/lib/queryClient";
+import type { AppConfig } from "@/types";
 
 const PDF_TYPE = "application/pdf";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-/** Mirrors the backend's ALLOWED_TYPES (`aeva/media/media_repository.py`). */
+/** Build-time mirror of the backend's ALLOWED_TYPES
+ *  (`aeva/media/media_repository.py`); `getAcceptedUploadTypes()` prefers
+ *  the list served by /config once it has loaded. */
 export const ACCEPTED_UPLOAD_TYPES: readonly string[] = [
   ...IMAGE_TYPES,
   PDF_TYPE,
@@ -18,9 +22,38 @@ export const UPLOAD_ACCEPT = ACCEPTED_UPLOAD_TYPES.join(",");
 
 // Files go straight from the browser to storage (see `uploadFileWithProgress`),
 // so the backend's request-body cap no longer applies: the limit is the
-// backend's MAX_UPLOAD_MB, mirrored here as VITE_MAX_UPLOAD_MB.
-export const MAX_UPLOAD_MB = Number(import.meta.env.VITE_MAX_UPLOAD_MB) || 10;
-const MAX_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+// backend's MAX_UPLOAD_MB. The backend serves it on GET /config
+// (`max_upload_mb`), which is the value used at check time; the build-time
+// VITE_MAX_UPLOAD_MB is only the fallback until /config has loaded.
+const ENV_MAX_UPLOAD_MB = Number(import.meta.env.VITE_MAX_UPLOAD_MB) || 30;
+/** Build-time fallback limit. Prefer `getMaxUploadMb()` in new code. */
+export const MAX_UPLOAD_MB = ENV_MAX_UPLOAD_MB;
+// Same key as `qk.config` in hooks/api.ts (not imported: hooks/api → lib/api
+// → this module would be a cycle).
+const CONFIG_QUERY_KEY = ["config"] as const;
+
+function appConfig(): AppConfig | undefined {
+  try {
+    return queryClient.getQueryData<AppConfig>(CONFIG_QUERY_KEY);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The upload limit in MB: /config when loaded, else the env fallback. */
+export function getMaxUploadMb(): number {
+  const served = appConfig()?.max_upload_mb;
+  return typeof served === "number" && served > 0 ? served : ENV_MAX_UPLOAD_MB;
+}
+
+/** MIME types the backend accepts: /config when loaded, else the mirror. */
+export function getAcceptedUploadTypes(): readonly string[] {
+  const served = appConfig()?.accepted_mime_types;
+  return Array.isArray(served) && served.length > 0
+    ? served
+    : ACCEPTED_UPLOAD_TYPES;
+}
+
 const PDF_HEADER = "%PDF-";
 const PDF_HEADER_WINDOW = 1024;
 
@@ -44,13 +77,26 @@ interface ReasonMeta {
   retryable: boolean;
 }
 
+// The two deterministic causes name the limit / the types at the moment they
+// are shown (getters), so the copy follows /config rather than the build.
 export const UPLOAD_FAILURES: Record<UploadFailureReason, ReasonMeta> = {
   unsupported_type: {
-    message: "This file type isn't supported. Upload a PDF, JPG, PNG, WebP or GIF.",
+    get message() {
+      return (
+        "This file type isn't supported. Upload a PDF or an image (JPG, PNG, " +
+        "WebP, GIF). Word, Excel and PowerPoint files aren't read yet: export " +
+        "them as a PDF first."
+      );
+    },
     retryable: false,
   },
   too_large: {
-    message: `This file is too large (the limit is ${MAX_UPLOAD_MB} MB). Try a smaller or compressed version.`,
+    get message() {
+      return (
+        `This file is too large (the limit is ${getMaxUploadMb()} MB). ` +
+        "Compress it or split it into smaller PDFs, then upload again."
+      );
+    },
     retryable: false,
   },
   empty_file: {
@@ -150,14 +196,15 @@ async function pdfProblem(file: File): Promise<UploadFailureReason | null> {
 export async function preflightUpload(
   file: File,
 ): Promise<UploadFailureReason | null> {
-  if (!ACCEPTED_UPLOAD_TYPES.includes(file.type)) return "unsupported_type";
+  if (!getAcceptedUploadTypes().includes(file.type)) return "unsupported_type";
   if (file.size === 0) return "empty_file";
   if (file.type === PDF_TYPE) return pdfProblem(file);
   return (await imageDecodes(file)) ? null : "corrupt_file";
 }
 
-/** Whether the file to be sent is over the upload limit. */
-export const exceedsUploadLimit = (file: File) => file.size > MAX_BYTES;
+/** Whether the file to be sent is over the upload limit (read at call time). */
+export const exceedsUploadLimit = (file: File) =>
+  file.size > getMaxUploadMb() * 1024 * 1024;
 
 export type ProcessingFailureReason =
   | "parse_failed"
@@ -169,14 +216,39 @@ export type ProcessingFailureReason =
 const PARSE_FAILED_MESSAGE =
   "We couldn't read this file. It may be damaged — try exporting it again.";
 
+const PROCESSING_REASONS: readonly ProcessingFailureReason[] = [
+  "parse_failed",
+  "parse_timeout",
+  "not_found",
+  "unexpected",
+  "unknown",
+];
+
 /**
- * Name the cause of a failed processing run from the backend's message, and
- * give the copy to show for it. Unrecognized messages are shown as sent.
+ * Name the cause of a failed processing run and give the copy to show for it.
+ * The backend's error frame carries a `reason` code (`serverReason`, see
+ * `media_processor.py`); when it is absent (older backend, status polling)
+ * the cause is named from the message. Unrecognized messages are shown as
+ * sent.
  */
-export function processingFailure(serverMessage: string): {
+export function processingFailure(
+  serverMessage: string,
+  serverReason?: string,
+): {
   reason: ProcessingFailureReason;
   message: string;
 } {
+  if (
+    serverReason &&
+    (PROCESSING_REASONS as readonly string[]).includes(serverReason)
+  ) {
+    const reason = serverReason as ProcessingFailureReason;
+    return {
+      reason,
+      message:
+        reason === "parse_failed" ? PARSE_FAILED_MESSAGE : serverMessage,
+    };
+  }
   if (/did not complete/i.test(serverMessage)) {
     return { reason: "parse_failed", message: PARSE_FAILED_MESSAGE };
   }

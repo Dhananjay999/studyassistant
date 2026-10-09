@@ -342,6 +342,27 @@ PROMPT_USAGE: dict[str, PromptUsage] = {
         ),
         downstream=_AFTER_GENERATOR,
     ),
+    "notes_generation": PromptUsage(
+        stage="generators",
+        description=(
+            "One plain-text call that writes a note the student keeps (a "
+            "revision sheet, a formula sheet, important questions with "
+            "model answers) from the answer an action was tapped on, the "
+            "selected files or the topic, in a worker thread. The planner "
+            "never routes here: only the forced notes route does."
+        ),
+        tool="notes_generator",
+        site=(f"{_TOOLS}/notes_generator.py", "execute"),
+        llm_method="generate",
+        config_key="LLM_MEDIA_MODEL",
+        upstream=(
+            "Forced plan",
+            "Build the personalization block",
+            "Load recent history",
+            "Pick the source material",
+        ),
+        downstream=_AFTER_GENERATOR,
+    ),
     "image_generation": PromptUsage(
         stage="generators",
         description=(
@@ -668,14 +689,17 @@ FLOW: tuple[FlowStage, ...] = (
                 label="Forced plan",
                 description=(
                     "Skips planning: media_llm on the chosen files, "
-                    "flashcard_generator, or quiz_generator with the "
-                    "popover settings. Plan source: forced."
+                    "flashcard_generator, quiz_generator with the "
+                    "popover settings, or notes_generator for a note to "
+                    "keep. Plan source: forced."
                 ),
                 kind="rule",
                 condition=(
                     'The request resolves a "which file?" '
                     "clarification, or carries flashcard_options, or "
-                    "carries quiz_options (checked in that order)."
+                    "carries quiz_options, or its message asks for "
+                    "revision notes, a formula sheet or important "
+                    "questions (checked in that order)."
                 ),
                 code=_orch("_forced_plan"),
             ),
@@ -1251,6 +1275,30 @@ FLOW: tuple[FlowStage, ...] = (
                 code=(
                     f"{_TOOLS}/flashcard_generator.py",
                     "FlashcardGeneratorTool.execute",
+                ),
+            ),
+            FlowNode(
+                id="notes_generator",
+                label="Notes generator",
+                description=(
+                    "One plain-text call writes the note in markdown; its "
+                    "leading heading becomes the title and the note is "
+                    "saved to the student's Notes. The full text is also "
+                    "the chat answer."
+                ),
+                kind="tool",
+                prompt="notes_generation",
+                tool="notes_generator",
+                condition=(
+                    "The plan has a notes_generator step: the message "
+                    "asks for revision notes, a formula sheet or "
+                    "important questions (typed, or the Save as revision "
+                    "sheet / Important questions actions) and the notes "
+                    "flag is on."
+                ),
+                code=(
+                    f"{_TOOLS}/notes_generator.py",
+                    "NotesGeneratorTool.execute",
                 ),
             ),
             FlowNode(

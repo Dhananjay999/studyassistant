@@ -37,6 +37,7 @@ export enum AnalyticsEvent {
   LOGIN_STARTED = "LOGIN_STARTED",
   LOGIN_ABANDONED = "LOGIN_ABANDONED",
   LOGIN_FAILED = "LOGIN_FAILED",
+  LOGIN_CALLBACK_LOADED = "LOGIN_CALLBACK_LOADED",
   LOGIN_SUCCEEDED = "LOGIN_SUCCEEDED",
   LOGOUT_COMPLETED = "LOGOUT_COMPLETED",
   SESSION_INVALIDATED = "SESSION_INVALIDATED",
@@ -62,6 +63,8 @@ export enum AnalyticsEvent {
   CHAT_RESPONSE_FAILED = "CHAT_RESPONSE_FAILED",
   CHAT_RESPONSE_STOPPED = "CHAT_RESPONSE_STOPPED",
   CHAT_RESPONSE_RETRIED = "CHAT_RESPONSE_RETRIED",
+  CHAT_RESPONSE_RECOVERED = "CHAT_RESPONSE_RECOVERED",
+  CHAT_RESPONSE_FEEDBACK = "CHAT_RESPONSE_FEEDBACK",
   CHAT_CLARIFICATION_REQUESTED = "CHAT_CLARIFICATION_REQUESTED",
   CHAT_CLARIFICATION_ANSWERED = "CHAT_CLARIFICATION_ANSWERED",
   CHAT_SLASH_COMMAND_SELECTED = "CHAT_SLASH_COMMAND_SELECTED",
@@ -98,10 +101,12 @@ export enum AnalyticsEvent {
   QUIZ_SETUP_REQUESTED = "QUIZ_SETUP_REQUESTED",
   QUIZ_GENERATION_REQUESTED = "QUIZ_GENERATION_REQUESTED",
   QUIZ_CREATE_FAILED = "QUIZ_CREATE_FAILED",
+  QUIZ_CARD_VIEWED = "QUIZ_CARD_VIEWED",
   QUIZ_OPENED = "QUIZ_OPENED",
   QUIZ_STARTED = "QUIZ_STARTED",
   QUIZ_QUESTION_VIEWED = "QUIZ_QUESTION_VIEWED",
   QUIZ_COMPLETED = "QUIZ_COMPLETED",
+  QUIZ_SHORT_ANSWER_GRADED = "QUIZ_SHORT_ANSWER_GRADED",
   QUIZ_SUBMIT_FAILED = "QUIZ_SUBMIT_FAILED",
   QUIZ_ABANDONED = "QUIZ_ABANDONED",
   QUIZ_RETAKEN = "QUIZ_RETAKEN",
@@ -149,7 +154,12 @@ export enum AnalyticsEvent {
   NOTE_UPDATED = "NOTE_UPDATED",
   NOTE_DELETED = "NOTE_DELETED",
   NOTE_ASKED_IN_CHAT = "NOTE_ASKED_IN_CHAT",
+  NOTES_GENERATED = "NOTES_GENERATED",
+  NOTES_GENERATE_FAILED = "NOTES_GENERATE_FAILED",
   REVISION_ACTION_CLICKED = "REVISION_ACTION_CLICKED",
+  NOTIFICATION_STRIP_SHOWN = "NOTIFICATION_STRIP_SHOWN",
+  NOTIFICATION_STRIP_DISMISSED = "NOTIFICATION_STRIP_DISMISSED",
+  NOTIFICATION_CLICKED = "NOTIFICATION_CLICKED",
   CONFIDENCE_SUBMITTED = "CONFIDENCE_SUBMITTED",
   CONFIDENCE_SUBMIT_FAILED = "CONFIDENCE_SUBMIT_FAILED",
 
@@ -160,6 +170,12 @@ export enum AnalyticsEvent {
   EXAM_PREP_SETUP_STEP_COMPLETED = "EXAM_PREP_SETUP_STEP_COMPLETED",
   EXAM_PREP_SETUP_COMPLETED = "EXAM_PREP_SETUP_COMPLETED",
   EXAM_PREP_SETUP_FAILED = "EXAM_PREP_SETUP_FAILED",
+  EXAM_PREP_SETUP_STEP_BLOCKED = "EXAM_PREP_SETUP_STEP_BLOCKED",
+  EXAM_PREP_OFFER_SHOWN = "EXAM_PREP_OFFER_SHOWN",
+  EXAM_PREP_OFFER_ACCEPTED = "EXAM_PREP_OFFER_ACCEPTED",
+  EXAM_PREP_OFFER_DISMISSED = "EXAM_PREP_OFFER_DISMISSED",
+  EXAM_PREP_OFFER_PLAN_CREATED = "EXAM_PREP_OFFER_PLAN_CREATED",
+  EXAM_PREP_OFFER_PLAN_FAILED = "EXAM_PREP_OFFER_PLAN_FAILED",
   EXAM_PREP_DASHBOARD_VIEWED = "EXAM_PREP_DASHBOARD_VIEWED",
   EXAM_PREP_DAY_OPENED = "EXAM_PREP_DAY_OPENED",
   EXAM_PREP_DAY_DETAIL_FAILED = "EXAM_PREP_DAY_DETAIL_FAILED",
@@ -203,6 +219,19 @@ export enum AnalyticsEvent {
 export type ErrorKind = "offline" | "high_demand" | "generic";
 /** Where an Exam Prep CTA was rendered. */
 export type ExamPrepCtaSource = "empty_state" | "welcome" | "intent";
+/** How the student stated the exam date in chat (exam-soon offer). */
+export type ExamOfferDateHintKind =
+  | "today"
+  | "tomorrow"
+  | "in_days"
+  | "weekday"
+  | "date";
+/** What a generated note was built from. */
+export type NotesSource = "files" | "topic" | "answer";
+/** What a return-hook notification points at (the chat strip). */
+export type NotificationKind = "plan" | "revision" | "quiz" | "flashcards";
+/** Where a notification was tapped. Only the chat strip exists today. */
+export type NotificationSource = "strip";
 /** Which Exam Prep surface triggered a topic action. */
 export type ExamPrepActionSource = "row" | "sheet" | "day" | "chat" | "topic";
 /** Mirrors `ExamTopicStatus` in `@/types` (kept local to avoid a cycle). */
@@ -252,7 +281,9 @@ export type ChatSource =
   | "slash"
   | "seed"
   | "revision"
-  | "action";
+  | "action"
+  /** Aeva's idle demo on the first conversation (not a user action). */
+  | "auto_demo";
 export type ChatIntent =
   | "text"
   | "clarification"
@@ -352,7 +383,17 @@ export interface ClickProps {
   href?: string;
   /** The element carried an explicit `data-analytics-id`. */
   explicit: boolean;
-  label_source: "attr" | "aria" | "title" | "text" | "private" | "none";
+  /** `text_masked`: visible text that looked user-typed (see clicks.ts). */
+  label_source:
+    | "attr"
+    | "aria"
+    | "title"
+    | "text"
+    | "text_masked"
+    | "private"
+    | "none";
+  /** 8-hex FNV-1a of a masked free-text label; never the text itself. */
+  text_hash?: string;
   /** Name of the dialog / sheet / menu the element lives in, if any. */
   popup?: string;
 }
@@ -417,6 +458,10 @@ export interface ChatMessageSentProps {
   source: ChatSource;
   voice_used: boolean;
   has_seed_context: boolean;
+  /** The account's very first message (no chat session existed yet). */
+  is_first_message?: boolean;
+  /** "Regenerate" re-sent the previous user message. */
+  regenerate?: boolean;
 }
 export interface ChatResponseCompletedProps {
   chat_session_id: string | null;
@@ -467,6 +512,8 @@ export interface QuizCompletedProps {
   final_score?: number;
   max_marks?: number;
   is_guest: boolean;
+  /** Written (`short_answer`) questions in the quiz; 0 for selection-only. */
+  short_answer_count?: number;
 }
 export interface FlashcardsStudyCompletedProps {
   set_id: string;
@@ -547,17 +594,35 @@ export interface EventPropsMap {
   [AnalyticsEvent.LANDING_FAQ_OPENED]: { faq_index: number };
   [AnalyticsEvent.LOGIN_STARTED]: { method: LoginMethod };
   [AnalyticsEvent.LOGIN_ABANDONED]: {
-    /** How long the sign-in popup stayed open before being closed. */
+    /** How long the sign-in popup stayed open before being closed, or
+     * (`via: returned`) how long the tab was away before coming back. */
     elapsed_ms: number;
-    /** `cancel`: the user pressed Cancel in the signing-in dialog. Absent
-     * when the popup itself was closed. */
-    via?: "cancel";
+    /** `cancel`: the user pressed Cancel in the signing-in dialog.
+     * `returned`: a same-tab redirect came back to the site without
+     * passing through /auth/callback (back button, reload, bounce).
+     * Absent when the popup itself was closed. */
+    via?: "cancel" | "returned";
   };
   [AnalyticsEvent.LOGIN_FAILED]: {
     /** missing_token | session | missing_code | exchange_failed |
      * access_denied | provider_error | unknown */
     reason: string;
     method?: LoginMethod;
+    /** HTTP status of the call that failed (`reason: session` only). */
+    status?: number;
+    /** Error class of that call (`reason: session` only), never its text. */
+    error_kind?: ErrorKind;
+  };
+  [AnalyticsEvent.LOGIN_CALLBACK_LOADED]: {
+    /** Tokens arrived in the URL fragment; else `auth_error` says why not. */
+    has_tokens: boolean;
+    /** The callback page runs inside the sign-in popup (reports to its
+     * opener) rather than in the tab that will become the app. */
+    in_popup: boolean;
+    /** Backend failure reason from the URL (same enum as `LOGIN_FAILED`). */
+    auth_error?: string;
+    /** Milliseconds since the same-tab redirect left the site. */
+    elapsed_ms?: number;
   };
   [AnalyticsEvent.LOGIN_SUCCEEDED]: { method?: LoginMethod; is_new_user: boolean };
   [AnalyticsEvent.LOGOUT_COMPLETED]: { source: string };
@@ -658,6 +723,13 @@ export interface EventPropsMap {
     chat_session_id: string | null;
     phase: "pre_stream" | "mid_stream";
     latency_ms: number;
+    /** Where the stream was when it failed (connecting, waiting for the
+     * first token, or mid-answer). */
+    stage?: "connect" | "waiting" | "streaming";
+    /** ms since the last frame when the stream was given up on. */
+    elapsed_ms?: number;
+    /** Backend trace id when a frame carried one. */
+    trace_id?: string | null;
   };
   [AnalyticsEvent.CHAT_RESPONSE_STOPPED]: {
     chat_session_id: string | null;
@@ -665,6 +737,19 @@ export interface EventPropsMap {
     had_content: boolean;
   };
   [AnalyticsEvent.CHAT_RESPONSE_RETRIED]: { chat_session_id: string | null };
+  /** A dropped stream was recovered by refetching the persisted answer. */
+  [AnalyticsEvent.CHAT_RESPONSE_RECOVERED]: {
+    chat_session_id: string | null;
+    elapsed_ms: number;
+    attempts: number;
+  };
+  /** Thumbs up / down on an answer (`none` = rating cleared). */
+  [AnalyticsEvent.CHAT_RESPONSE_FEEDBACK]: {
+    rating: "up" | "down" | "none";
+    tool_used?: string;
+    message_id: string;
+    chat_session_id: string | null;
+  };
   [AnalyticsEvent.CHAT_CLARIFICATION_REQUESTED]: {
     chat_session_id: string | null;
     question_count: number;
@@ -680,13 +765,32 @@ export interface EventPropsMap {
     canceled: boolean;
     duration_ms: number;
   };
-  [AnalyticsEvent.CHAT_VOICE_FAILED]: { code: string };
+  [AnalyticsEvent.CHAT_VOICE_FAILED]: {
+    code: string;
+    /** Dictated characters at the moment of failure. */
+    transcript_length?: number;
+  };
   [AnalyticsEvent.CHAT_SUGGESTED_PROMPT_CLICKED]: {
-    kind: "empty_state" | "recommendation";
+    kind:
+      | "empty_state"
+      | "recommendation"
+      /** Chip on Aeva's opening message after onboarding. */
+      | "first_conversation"
+      /** The idle demo auto-sent the first chip (not a tap). */
+      | "first_conversation_demo";
     action?: string;
   };
   [AnalyticsEvent.CHAT_ACTION_CLICKED]: {
-    action: "primary_prompt" | "flashcards" | "copy" | "followup" | "save_note" | "quiz";
+    action:
+      | "primary_prompt"
+      | "flashcards"
+      | "copy"
+      | "followup"
+      | "save_note"
+      | "quiz"
+      | "regenerate"
+      /** "Save as revision sheet" / "Important questions" (`action_id`). */
+      | "make_notes";
     action_id?: string;
     followup_index?: number;
   };
@@ -805,6 +909,7 @@ export interface EventPropsMap {
   [AnalyticsEvent.QUIZ_CREATE_FAILED]: ErrorKindProps & {
     material: CreateMaterial;
   };
+  [AnalyticsEvent.QUIZ_CARD_VIEWED]: { quiz_id: string };
   [AnalyticsEvent.QUIZ_OPENED]: {
     quiz_id: string;
     initial_view: string;
@@ -823,6 +928,15 @@ export interface EventPropsMap {
     question_index: number;
   };
   [AnalyticsEvent.QUIZ_COMPLETED]: QuizCompletedProps;
+  /** One per graded written answer, when a fresh attempt's report opens. */
+  [AnalyticsEvent.QUIZ_SHORT_ANSWER_GRADED]: {
+    quiz_id: string;
+    attempt_id?: string;
+    verdict: "correct" | "partial" | "incorrect";
+    score_bucket: "0-24" | "25-49" | "50-74" | "75-100";
+    graded_by: "llm" | "exact_match" | "keyword" | "empty" | "unknown";
+    is_guest: boolean;
+  };
   [AnalyticsEvent.QUIZ_SUBMIT_FAILED]: ErrorKindProps & { quiz_id: string };
   [AnalyticsEvent.QUIZ_ABANDONED]: { quiz_id: string; elapsed_s: number };
   [AnalyticsEvent.QUIZ_RETAKEN]: { quiz_id: string };
@@ -937,9 +1051,36 @@ export interface EventPropsMap {
   [AnalyticsEvent.NOTE_UPDATED]: { note_id: string; content_length: number };
   [AnalyticsEvent.NOTE_DELETED]: { note_id: string };
   [AnalyticsEvent.NOTE_ASKED_IN_CHAT]: { note_id: string; mode: string };
+  [AnalyticsEvent.NOTES_GENERATED]: {
+    note_id: string;
+    source: NotesSource;
+    /** Characters in the saved note. */
+    length: number;
+    /** revision_sheet | formula_sheet | important_questions | notes. */
+    kind?: string;
+    chat_session_id?: string | null;
+  };
+  [AnalyticsEvent.NOTES_GENERATE_FAILED]: {
+    error_kind: "timeout" | "generic";
+    chat_session_id?: string | null;
+  };
   [AnalyticsEvent.REVISION_ACTION_CLICKED]: {
     action: string;
     has_existing_target: boolean;
+  };
+  // Return hook (chat strip). Counts and enums only.
+  [AnalyticsEvent.NOTIFICATION_STRIP_SHOWN]: {
+    kind_count: number;
+    has_plan: boolean;
+    has_revision: boolean;
+    has_quiz: boolean;
+    has_flashcards: boolean;
+    revision_due_count: number;
+  };
+  [AnalyticsEvent.NOTIFICATION_STRIP_DISMISSED]: { kind_count: number };
+  [AnalyticsEvent.NOTIFICATION_CLICKED]: {
+    kind: NotificationKind;
+    source: NotificationSource;
   };
   [AnalyticsEvent.CONFIDENCE_SUBMITTED]: {
     confidence: string;
@@ -976,6 +1117,45 @@ export interface EventPropsMap {
     latency_ms: number;
   };
   [AnalyticsEvent.EXAM_PREP_SETUP_FAILED]: ErrorKindProps & {
+    latency_ms: number;
+    /** Wizard step the failure happened on (plan creation is step 3). */
+    step?: number;
+    exam_kind?: string;
+  };
+  [AnalyticsEvent.EXAM_PREP_SETUP_STEP_BLOCKED]: {
+    step: number;
+    exam_kind?: string;
+    /** Ids of the fields still missing (enums, never their values). */
+    missing_fields: string[];
+    missing_count: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_OFFER_SHOWN]: {
+    date_hint_kind: ExamOfferDateHintKind;
+    days_until: number;
+    has_exam_name: boolean;
+    subject_count: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_OFFER_ACCEPTED]: {
+    date_hint_kind: ExamOfferDateHintKind;
+    days_until: number;
+    subject_count: number;
+    /** The student changed the prefilled date / name before accepting. */
+    date_edited: boolean;
+    name_edited: boolean;
+  };
+  [AnalyticsEvent.EXAM_PREP_OFFER_DISMISSED]: {
+    date_hint_kind: ExamOfferDateHintKind;
+    days_until: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_OFFER_PLAN_CREATED]: {
+    plan_id: string;
+    days_remaining: number;
+    total_days: number;
+    subject_count: number;
+    research: boolean;
+    latency_ms: number;
+  };
+  [AnalyticsEvent.EXAM_PREP_OFFER_PLAN_FAILED]: ErrorKindProps & {
     latency_ms: number;
   };
   [AnalyticsEvent.EXAM_PREP_DASHBOARD_VIEWED]: {

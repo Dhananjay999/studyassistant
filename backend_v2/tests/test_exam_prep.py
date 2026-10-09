@@ -1235,7 +1235,9 @@ class _ExamSupabase:
     def get_messages(self, session_id, limit=None):
         return []
 
-    def add_message(self, session_id, role, content, metadata=None):
+    def add_message(
+        self, session_id, role, content, metadata=None, user_id=None
+    ):
         row = {
             "id": f"00000000-0000-0000-0000-{len(self.added) + 1:012d}",
             "session_id": session_id,

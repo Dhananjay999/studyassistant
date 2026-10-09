@@ -46,6 +46,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { usePinnedSessions } from "@/hooks/usePinnedSessions";
 import { useAppConfig, useConvertToSpace, useSpaces } from "@/hooks/api";
+import { hiddenForNewUser } from "@/hooks/useFeature";
 import { realSpaces, spaceColor, spaceIcon } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import { formatShortcut } from "@/lib/platform";
@@ -161,13 +162,17 @@ export function AppSidebar({
   const { pinnedIds, isPinned, togglePin } = usePinnedSessions();
   const onChats = location.pathname === "/chat";
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  // Admin-managed feature flags hide their nav entries entirely.
-  const features = useAppConfig().data?.features;
+  // Admin-managed feature flags hide their nav entries entirely; flags the
+  // backend marks hidden for new users hide them for accounts created after
+  // the cut-off date only (existing users see no change).
+  const appConfig = useAppConfig().data;
+  const features = appConfig?.features;
   const flagged = (item: NavItem) =>
     !item.feature ||
-    (item.defaultOff
-      ? features?.[item.feature] === true
-      : features?.[item.feature] !== false);
+    (!hiddenForNewUser(item.feature, appConfig, user) &&
+      (item.defaultOff
+        ? features?.[item.feature] === true
+        : features?.[item.feature] !== false));
   // Every tab lives in the Library dropdown on the expanded desktop sidebar.
   // The mobile drawer (identified by `onNavigate`) and the collapsed desktop
   // rail keep a flat vertical list of the same items instead.
@@ -209,7 +214,9 @@ export function AppSidebar({
     setLibraryOpen((open) => !open);
     manualAnchorRef.current = historyRef.current?.scrollTop ?? 0;
   };
-  const spacesEnabled = features?.study_spaces !== false;
+  const spacesEnabled =
+    features?.study_spaces !== false &&
+    !hiddenForNewUser("study_spaces", appConfig, user);
   // Study Spaces are opt-in: the mini-list below renders only when the user
   // has created at least one real space, so non-adopters see no change.
   const { data: allSpaces } = useSpaces();

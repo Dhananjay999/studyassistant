@@ -12,7 +12,15 @@ from flask import current_app
 from jwt import PyJWKClient
 from supabase import Client, create_client
 
+from aeva.auth.token_diagnostics import report_token_verification_failure
+
 logger = logging.getLogger(__name__)
+
+# Seconds of clock difference tolerated between Supabase Auth (which mints
+# the token) and this server when checking ``exp``/``iat``/``nbf``. A token
+# verified seconds after it was issued must not fail because the two clocks
+# differ by a moment (PyJWT >= 2.10 rejects an ``iat`` in the future).
+JWT_LEEWAY_SECONDS = 60
 
 
 def _vec_to_str(vector: list[float]) -> str:
@@ -126,6 +134,7 @@ class SupabaseService:
             key,
             algorithms=[alg],
             audience="authenticated",
+            leeway=JWT_LEEWAY_SECONDS,
         )
 
     def verify_token(self, token: str) -> dict[str, Any] | None:
@@ -134,6 +143,7 @@ class SupabaseService:
             payload = self._decode_token(token)
         except Exception as exc:  # noqa: BLE001
             logger.warning("JWT verification failed: %s", exc)
+            report_token_verification_failure(token, exc)
             return None
 
         user_id = payload.get("sub")
@@ -296,18 +306,26 @@ class SupabaseService:
         role: str,
         content: str,
         metadata: dict[str, Any] | None = None,
+        user_id: str | None = None,
     ) -> dict[str, Any]:
-        """Add a message to a session."""
-        result = (
-            self.client.table("messages")
-            .insert({
-                "session_id": session_id,
-                "role": role,
-                "content": content,
-                "metadata": metadata or {},
-            })
-            .execute()
-        )
+        """Add a message to a session.
+
+        ``user_id`` (the session owner) is written to ``messages.user_id``
+        only when ``MESSAGES_USER_ID_ENABLED`` is on: the column arrives with
+        migration 036 PART 1, and PostgREST rejects an insert that names a
+        column it does not know.
+        """
+        row: dict[str, Any] = {
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "metadata": metadata or {},
+        }
+        if user_id is not None and current_app.config.get(
+            "MESSAGES_USER_ID_ENABLED"
+        ):
+            row["user_id"] = user_id
+        result = self.client.table("messages").insert(row).execute()
         return result.data[0]
 
     def get_messages(

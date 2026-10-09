@@ -64,6 +64,22 @@ class ExamPrepRepository:
         ).data or []
         return dict(rows[0]) if rows else None
 
+    def has_active_plan(self, user_id: str) -> bool:
+        """Whether the user has an active plan (id only, one indexed row).
+
+        Same (user_id, status) filter as ``get_active_plan``, served by
+        idx_exam_plans_one_active, without loading the plan row.
+        """
+        rows = (
+            self.client.table("exam_plans")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("status", "active")
+            .limit(1)
+            .execute()
+        ).data or []
+        return bool(rows)
+
     def get_plan(self, plan_id: str, user_id: str) -> dict[str, Any] | None:
         """One plan, owner-filtered."""
         rows = (

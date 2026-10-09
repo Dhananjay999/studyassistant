@@ -5,6 +5,8 @@ from typing import Any
 
 from marshmallow import Schema, fields, post_load, validate
 
+from aeva.common.uuid_ref import uuid_validator
+
 ITEM_TYPES = ["response", "quiz", "media", "note", "flashcard"]
 
 
@@ -31,7 +33,14 @@ class CreateBookmarkSchema(Schema):
     )
     title = fields.Str(load_default="")
     content = fields.Str(load_default="")
-    item_ref = fields.Str(load_default=None, allow_none=True)
+    # The source row's id (message / quiz / set / media / note): always a
+    # UUID. A client placeholder such as "stream-…" is rejected here so it
+    # can never poison the list query (see bookmark_repository).
+    item_ref = fields.Str(
+        load_default=None,
+        allow_none=True,
+        validate=uuid_validator("item_ref"),
+    )
     collection_id = fields.Str(load_default=None, allow_none=True)
     metadata = fields.Dict(load_default=dict)
     space_id = fields.Str(load_default=None, allow_none=True)

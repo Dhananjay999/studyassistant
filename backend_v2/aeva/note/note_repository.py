@@ -78,6 +78,35 @@ class NoteRepository:
         )
         return success_response("Note created", result.data[0])
 
+    def create_generated(
+        self,
+        user_id: str,
+        *,
+        title: str,
+        content_md: str,
+        source_type: str,
+        space_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Save a note Aeva wrote in chat (``notes_generator``); return the row.
+
+        ``space_id`` is the chat session's space, already ownership-checked
+        when the turn loaded its session, so it is used as given; without
+        one the note is filed in General. One INSERT, served by the primary
+        key; ``source_type`` must be one the table's CHECK allows.
+        """
+        result = (
+            self.supabase.client.table("notes")
+            .insert({
+                "user_id": user_id,
+                "space_id": space_id or self.supabase.resolve_space(user_id),
+                "title": title.strip()[:200] or "Untitled note",
+                "content_md": content_md,
+                "source_type": source_type,
+            })
+            .execute()
+        )
+        return dict(result.data[0])
+
     def update_note(
         self, user_id: str, note_id: str, patch: dict[str, Any]
     ) -> dict[str, Any]:

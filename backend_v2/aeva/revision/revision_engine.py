@@ -345,6 +345,48 @@ def bucketize(
     }
 
 
+@dataclass(frozen=True)
+class DueWindow:
+    """The two instants that decide whether an item counts as "due".
+
+    ``bucketize`` puts an item in needs_revision or due_today exactly when
+    ``due_at < due_before`` and it is not "recently mastered"
+    (``status == mastered`` and ``updated_at > mastered_after``). Exposed so
+    a count query (the daily digest, the chat "waiting for you" strip) can
+    apply the same rule in SQL without loading the rows; ``is_due`` is the
+    row-level form and the tests pin both to ``bucketize``.
+    """
+
+    due_before: datetime
+    mastered_after: datetime
+
+
+def due_window(
+    cfg: RevisionConfig, now: datetime, tz_offset_minutes: int = 0
+) -> DueWindow:
+    """Bounds of the dashboard's "due" count for the user-local day."""
+    _, day_end = local_day_bounds(tz_offset_minutes, now)
+    # bucketize keeps an item "recently mastered" while
+    # (now - updated).days <= mastered_recent_days, i.e. for strictly less
+    # than (mastered_recent_days + 1) whole days.
+    mastered_after = now - timedelta(days=cfg.mastered_recent_days + 1)
+    return DueWindow(due_before=day_end, mastered_after=mastered_after)
+
+
+def is_due(item: dict[str, Any], window: DueWindow) -> bool:
+    """Whether ``bucketize`` would count the item as due (see DueWindow)."""
+    due = parse_ts(item.get("due_at"))
+    if not due or due >= window.due_before:
+        return False
+    updated = parse_ts(item.get("updated_at"))
+    recently_mastered = (
+        item.get("status") == STATUS_MASTERED
+        and updated is not None
+        and updated > window.mastered_after
+    )
+    return not recently_mastered
+
+
 def streak_from_days(active: set[date], today: date) -> int:
     """Consecutive active days ending today (or yesterday)."""
     if not active:

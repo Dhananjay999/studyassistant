@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { isUsableTopic } from "@/components/chat/QuizSetupForm";
 import { SourcePicker } from "@/components/create/SourcePicker";
 import { useAppConfig, useGenerateFlashcards } from "@/hooks/api";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
@@ -55,6 +56,9 @@ export function CreateFlashcardsPanel({
   const [customCount, setCustomCount] = useState<string | null>(null);
   const [details, setDetails] = useState("");
   const material = toGenerationSource(source);
+  // A typed topic is the only material, so it must be one the generator can
+  // work from (same rule as the quiz setup form in Chat).
+  const topicOk = source.kind !== "topic" || isUsableTopic(source.topic);
 
   const isCustom = customCount !== null;
   const customNum = Number(customCount);
@@ -63,7 +67,7 @@ export function CreateFlashcardsPanel({
   const countValid = !isCustom || customValid;
 
   const submit = () => {
-    if (!material || !countValid) return;
+    if (!material || !countValid || !topicOk) return;
     const cards = Math.min(isCustom ? customNum : count, max);
     analytics.track(AnalyticsEvent.FLASHCARDS_GENERATION_REQUESTED, {
       chat_session_id: null,
@@ -116,11 +120,19 @@ export function CreateFlashcardsPanel({
           </ResponsiveModalDescription>
         </ResponsiveModalHeader>
         <ResponsiveModalBody className="space-y-4 overscroll-contain px-1">
-          <SourcePicker
-            question="What do you want to create flashcards for?"
-            value={source}
-            onChange={setSource}
-          />
+          <div className="space-y-1.5">
+            <SourcePicker
+              question="What do you want to create flashcards for?"
+              value={source}
+              onChange={setSource}
+            />
+            {!topicOk && (
+              <p className="text-[10px] text-muted-foreground">
+                Add a topic of at least two words (e.g. "Photosynthesis class
+                10").
+              </p>
+            )}
+          </div>
           <div className="space-y-2">
             <Label className="text-xs">Number of cards</Label>
             <div className="flex flex-wrap gap-2">
@@ -185,7 +197,7 @@ export function CreateFlashcardsPanel({
         <ResponsiveModalFooter>
           <Button
             onClick={submit}
-            disabled={!material || !countValid}
+            disabled={!material || !countValid || !topicOk}
             className="w-full gap-2"
           >
             <Sparkles className="h-4 w-4" />

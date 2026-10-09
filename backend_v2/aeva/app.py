@@ -17,6 +17,7 @@ from aeva.assistant.assistant_controller import blueprint as assistant_bp
 from aeva.auth.auth_controller import blueprint as auth_bp
 from aeva.bookmark.bookmark_controller import blueprint as bookmark_bp
 from aeva.chat.chat_controller import blueprint as chat_bp
+from aeva.chat.feedback_controller import blueprint as chat_feedback_bp
 from aeva.common.errors import CustomError
 from aeva.common.logging_config import preview, setup_logging
 from aeva.common.sentry import capture_exception, init_sentry
@@ -29,6 +30,10 @@ from aeva.learning_profile.learning_profile_controller import (
     blueprint as learning_profile_bp,
 )
 from aeva.media.media_controller import blueprint as media_bp
+from aeva.media.media_repository import ALLOWED_TYPES as ALLOWED_UPLOAD_TYPES
+from aeva.notifications.notification_controller import (
+    blueprint as notifications_bp,
+)
 from aeva.quiz.quiz_controller import blueprint as quiz_bp
 from aeva.revision.revision_controller import blueprint as revision_bp
 from aeva.search.search_controller import blueprint as search_bp
@@ -161,10 +166,11 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["MEDIA_LIST_LIMIT"] = int(
         os.environ.get("MEDIA_LIST_LIMIT", "300")
     )
-    # Dev/QA aid: append a "powered by: <model>" badge to each answer so the
-    # model the planner picked is visible in the UI. Off in production.
-    app.config["SHOW_MODEL_BADGE"] = os.environ.get(
-        "SHOW_MODEL_BADGE", ""
+    # Write the owner into messages.user_id on insert (see
+    # SupabaseService.add_message). Off by default: set to 1 after migration
+    # 036 PART 1 is applied; PostgREST rejects unknown columns.
+    app.config["MESSAGES_USER_ID_ENABLED"] = os.environ.get(
+        "MESSAGES_USER_ID_ENABLED", ""
     ).lower() in ("1", "true", "yes", "on")
     # Embedding model for the media RAG retrieval layer. Has its own model
     # (not LLM_MODEL) because chat and embeddings are different model families.
@@ -357,8 +363,16 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
     app.config["ALLOWED_ORIGINS"] = [
         o.strip() for o in origins.split(",")
     ]
+    # One upload limit for the whole product. The frontend reads it from
+    # /config (max_upload_mb) and the storage bucket must be set to the same
+    # value; 30 MB covers the 15-30 MB textbook PDFs students actually upload.
     app.config["MAX_UPLOAD_MB"] = int(
-        os.environ.get("MAX_UPLOAD_MB", "10")
+        os.environ.get("MAX_UPLOAD_MB", "30")
+    )
+    # Accounts created on/after this date are "new users" for feature flags
+    # marked hidden_for_new_users (see aeva.feature_flag). ISO date (UTC).
+    app.config["FEATURE_NEW_USER_SINCE"] = os.environ.get(
+        "FEATURE_NEW_USER_SINCE", "2026-10-09"
     )
 
     app.config["FRONTEND_URL"] = os.environ.get(
@@ -492,6 +506,7 @@ def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
     api.register_blueprint(note_bp)
     api.register_blueprint(media_bp)
     api.register_blueprint(chat_bp)
+    api.register_blueprint(chat_feedback_bp)
     api.register_blueprint(assistant_bp)
     api.register_blueprint(quiz_bp)
     api.register_blueprint(shares_bp)
@@ -507,6 +522,7 @@ def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
     api.register_blueprint(admin_trace_bp)
     api.register_blueprint(delay_bp)
     api.register_blueprint(exam_prep_bp)
+    api.register_blueprint(notifications_bp)
 
     _register_request_logging(app)
 
@@ -554,6 +570,16 @@ def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
             "max_quiz_questions": app.config["QUIZ_MAX_QUESTIONS"],
             "max_flashcard_cards": app.config["FLASHCARD_MAX_CARDS"],
             "features": feature_flag_service.get_flags(),
+            # Upload limits: the single source of truth for the preflight
+            # check and the "too large" copy in the frontend.
+            "max_upload_mb": app.config["MAX_UPLOAD_MB"],
+            "accepted_mime_types": sorted(ALLOWED_UPLOAD_TYPES),
+            # Flags that stay off for accounts created on/after `since`
+            # (existing users keep them). Frontend hides the nav entries.
+            "features_new_users": {
+                "since": app.config["FEATURE_NEW_USER_SINCE"],
+                "hidden": feature_flag_service.hidden_for_new_users(),
+            },
         }
 
     return app

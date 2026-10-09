@@ -80,4 +80,5 @@ class AssistantRepository:
             "tool_used": result.tool_used,
             "content": result.content,
             "message_id": result.message_id,
+            "user_message_id": result.user_message_id,
         })

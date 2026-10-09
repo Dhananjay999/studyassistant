@@ -79,6 +79,12 @@ export function mapAssistantContent(
   };
 }
 
+/** The saved thumbs rating of a message row (`metadata.feedback`), if any. */
+export function mapFeedback(value: unknown): MessageMeta["feedback"] {
+  const rating = (value as { rating?: unknown } | null | undefined)?.rating;
+  return rating === "up" || rating === "down" ? { rating } : undefined;
+}
+
 /** True when a turn ran more than one agent. */
 export function isTeamTurn(meta: MessageMeta | undefined): boolean {
   return (meta?.agents?.length ?? 0) > 1;

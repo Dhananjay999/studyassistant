@@ -14,6 +14,7 @@ captured by the SDK's logging integration.
 
 import logging
 import os
+from typing import Any
 
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -74,4 +75,26 @@ def set_user(user_id: str) -> None:
 def capture_exception(error: BaseException) -> None:
     """Report an exception and push it out before the request ends."""
     sentry_sdk.capture_exception(error)
+    sentry_sdk.flush(timeout=_FLUSH_TIMEOUT_S)
+
+
+def capture_warning(
+    message: str,
+    *,
+    tags: dict[str, str] | None = None,
+    extras: dict[str, Any] | None = None,
+) -> None:
+    """Report a warning-level message with searchable tags, then flush.
+
+    For conditions that are handled (the request still gets a clean answer)
+    but must be visible outside the function's logs, such as a bearer token
+    the backend refused. Callers pass only ids, enums and numbers: never a
+    token, a message or anything that identifies the user.
+    """
+    with sentry_sdk.new_scope() as scope:
+        for key, value in (tags or {}).items():
+            scope.set_tag(key, value)
+        for key, value in (extras or {}).items():
+            scope.set_extra(key, value)
+        sentry_sdk.capture_message(message, level="warning")
     sentry_sdk.flush(timeout=_FLUSH_TIMEOUT_S)

@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import logging
+import re
 import secrets
 from typing import Any
 
@@ -34,6 +35,15 @@ blueprint = Blueprint(
 )
 
 PKCE_COOKIE = "pkce_verifier"
+# Shape of a verifier this module issued: 32 random bytes, base64url, no
+# padding. Anything else in the cookie is ignored rather than reused.
+_VERIFIER_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+
+
+def _pkce_challenge(verifier: str) -> str:
+    """S256 challenge for a verifier."""
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
 def _generate_pkce() -> tuple[str, str]:
@@ -43,9 +53,24 @@ def _generate_pkce() -> tuple[str, str]:
         .rstrip(b"=")
         .decode()
     )
-    digest = hashlib.sha256(verifier.encode()).digest()
-    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-    return verifier, challenge
+    return verifier, _pkce_challenge(verifier)
+
+
+def _pkce_for_request(existing: str | None) -> tuple[str, str]:
+    """Pick the verifier and challenge for a new sign-in start.
+
+    A second start while a flow is in progress (a double tap on a slow
+    phone, or a retry from the issue dialog) used to overwrite the single
+    verifier cookie, so only the last flow could exchange its code and the
+    earlier callback failed with ``exchange_failed``. Reusing the verifier
+    already in the cookie keeps every flow started from this browser
+    exchangeable: each one's challenge is derived from the same secret.
+    The cookie is gone after a successful callback or its max-age, so a
+    normal single start still gets a fresh verifier.
+    """
+    if existing and _VERIFIER_RE.fullmatch(existing):
+        return existing, _pkce_challenge(existing)
+    return _generate_pkce()
 
 
 class AuthMe(MethodView):
@@ -72,7 +97,7 @@ class AuthMe(MethodView):
 def login_google() -> Response:
     """Start Google OAuth via Supabase (PKCE)."""
     supabase = SupabaseService()
-    verifier, challenge = _generate_pkce()
+    verifier, challenge = _pkce_for_request(request.cookies.get(PKCE_COOKIE))
     callback = f"{request.url_root.rstrip('/')}/auth/callback"
     url = supabase.build_oauth_url("google", callback, challenge)
 

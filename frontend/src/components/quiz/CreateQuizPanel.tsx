@@ -8,7 +8,7 @@ import {
   ResponsiveModalHeader,
   ResponsiveModalTitle,
 } from "@/components/ui/responsive-modal";
-import { QuizSetupForm } from "@/components/chat/QuizSetupForm";
+import { isUsableTopic, QuizSetupForm } from "@/components/chat/QuizSetupForm";
 import { SourcePicker } from "@/components/create/SourcePicker";
 import { useGenerateQuiz } from "@/hooks/api";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
@@ -40,12 +40,15 @@ export function CreateQuizPanel({
   const [source, setSource] = useState<SourceDraft>(EMPTY_SOURCE);
   const settingsDraft = useRef<QuizSetupDraft | null>(null);
   const material = toGenerationSource(source);
+  // A typed topic is the only material, so it must be one the generator can
+  // work from (same rule as the quiz setup form in Chat).
+  const topicOk = source.kind !== "topic" || isUsableTopic(source.topic);
   const stashSettings = useCallback((d: QuizSetupDraft) => {
     settingsDraft.current = d;
   }, []);
 
   const handleGenerate = (opts: QuizOptions) => {
-    if (!material) return;
+    if (!material || !topicOk) return;
     analytics.track(AnalyticsEvent.QUIZ_GENERATION_REQUESTED, {
       question_count: opts.question_count ?? 0,
       difficulty: opts.target_exam ? "exam" : (opts.difficulty ?? "default"),
@@ -110,13 +113,21 @@ export function CreateQuizPanel({
           layout="sheet"
           hideTopic
           leading={
-            <SourcePicker
-              question="What do you want to be quizzed on?"
-              value={source}
-              onChange={setSource}
-            />
+            <div className="space-y-1.5">
+              <SourcePicker
+                question="What do you want to be quizzed on?"
+                value={source}
+                onChange={setSource}
+              />
+              {!topicOk && (
+                <p className="text-[10px] text-muted-foreground">
+                  Add a topic of at least two words (e.g. "Photosynthesis
+                  class 10").
+                </p>
+              )}
+            </div>
           }
-          canGenerate={material !== null}
+          canGenerate={material !== null && topicOk}
           draft={settingsDraft.current}
           onDraftChange={stashSettings}
           onGenerate={handleGenerate}

@@ -9,7 +9,7 @@ from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import success_response
 from aeva.llm import prompts
 from aeva.llm.llm_client import LLMClient
-from aeva.quiz import exam_patterns
+from aeva.quiz import exam_patterns, short_answer_grading
 from aeva.quiz.quiz_engine import QuizEngine
 from aeva.quiz.quiz_repository import QuizRepository
 from aeva.revision.revision_service import RevisionService
@@ -26,10 +26,15 @@ class QuizService:
         repo: QuizRepository | None = None,
         llm: LLMClient | None = None,
         supabase: SupabaseService | None = None,
+        short_answer_grader: (
+            short_answer_grading.ShortAnswerGrader | None
+        ) = None,
     ) -> None:
         self._repo = repo
         self._llm = llm
         self._supabase = supabase
+        # None = the default grader, built only if an attempt needs it.
+        self._short_answer_grader = short_answer_grader
 
     @property
     def repo(self) -> QuizRepository:
@@ -146,7 +151,12 @@ class QuizService:
         answers: dict[str, list[str]],
         time_taken_seconds: int = 0,
     ) -> dict[str, Any]:
-        """Score the quiz locally and persist the attempt — no LLM call."""
+        """Score the quiz and persist the attempt.
+
+        Selection questions are scored locally with no LLM call. Written
+        (``short_answer``) answers are graded against their rubric in one
+        batched LLM call, with a deterministic fallback, before scoring.
+        """
         quiz = self.repo.get_quiz(quiz_id, user_id, include_answers=True)
         if not quiz:
             raise CustomError(ERROR_CODES["QUIZ_NOT_FOUND"])
@@ -154,8 +164,14 @@ class QuizService:
         # Exam quizzes carry a marking scheme; ordinary quizzes score by
         # accuracy only (marking is None → evaluation shape is unchanged).
         marking = exam_patterns.marking_from_config(quiz.get("exam_config"))
+        # Written answers: cap their length, then grade them ({} and no LLM
+        # call when the quiz has no short-answer question).
+        answers = short_answer_grading.clip_answers(quiz["questions"], answers)
+        gradings = short_answer_grading.grade_attempt(
+            quiz["questions"], answers, self._short_answer_grader
+        )
         evaluation = QuizEngine.evaluate(
-            quiz["questions"], answers, marking=marking
+            quiz["questions"], answers, marking=marking, gradings=gradings
         )
         evaluation["time_taken_seconds"] = max(int(time_taken_seconds), 0)
         attempt = self.repo.save_attempt(quiz_id, user_id, answers, evaluation)

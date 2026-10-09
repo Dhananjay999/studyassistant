@@ -12,6 +12,7 @@ import {
   X,
   AlertTriangle,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +86,9 @@ export function MediaSidebar({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
+    // A second tap while the first delete is in flight is ignored (the
+    // button is also disabled); without this the second request 404s.
+    if (deletingId) return;
     analytics.track(AnalyticsEvent.MEDIA_DELETED, {
       media_id: id,
       source: "sidebar",
@@ -92,6 +96,18 @@ export function MediaSidebar({
     setDeletingId(id);
     try {
       await onDelete(id);
+    } catch (err) {
+      // The backend answers 404 ("Resource not found") when the row is
+      // already gone: the file is deleted either way, so say so quietly
+      // instead of surfacing an unhandled rejection.
+      const gone = /not found/i.test(
+        err instanceof Error ? err.message : String(err),
+      );
+      toast[gone ? "info" : "error"](
+        gone
+          ? "That file was already removed."
+          : "Couldn't delete the file. Please try again.",
+      );
     } finally {
       setDeletingId(null);
     }
@@ -291,7 +307,7 @@ export function MediaSidebar({
                 <button
                   type="button"
                   onClick={() => handleDelete(m.id)}
-                  disabled={deletingId === m.id}
+                  disabled={deletingId !== null}
                   className="shrink-0 text-muted-foreground hover:text-destructive touch:-mr-1 touch:grid touch:h-9 touch:w-8 touch:place-items-center"
                   aria-label="Delete file"
                 >

@@ -75,3 +75,51 @@ export async function compressFile(file: File): Promise<File> {
   }
   return file;
 }
+
+// Camera shots and pasted images reach us as "blob", "image.jpg" or a name
+// with no extension; stored as-is they are unrecognisable in the file list
+// and cite as "blob". Name them before upload from the type and the time.
+const UNNAMED_BASENAMES = new Set(["", "blob", "image", "file", "photo", "capture"]);
+const EXT_BY_MIME: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "application/pdf": "pdf",
+};
+
+/** True when the picked file carries no usable name (camera / paste). */
+export function isUnnamedFile(file: File): boolean {
+  const name = (file.name || "").trim();
+  const dot = name.lastIndexOf(".");
+  const base = (dot > 0 ? name.slice(0, dot) : name).trim().toLowerCase();
+  return dot <= 0 || UNNAMED_BASENAMES.has(base);
+}
+
+/**
+ * Give an unnamed file a readable name such as `Photo 3 · 14:27.jpg`
+ * (`index` is its 1-based position in the batch; omitted for a single file).
+ * Named files are returned untouched, bytes are never copied.
+ */
+export function ensureFileName(file: File, index?: number): File {
+  if (!isUnnamedFile(file)) return file;
+  const kind = file.type.startsWith("image/")
+    ? "Photo"
+    : file.type === PDF_TYPE
+      ? "Document"
+      : "File";
+  const ext =
+    EXT_BY_MIME[file.type] ??
+    ((file.name || "").includes(".") ? file.name.split(".").pop() : "") ??
+    "";
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const label = `${kind}${index ? ` ${index}` : ""} · ${hh}:${mm}`;
+  return new File([file], ext ? `${label}.${ext}` : label, {
+    type: file.type,
+    lastModified: file.lastModified,
+  });
+}

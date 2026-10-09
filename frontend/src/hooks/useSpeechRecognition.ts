@@ -62,6 +62,21 @@ function getRecognitionCtor(): SpeechRecognitionConstructor | null {
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
 }
 
+/**
+ * Add one result segment to the text built so far. Chrome on Android emits
+ * results that are cumulative (each one repeats everything before it) or
+ * re-emitted (the same segment twice), so a plain append doubles the words.
+ */
+function mergeSegment(acc: string, seg: string): string {
+  const a = acc.trim();
+  const s = seg.trim();
+  if (!s) return acc;
+  if (!a) return seg;
+  if (s.startsWith(a)) return seg; // cumulative: replace
+  if (a.endsWith(s)) return acc; // re-emitted: skip
+  return acc + seg;
+}
+
 function toErrorCode(error: string): SpeechErrorCode | null {
   switch (error) {
     case "not-allowed":
@@ -137,8 +152,8 @@ export function useSpeechRecognition({
         let interim = "";
         for (let i = 0; i < e.results.length; i++) {
           const segment = e.results[i][0]?.transcript ?? "";
-          if (e.results[i].isFinal) final += segment;
-          else interim += segment;
+          if (e.results[i].isFinal) final = mergeSegment(final, segment);
+          else interim = mergeSegment(interim, segment);
         }
         s.nativeFinal = final;
         if (final || interim) s.silentRuns = 0;

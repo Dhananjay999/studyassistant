@@ -44,6 +44,9 @@ export interface ChatComposerHandle {
   focus: () => void;
   /** Focus the composer and open the slash-command menu. */
   openCommands: () => void;
+  /** Begin dictation (e.g. from an "Ask by voice" chip on the empty chat).
+   *  Returns false when voice input is off or unsupported here. */
+  startVoice: () => boolean;
 }
 
 /** Append dictated text to what was already typed, with a single space. */
@@ -153,6 +156,9 @@ export const ChatComposer = forwardRef<
   // when the current dictation session started.
   const voiceContributedRef = useRef(false);
   const voiceStartedAtRef = useRef(0);
+  // Characters dictated so far in this session (final + interim), reported
+  // on a voice failure so a garbled transcript is measurable.
+  const dictatedLengthRef = useRef(0);
   const isMobile = useIsMobile();
   const voiceEnabled = useFeature("voice_input");
   // Full prompt wraps to two lines on a narrow phone (and the second line gets
@@ -218,7 +224,11 @@ export const ChatComposer = forwardRef<
   } = useSpeechRecognition({
     lang: voiceLang === "auto" ? undefined : voiceLang,
     onTranscript: (finalText, interimText) => {
+      // `finalText` is the WHOLE finalized transcript of the session and
+      // `interimText` the current in-flight segment: both replace what was
+      // shown before (never appended), so a re-emitted result can't stack.
       if (finalText) voiceContributedRef.current = true;
+      dictatedLengthRef.current = finalText.length + interimText.length;
       setValue(joinDictation(dictationBaseRef.current, finalText));
       setInterim(interimText);
       if (finalText || interimText) bumpActivity();
@@ -230,7 +240,10 @@ export const ChatComposer = forwardRef<
       });
     },
     onError: (code) => {
-      analytics.track(AnalyticsEvent.CHAT_VOICE_FAILED, { code });
+      analytics.track(AnalyticsEvent.CHAT_VOICE_FAILED, {
+        code,
+        transcript_length: dictatedLengthRef.current,
+      });
       const { title, description } = VOICE_ERROR_MESSAGES[code];
       toast.error(title, description ? { description } : undefined);
     },
@@ -256,6 +269,7 @@ export const ChatComposer = forwardRef<
     if (locked || listening) return;
     dictationBaseRef.current = value;
     voiceStartedAtRef.current = performance.now();
+    dictatedLengthRef.current = 0;
     analytics.track(AnalyticsEvent.CHAT_VOICE_STARTED, { lang: voiceLang });
     setInterim("");
     bumpActivity();
@@ -289,6 +303,11 @@ export const ChatComposer = forwardRef<
       setShowMenu(true);
       setActiveIndex(0);
       focusEnd();
+    },
+    startVoice: () => {
+      if (!voiceEnabled || !micSupported || locked) return false;
+      startVoice();
+      return true;
     },
   }));
 

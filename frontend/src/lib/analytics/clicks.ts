@@ -8,12 +8,20 @@
 //
 // Labelling, in priority order:
 //   1. `data-analytics-name` (explicit, always wins)
-//   2. masked as "[private]" when inside `[data-analytics-private]` or
-//      `.ph-no-capture` — lists of user content (chat titles, file names,
-//      quiz answers…) must be wrapped in one of these
+//   2. masked as "[private]" when inside `[data-analytics-private]`,
+//      `.ph-no-capture` or `[data-analytics-user-content]` — lists of user
+//      content (chat titles, file names, quiz answers, chat messages…) must
+//      be wrapped in one of these
 //   3. `aria-label` / `aria-labelledby`
 //   4. `title`
-//   5. visible text (≤ 60 chars) or an image `alt`
+//   5. visible text (≤ 60 chars) or an image `alt` — but ONLY when it reads
+//      like a static control label. Text that looks typed by a person (an
+//      email address, a sentence, a date/score string, more than four
+//      words) is masked too: the event is named `<location>_TEXT_CLICK`
+//      and the label is replaced by a short hash (`text_hash`) so repeated
+//      presses of the same button still group, without the text itself.
+//      Static labels must stay short; give anything longer an aria-label
+//      or `data-analytics-name`.
 //
 // `location` comes from `data-analytics-location`, else the nearest
 // `data-analytics-section`, else the nearest landmark (nav/aside/main…).
@@ -41,7 +49,15 @@ const INTERACTIVE = [
   '[role="radio"]',
   "[data-analytics-id]",
 ].join(", ");
-const PRIVATE = "[data-analytics-private], .ph-no-capture";
+const PRIVATE =
+  "[data-analytics-private], .ph-no-capture, [data-analytics-user-content]";
+// Visible text is used as a label only when it looks like a fixed control
+// caption. Anything that could have been typed by a person is masked.
+const FREE_TEXT_MAX_CHARS = 32;
+const FREE_TEXT_MAX_WORDS = 4;
+// Emails, URLs, long numbers (years, scores), sentences and clock times.
+// Short static captions with small numbers ("Class 11-12") stay as they are.
+const FREE_TEXT_PATTERN = /@|https?:\/\/|\d{3,}|[?!]|\b\d{1,2}:\d{2}\b|\b(am|pm)\b/i;
 const IGNORE = "[data-analytics-ignore]";
 const POPUP =
   '[role="dialog"], [role="alertdialog"], [role="menu"], [data-vaul-drawer]';
@@ -51,6 +67,31 @@ const MAX_NAME = 60;
 export interface ElementLabel {
   name?: string;
   source: ClickProps["label_source"];
+  /** Short hash of a masked free-text label (see `looksLikeFreeText`). */
+  textHash?: string;
+}
+
+/** True when a visible-text label could be user-typed rather than a caption. */
+export function looksLikeFreeText(text: string): boolean {
+  if (text.length > FREE_TEXT_MAX_CHARS) return true;
+  if (text.split(" ").length > FREE_TEXT_MAX_WORDS) return true;
+  return FREE_TEXT_PATTERN.test(text);
+}
+
+/** 32-bit FNV-1a as 8 hex chars: stable, cheap, not reversible to the text. */
+export function hashLabel(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function textLabel(text: string): ElementLabel {
+  return looksLikeFreeText(text)
+    ? { source: "text_masked", textHash: hashLabel(text) }
+    : { name: text, source: "text" };
 }
 
 function clean(s: string | null | undefined): string {
@@ -83,16 +124,16 @@ export function describeElementLabel(el: HTMLElement): ElementLabel {
 
   if (el instanceof HTMLInputElement) {
     if (/^(button|submit|reset)$/.test(el.type) && clean(el.value)) {
-      return { name: clean(el.value), source: "text" };
+      return textLabel(clean(el.value));
     }
     const label = clean(el.labels?.[0]?.textContent);
-    if (label) return { name: label, source: "text" };
+    if (label) return textLabel(label);
   }
 
   const text = clean(el.textContent);
-  if (text) return { name: text, source: "text" };
+  if (text) return textLabel(text);
   const alt = clean(el.querySelector("img[alt]")?.getAttribute("alt"));
-  if (alt) return { name: alt, source: "text" };
+  if (alt) return textLabel(alt);
   return { source: "none" };
 }
 
@@ -144,16 +185,17 @@ function describe(el: HTMLElement): ClickProps {
         ? "link"
         : el.tagName.toLowerCase());
 
+  const masked = label.source === "private" || label.source === "text_masked";
   return {
     element_id:
-      ds.analyticsId ||
-      (label.source === "private" ? "private" : slug(label.name ?? "")),
-    element_name: label.source === "private" ? "[private]" : label.name,
+      ds.analyticsId || (masked ? label.source : slug(label.name ?? "")),
+    element_name: masked ? `[${label.source}]` : label.name,
     element_type: type,
     location: ds.analyticsLocation || section || landmark,
     href,
     explicit: !!ds.analyticsId,
     label_source: label.source,
+    text_hash: label.textHash,
     popup: popupNameOf(el),
   };
 }
@@ -163,6 +205,9 @@ export function clickNameFor(props: ClickProps): string {
   if (props.explicit) return clickEventName(props.element_id);
   if (props.label_source === "private") {
     return clickEventName(`${props.location ?? "private"}_item`);
+  }
+  if (props.label_source === "text_masked") {
+    return clickEventName(`${props.location ?? "unlabeled"}_text`);
   }
   return clickEventName(props.element_name ?? "unlabeled");
 }

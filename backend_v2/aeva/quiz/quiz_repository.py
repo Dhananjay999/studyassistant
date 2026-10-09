@@ -3,6 +3,7 @@
 import uuid
 from typing import Any
 
+from aeva.quiz import short_answer_grading as short_answer
 from aeva.supabase.supabase_service import SupabaseService
 
 
@@ -47,10 +48,13 @@ class QuizRepository:
         quiz_id = quiz["id"]
 
         questions_out: list[dict[str, Any]] = []
-        for idx, q in enumerate(quiz_data.get("questions", [])):
+        for idx, generated in enumerate(quiz_data.get("questions", [])):
+            # A short-answer question is put into its stored shape (no
+            # options, model answer + rubric); other types pass through.
+            q = short_answer.prepare_question(generated)
             # Always use server UUIDs — LLM ids (e.g. "q1_topic") are not valid.
             qid = str(uuid.uuid4())
-            self.supabase.client.table("quiz_questions").insert({
+            row = {
                 "id": qid,
                 "quiz_id": quiz_id,
                 "type": q["type"],
@@ -59,7 +63,13 @@ class QuizRepository:
                 "correct_answers": q["correct_answers"],
                 "explanation": q.get("explanation"),
                 "sort_order": idx,
-            }).execute()
+            }
+            # `rubric` (migration 038) is sent for short-answer rows only,
+            # so every other insert is unchanged and does not depend on
+            # the column.
+            if short_answer.is_short_answer(q):
+                row["rubric"] = q.get("rubric") or []
+            self.supabase.client.table("quiz_questions").insert(row).execute()
             questions_out.append({
                 "id": qid,
                 "type": q["type"],
@@ -206,6 +216,9 @@ class QuizRepository:
             if include_answers:
                 item["correct_answers"] = q["correct_answers"]
                 item["explanation"] = q.get("explanation")
+                # Key points a written answer is graded against.
+                if short_answer.is_short_answer(q):
+                    item["rubric"] = q.get("rubric") or []
             questions.append(item)
 
         return {

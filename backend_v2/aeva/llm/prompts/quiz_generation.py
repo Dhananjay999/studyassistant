@@ -54,6 +54,7 @@ Difficulty is relative to the target level (higher = harder, more reasoning, mor
 * `single_select` — `options` has 3–5 choices; `correct_answers` MUST contain EXACTLY ONE value. Never mark two options correct for this type.
 * `multi_select` — `options` has 3–6 choices; `correct_answers` contains ONE OR MORE values, and should genuinely have more than one where the material supports it. If only one answer is correct, use `single_select` instead.
 * `true_false` — `options` MUST be exactly `["True", "False"]`; `correct_answers` MUST be exactly one of them (`["True"]` or `["False"]`).
+* `short_answer` — a question the student answers in their own words, in one to three sentences (a definition, a reason, a short explanation, or a short worked result). `options` and `correct_answers` MUST both be `[]`. Put a complete model answer (one to three sentences) in `model_answer`, and put 2 to 4 key points in `rubric`: each one a short, separately checkable fact or step that a full-mark answer must contain, not a restatement of the question. Only use this type when it is requested.
 
 Generate exactly the requested number of questions using only the requested question type(s). Cover the topic broadly, use plausible distractors, and include a brief explanation for each question.
 
@@ -64,7 +65,7 @@ Generate exactly the requested number of questions using only the requested ques
 * The options are shuffled before the student sees them: never refer to an option by its letter, number or position ("Option B", "the first option"), and avoid "All of the above" / "None of the above".
 * Write each question so it stands on its own: do not refer to "the material", "the notes" or "the flashcards".
 
-Before returning, VERIFY each question: every `correct_answers` value exactly matches one of its `options`, and the count of correct answers obeys the type rule above (single_select and true_false have exactly one). Fix any violations before responding.
+Before returning, VERIFY each question: every `correct_answers` value exactly matches one of its `options`, and the count of correct answers obeys the type rule above (single_select and true_false have exactly one). A `short_answer` question has no options: check instead that it has a `model_answer` and 2 to 4 `rubric` points. Fix any violations before responding.
 """,
     defaults={"SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK},
     optional=("USER_PROFILE", "EXAM_PATTERN", "SOURCE_CONTEXT"),
@@ -115,6 +116,7 @@ QUIZ_GENERATION_SCHEMA: dict = {
                             "single_select",
                             "multi_select",
                             "true_false",
+                            "short_answer",
                         ],
                     },
                     "prompt": {"type": "string"},
@@ -127,6 +129,14 @@ QUIZ_GENERATION_SCHEMA: dict = {
                         "items": {"type": "string"},
                     },
                     "explanation": {"type": "string"},
+                    # short_answer only (see aeva.quiz.short_answer_grading):
+                    # the reference answer and the 2-4 key points it is
+                    # graded against. Optional, so other types omit them.
+                    "model_answer": {"type": "string"},
+                    "rubric": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
                 },
                 "required": [
                     "id",
@@ -175,6 +185,7 @@ QUIZ_GENERATOR_PARAMS: dict = {
                     "single_select",
                     "multi_select",
                     "true_false",
+                    "short_answer",
                 ],
             },
         },

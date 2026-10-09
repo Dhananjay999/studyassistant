@@ -97,7 +97,11 @@ export function BookmarkButton({
       setNewFolder("");
       setCreating(false);
       setOpen(false);
-    } catch {
+    } catch (err) {
+      analytics.track(AnalyticsEvent.BOOKMARK_CREATE_FAILED, {
+        item_type: item.item_type,
+        error_kind: errorKind(err),
+      });
       toast.error("Couldn't create folder");
     }
   };

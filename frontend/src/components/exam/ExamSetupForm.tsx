@@ -37,6 +37,14 @@ import { GlassCard } from "@/components/common/GlassCard";
 import { RotatingStatus } from "@/components/common/RotatingStatus";
 import { isoToday, parsePlanDate } from "@/components/exam/examFormat";
 import {
+  EXAM_NAME_LEN,
+  MAX_MINUTES,
+  MIN_MINUTES,
+  SUBJECT_LEN,
+  SUBJECT_MAX,
+  defaultSubjectsFor,
+} from "@/components/exam/examPlanRules";
+import {
   BOARDS,
   BOARD_CLASSES,
   BOARD_EXAM_TYPES,
@@ -73,10 +81,10 @@ import { uploadMedia } from "@/lib/api";
 import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
 import { setExamPlanHint } from "@/lib/examPrepHome";
 import {
-  MAX_UPLOAD_MB,
   UPLOAD_ACCEPT,
   UPLOAD_FAILURES,
   exceedsUploadLimit,
+  getMaxUploadMb,
   preflightUpload,
   toUploadError,
 } from "@/lib/uploadErrors";
@@ -90,12 +98,7 @@ import {
 } from "@/types";
 
 const MINUTE_CHIPS = [30, 60, 90, 120, 180, 240];
-const SUBJECT_MAX = 12;
-const SUBJECT_LEN = 40;
-const EXAM_NAME_LEN = 80;
 const SYLLABUS_MAX = 8000;
-const MIN_MINUTES = 15;
-const MAX_MINUTES = 720;
 
 const RESEARCH_MESSAGE = "Researching the official syllabus and exam pattern…";
 const BUILD_MESSAGES = [
@@ -104,36 +107,6 @@ const BUILD_MESSAGES = [
   "Adding revision and mock-test days…",
   "Almost there — polishing the plan…",
 ];
-
-/** Starting subjects guessed from a free-text exam name ("Something else"). */
-function defaultSubjectsFor(examName: string): string[] {
-  const n = examName.toLowerCase();
-  if (/\bjee\b|iit/.test(n)) return ["Physics", "Chemistry", "Mathematics"];
-  if (/\bneet\b|aiims/.test(n)) return ["Physics", "Chemistry", "Biology"];
-  if (/upsc|\bias\b|civil/.test(n))
-    return [
-      "Polity",
-      "History",
-      "Geography",
-      "Economy",
-      "Environment",
-      "Current Affairs",
-    ];
-  if (/\bssc\b|bank|ibps|\bsbi\b|\brrb\b/.test(n))
-    return [
-      "Quantitative Aptitude",
-      "Reasoning",
-      "English",
-      "General Awareness",
-    ];
-  if (/\bgate\b/.test(n))
-    return ["Engineering Mathematics", "General Aptitude", "Core subjects"];
-  if (/\bcat\b|\bxat\b|\bmba\b/.test(n))
-    return ["Quantitative Aptitude", "Verbal Ability", "DILR"];
-  if (/cbse|icse|board|class|school|\bsslc\b|\bhsc\b/.test(n))
-    return ["Mathematics", "Science", "English", "Social Science"];
-  return [];
-}
 
 /** First-run answers taken from the learning profile (the student edits). */
 function answersFromProfile(profile: LearningProfile): Partial<SetupAnswers> {
@@ -298,6 +271,50 @@ export function ExamSetupForm() {
     daysUntil >= 0;
   const step2Valid = subjects.length > 0 && minutesValid;
 
+  // What Continue is still waiting for on this step, in form order. After a
+  // refused tap it is spelled out in one line above the button (and reported
+  // by id), so the tap always gets an answer the student can act on.
+  const missing = useMemo(() => {
+    const out: { id: string; label: string }[] = [];
+    if (step === 1) {
+      if (!answers.kind) {
+        out.push({ id: "exam_kind", label: "the kind of exam" });
+      } else if (answers.kind === "school" || answers.kind === "board") {
+        if (!answers.schoolClass) out.push({ id: "class", label: "your class" });
+        if (!answers.board) out.push({ id: "board", label: "your board" });
+        if (SENIOR_CLASSES.has(answers.schoolClass) && !answers.stream) {
+          out.push({ id: "stream", label: "your stream" });
+        }
+      } else if (answers.kind === "college" && !answers.degree) {
+        out.push({ id: "degree", label: "your degree" });
+      } else if (answers.kind === "unit" && !answers.unitSubject.trim()) {
+        out.push({ id: "unit_subject", label: "the subject" });
+      }
+      if (unsupported) {
+        out.push({
+          id: "unsupported_exam",
+          label: `a different exam (${unsupported} plans aren't available yet)`,
+        });
+      } else if (answers.kind && !examName.trim()) {
+        out.push({ id: "exam_name", label: "the exam name" });
+      }
+      if (!examDate) {
+        out.push({ id: "exam_date", label: "the exam date" });
+      } else if (daysUntil !== null && daysUntil < 0) {
+        out.push({ id: "exam_date_past", label: "a date from today onwards" });
+      }
+    } else if (step === 2) {
+      if (subjects.length === 0) {
+        out.push({ id: "subjects", label: "at least one subject" });
+      }
+      if (!minutesValid) {
+        out.push({ id: "daily_minutes", label: "your daily study time" });
+      }
+    }
+    return out;
+  }, [step, answers, unsupported, examName, examDate, daysUntil, subjects.length, minutesValid]);
+  const showMissing = touched && missing.length > 0;
+
   const toggleSubject = (s: string) => {
     subjectsAuto.current = false;
     setSubjects((prev) =>
@@ -366,6 +383,12 @@ export function ExamSetupForm() {
   const next = () => {
     setTouched(true);
     if ((step === 1 && !step1Valid) || (step === 2 && !step2Valid)) {
+      analytics.track(AnalyticsEvent.EXAM_PREP_SETUP_STEP_BLOCKED, {
+        step,
+        exam_kind: answers.kind ?? undefined,
+        missing_fields: missing.map((m) => m.id),
+        missing_count: missing.length,
+      });
       revealFirstError();
       return;
     }
@@ -509,6 +532,8 @@ export function ExamSetupForm() {
       analytics.track(AnalyticsEvent.EXAM_PREP_SETUP_FAILED, {
         error_kind: errorKind(err),
         latency_ms: Math.round(performance.now() - t0),
+        step: 3,
+        exam_kind: answers.kind ?? "other",
       });
       setErrorMsg(friendlyErrorMessage(err));
       setPhase("error");
@@ -579,7 +604,10 @@ export function ExamSetupForm() {
   }
 
   return (
-    <div ref={rootRef} className="relative pb-24 lg:pb-0">
+    <div
+      ref={rootRef}
+      className={cn("relative lg:pb-0", showMissing ? "pb-36" : "pb-24")}
+    >
       <StepIndicator step={step} />
 
       <AnimatePresence mode="wait" initial={false}>
@@ -1127,7 +1155,7 @@ export function ExamSetupForm() {
                   <Upload className="h-4 w-4" /> Upload PDF or image
                 </Button>
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Up to {MAX_UPLOAD_MB} MB per file.
+                  Up to {getMaxUploadMb()} MB per file.
                 </p>
 
                 {(uploads.length > 0 || readyMedia.length > 0) && (
@@ -1236,12 +1264,28 @@ export function ExamSetupForm() {
           desktop. The form's bottom padding keeps content clear of it. */}
       <div
         className={cn(
-          "fixed inset-x-0 z-30 flex gap-2 border-t border-border/50 bg-background/85 px-4 pb-3 pt-3 backdrop-blur",
+          "fixed inset-x-0 z-30 flex flex-wrap gap-2 border-t border-border/50 bg-background/85 px-4 pb-3 pt-3 backdrop-blur",
           "bottom-[calc(3.75rem+env(safe-area-inset-bottom))]",
           "[[data-kb-open='1']_&]:bottom-0",
           "lg:sticky lg:inset-x-auto lg:bottom-0 lg:-mx-4 lg:mt-6",
         )}
       >
+        {/* Why Continue did not move on: always on screen next to the button
+            (the field errors above may be scrolled out of view), on touch and
+            mouse alike. */}
+        {showMissing && (
+          <motion.p
+            role="status"
+            aria-live="polite"
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="flex w-full items-start gap-1.5 text-xs leading-snug text-red-600 [overflow-wrap:anywhere] dark:text-red-400"
+          >
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>Still needed: {missing.map((m) => m.label).join(", ")}.</span>
+          </motion.p>
+        )}
         {step > 1 && (
           <Button
             type="button"

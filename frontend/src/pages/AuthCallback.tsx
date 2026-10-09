@@ -6,7 +6,10 @@ import { AppLoader } from "@/components/common/AppLoader";
 import { Seo } from "@/components/common/Seo";
 import { AUTH_MESSAGES } from "@/lib/loadingMessages";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { apiErrorStatus } from "@/lib/api";
+import { errorKind } from "@/lib/errorMessage";
 import { hasExamPlanHint } from "@/lib/examPrepHome";
+import { consumeRedirectStart } from "@/lib/signInRedirect";
 
 // Failure reasons the backend callback can send. The value comes from the
 // URL, so anything else is reported as "unknown" rather than passed through.
@@ -37,11 +40,25 @@ export default function AuthCallback() {
     const refreshToken = params.get("refresh_token");
     const expiresIn = Number(params.get("expires_in") || "3600");
     const hasTokens = !!accessToken && !!refreshToken;
-    const failure = readAuthError() ?? "missing_token";
+    const authError = readAuthError();
+    const failure = authError ?? "missing_token";
 
     // Popup flow: hand the tokens (or the failure reason) to the opener and
     // close this window. The opener tracks the failure and tells the user.
     const inPopup = !!window.opener && window.opener !== window;
+
+    // The backend's side of the sign-in is done: say so before anything can
+    // fail on this side, so backend and frontend outcomes reconcile.
+    const redirectStartedAt = consumeRedirectStart();
+    analytics.track(AnalyticsEvent.LOGIN_CALLBACK_LOADED, {
+      has_tokens: hasTokens,
+      in_popup: inPopup,
+      auth_error: authError ?? undefined,
+      elapsed_ms:
+        redirectStartedAt === null
+          ? undefined
+          : Math.max(0, Date.now() - redirectStartedAt),
+    });
     if (inPopup) {
       window.opener.postMessage(
         hasTokens
@@ -58,12 +75,17 @@ export default function AuthCallback() {
       return;
     }
 
-    // Full-redirect fallback flow.
-    const fail = (reason: string) => {
+    // Same-tab flow. A failure here owns its outcome: the session (if any)
+    // was already dropped quietly by `setSession`, and the landing page
+    // shows the issue dialog, which must survive the navigation (no hard
+    // reload on this path).
+    const fail = (reason: string, err?: unknown) => {
       noteLandingLogin("failed");
       analytics.track(AnalyticsEvent.LOGIN_FAILED, {
         reason,
         method: "redirect",
+        status: apiErrorStatus(err),
+        error_kind: err === undefined ? undefined : errorKind(err),
       });
       reportSignInIssue({ kind: "failed", reason });
       navigate(`/?auth_error=${reason}`, { replace: true });
@@ -79,7 +101,7 @@ export default function AuthCallback() {
             replace: true,
           }),
         )
-        .catch(() => fail("session"));
+        .catch((err: unknown) => fail("session", err));
     } else {
       fail(failure);
     }

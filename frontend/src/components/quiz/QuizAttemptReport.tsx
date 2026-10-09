@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -22,6 +22,10 @@ import { Button } from "@/components/ui/button";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { ShareResultButton } from "@/components/quiz/ShareResultButton";
+import {
+  shortAnswerGradings,
+  shortAnswerScoreBucket,
+} from "@/components/quiz/shortAnswer";
 import { useAnalyzeQuiz, useCreateSession } from "@/hooks/api";
 import { formatDuration, formatMark, formatMarks } from "@/lib/quizFormat";
 import { printAttemptReport } from "@/lib/printReport";
@@ -32,6 +36,7 @@ import type {
   QuizAnalysis,
   QuizContent,
   QuizEvaluation,
+  QuizPerQuestion,
 } from "@/types";
 
 /**
@@ -69,12 +74,40 @@ export function QuizAttemptReport({
   const navigate = useNavigate();
   const createSession = useCreateSession();
   const analyzeMutation = useAnalyzeQuiz();
-  const [reviewOpen, setReviewOpen] = useState(false);
+  // Written answers come back with feedback worth reading straight away, so
+  // the review starts open when the attempt has any; otherwise it stays
+  // collapsed as before.
+  const [reviewOpen, setReviewOpen] = useState(
+    () => shortAnswerGradings(ev).length > 0,
+  );
   const [analysis, setAnalysis] = useState<QuizAnalysis | null>(initialAnalysis);
   const [analysisOpen, setAnalysisOpen] = useState(false);
 
   const questions = quiz.questions ?? [];
   const hasMulti = questions.some((x) => x.type === "multi_select");
+  const hasShort =
+    (ev.short_answer_count ?? 0) > 0 ||
+    questions.some((x) => x.type === "short_answer");
+
+  // One event per graded written answer, for a fresh submission only: a
+  // reopened past attempt (it carries its attempt number) was counted when it
+  // was submitted.
+  const gradedTracked = useRef(false);
+  useEffect(() => {
+    if (gradedTracked.current || attemptNumber !== undefined) return;
+    gradedTracked.current = true;
+    for (const g of shortAnswerGradings(ev)) {
+      analytics.track(AnalyticsEvent.QUIZ_SHORT_ANSWER_GRADED, {
+        quiz_id: quiz.quiz_id ?? "",
+        attempt_id: attemptId || undefined,
+        verdict: g.verdict,
+        score_bucket: shortAnswerScoreBucket(g.score),
+        graded_by: g.graded_by ?? "unknown",
+        is_guest: guest,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Exam attempts carry a marks-based score; ordinary ones show accuracy only.
   const isExam =
     ev.final_score !== undefined && ev.final_score !== null;
@@ -103,7 +136,7 @@ export function QuizAttemptReport({
         tone: "red",
       },
     ];
-    if (hasMulti) {
+    if (hasMulti || hasShort) {
       base.push({
         label: "Partial",
         value: ev.partial_count,
@@ -118,7 +151,7 @@ export function QuizAttemptReport({
       tone: "muted",
     });
     return base;
-  }, [ev, hasMulti]);
+  }, [ev, hasMulti, hasShort]);
 
   const runAnalysis = async () => {
     analytics.track(AnalyticsEvent.QUIZ_ANALYSIS_REQUESTED, {
@@ -245,6 +278,11 @@ export function QuizAttemptReport({
                 <p className="mt-3 text-xs text-muted-foreground">
                   Scored as: {ev.correct_count} correct ×{" "}
                   {formatMark(ev.marking.correct)}
+                  {ev.short_answer_partial_count
+                    ? ` ${ev.short_answer_partial_count} partly correct × ${formatMark(
+                        ev.marking.correct / 2,
+                      )}`
+                    : ""}
                   {" "}
                   {ev.exam_incorrect ?? 0} wrong ×{" "}
                   {formatMark(ev.marking.negative)}
@@ -573,13 +611,19 @@ function ReviewPanel({
                 <p className="font-medium">
                   {i + 1}. <MathText>{q?.prompt ?? row.question_id}</MathText>
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Your answer: {row.user_answer.join(", ") || "—"}
-                </p>
-                {!row.is_correct && (
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                    Correct: {row.correct_answer.join(", ")}
-                  </p>
+                {q?.type === "short_answer" || row.grading ? (
+                  <ShortAnswerReview row={row} />
+                ) : (
+                  <>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Your answer: {row.user_answer.join(", ") || "—"}
+                    </p>
+                    {!row.is_correct && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                        Correct: {row.correct_answer.join(", ")}
+                      </p>
+                    )}
+                  </>
                 )}
                 {row.explanation && (
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -592,5 +636,97 @@ function ReviewPanel({
         );
       })}
     </motion.div>
+  );
+}
+
+const VERDICT_LABELS: Record<string, { label: string; className: string }> = {
+  correct: {
+    label: "Correct",
+    className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  },
+  partial: {
+    label: "Partly correct · half mark",
+    className: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  },
+  incorrect: {
+    label: "Incorrect",
+    className: "bg-red-500/15 text-red-700 dark:text-red-300",
+  },
+};
+
+/** Review body for a written (`short_answer`) question: what the student
+ * wrote, the verdict, the grader's feedback, which key points were covered,
+ * and the model answer. Long text wraps inside the card (never sideways). */
+function ShortAnswerReview({ row }: { row: QuizPerQuestion }) {
+  const g = row.grading;
+  const answer = row.user_answer[0]?.trim() ?? "";
+  const modelAnswer = row.correct_answer.join(" ");
+  const verdict = g
+    ? (VERDICT_LABELS[g.verdict] ?? VERDICT_LABELS.incorrect)
+    : null;
+  const matched = g?.matched_points ?? [];
+  const missed = g?.missed_points ?? [];
+  return (
+    <div className="mt-1 space-y-2 text-xs">
+      <div>
+        <p className="text-muted-foreground">Your answer</p>
+        <p className="mt-0.5 whitespace-pre-wrap break-words text-foreground">
+          {answer || "—"}
+        </p>
+      </div>
+      {g && verdict && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+              verdict.className,
+            )}
+          >
+            {verdict.label}
+          </span>
+          <span className="tabular-nums text-muted-foreground">
+            {Math.round(g.score * 100)}% of the key points
+          </span>
+        </div>
+      )}
+      {g?.feedback && (
+        <p className="break-words text-foreground">
+          <MathText>{g.feedback}</MathText>
+        </p>
+      )}
+      {matched.length + missed.length > 0 && (
+        <ul className="space-y-1" aria-label="Key points">
+          {matched.map((point) => (
+            <li key={`m-${point}`} className="flex items-start gap-1.5">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+              <span className="min-w-0 break-words">
+                <span className="sr-only">Covered: </span>
+                <MathText>{point}</MathText>
+              </span>
+            </li>
+          ))}
+          {missed.map((point) => (
+            <li
+              key={`x-${point}`}
+              className="flex items-start gap-1.5 text-muted-foreground"
+            >
+              <CircleDashed className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 break-words">
+                <span className="sr-only">Missing: </span>
+                <MathText>{point}</MathText>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {modelAnswer && (
+        <div>
+          <p className="text-emerald-600 dark:text-emerald-400">Model answer</p>
+          <p className="mt-0.5 break-words text-foreground">
+            <MathText>{modelAnswer}</MathText>
+          </p>
+        </div>
+      )}
+    </div>
   );
 }

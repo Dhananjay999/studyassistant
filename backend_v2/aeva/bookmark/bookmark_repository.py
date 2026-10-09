@@ -8,6 +8,7 @@ from aeva.bookmark.schema.bookmark_schema import (
 )
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import UserData, success_response
+from aeva.common.uuid_ref import is_uuid
 from aeva.supabase.supabase_service import SupabaseService
 
 DEFAULT_COLLECTION = "Favorites"
@@ -38,11 +39,15 @@ class BookmarkRepository:
         ownership-scoped lookup per type resolves it. The value is ``None``
         when the source was deleted or never had a session, letting the
         client reopen the exact chat instead of starting a new one.
+
+        Only UUID refs are looked up: the source ``id`` columns are
+        ``uuid``, so one malformed ref (a client placeholder) would make the
+        whole query fail. Such a bookmark simply gets no ``session_id``.
         """
         refs_by_type: dict[str, list[str]] = {}
         for bookmark in bookmarks:
             ref = bookmark.get("item_ref")
-            if ref and bookmark["item_type"] in _SESSION_SOURCE:
+            if is_uuid(ref) and bookmark["item_type"] in _SESSION_SOURCE:
                 refs_by_type.setdefault(bookmark["item_type"], []).append(ref)
 
         session_of: dict[str, str] = {}

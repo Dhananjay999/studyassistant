@@ -16,6 +16,7 @@ const TYPE_LABELS: Record<string, string> = {
   single_select: "Single select",
   multi_select: "Multiple select",
   true_false: "True / False",
+  short_answer: "Short answer",
 };
 
 /** Distinct question types present in the quiz, as a readable label. */

@@ -55,6 +55,7 @@ _AGENT_NOUN = {
     "quiz_generator": "quiz",
     "flashcard_generator": "flashcards",
     "image_generator": "image",
+    "notes_generator": "notes",
 }
 
 BuildCtx = Callable[[Step, list[PriorResult]], ToolContext]
@@ -444,6 +445,8 @@ class AgentRunner:
             return f"{len(result.get('cards') or [])} cards ready"
         if tool == "image_generator":
             return "Image ready"
+        if tool == "notes_generator":
+            return "Note saved"
         return "Done"
 
     # -------------------------------------------------------------- compose

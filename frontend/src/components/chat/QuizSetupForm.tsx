@@ -34,8 +34,35 @@ const TYPE_OPTIONS: { value: QuestionType; label: string }[] = [
   { value: "single_select", label: "Single select" },
   { value: "multi_select", label: "Multiple select" },
   { value: "true_false", label: "True / False" },
+  { value: "short_answer", label: "Short answer" },
 ];
 const DEFAULT_MAX = 25;
+
+// Words a "do it again" message is made of. A message built only from these
+// ("do another", "Generate a quiz", "GIVE OTHER QUESTIONS TOO", "can you
+// anothr pls") names no topic and must not be prefilled as one.
+const CUE_WORDS = new Set([
+  "another", "anothr", "again", "more", "next", "other", "others", "same",
+  "repeat", "one", "do", "make", "give", "generate", "create", "quiz",
+  "quizzes", "questions", "question", "flashcards", "cards", "please", "pls",
+  "plz", "can", "could", "you", "u", "me", "too", "a", "an", "the", "it",
+  "this", "that", "now", "and", "also", "yes", "ok", "okay", "some", "new",
+  "different", "set", "from", "of", "on", "for", "with", "my", "files",
+  "file", "notes", "start", "go", "ahead",
+]);
+
+/** True when `text` is only a repeat/continue cue, not a topic. */
+export function isRepeatCue(text: string): boolean {
+  const words = text.toLowerCase().match(/[a-z]+/g);
+  if (!words || words.length === 0) return true;
+  return words.every((w) => CUE_WORDS.has(w));
+}
+
+/** A topic the generator can work from: at least two words. */
+export function isUsableTopic(text: string): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.length >= 2 && !isRepeatCue(text);
+}
 
 export function QuizSetupForm({
   initialTopic = "",
@@ -54,6 +81,7 @@ export function QuizSetupForm({
   leading,
   hideTopic = false,
   canGenerate = true,
+  requireTopic = false,
 }: {
   initialTopic?: string;
   initialCount?: number | null;
@@ -80,11 +108,17 @@ export function QuizSetupForm({
   hideTopic?: boolean;
   /** Extra gate on Generate (e.g. the host's source is incomplete). */
   canGenerate?: boolean;
+  /** The form is the only source (no answer card behind it): Generate needs
+   * a topic of at least two words, or the uploaded material. Off by default
+   * so hosts that bring their own material keep their behaviour. */
+  requireTopic?: boolean;
 }) {
   const { data: config } = useAppConfig();
   const maxQuestions = config?.max_quiz_questions ?? DEFAULT_MAX;
 
-  const [topic, setTopic] = useState(draft?.topic ?? initialTopic);
+  // A message that only asks for "another one" is not a topic.
+  const seedTopic = isRepeatCue(initialTopic) ? "" : initialTopic;
+  const [topic, setTopic] = useState(draft?.topic ?? seedTopic);
   const [count, setCount] = useState(draft?.count ?? String(initialCount ?? 5));
   // Difficulty is chosen on a 1–10 slider and mapped to a 5-band label.
   const [level, setLevel] = useState<number>(
@@ -150,6 +184,12 @@ export function QuizSetupForm({
     Number.isInteger(countNum) && countNum >= 1 && countNum <= maxQuestions;
   // Exam level needs an exam picked before Generate.
   const levelValid = !examLevel || Boolean(targetExam);
+  // Without source material a one-word (or cue-only) topic makes junk quizzes.
+  const topicValid =
+    !requireTopic ||
+    hideTopic ||
+    (mediaAvailable && useMedia) ||
+    isUsableTopic(topic);
 
   const toggleType = (t: QuestionType) =>
     setTypes((prev) =>
@@ -158,7 +198,7 @@ export function QuizSetupForm({
   const selectMixed = () => setTypes([]);
 
   const submit = () => {
-    if (!countValid || !levelValid || !canGenerate) return;
+    if (!countValid || !levelValid || !canGenerate || !topicValid) return;
     onGenerate({
       topic: topic.trim() || undefined,
       question_count: countNum,
@@ -174,7 +214,9 @@ export function QuizSetupForm({
   const submitButton = (
     <Button
       onClick={submit}
-      disabled={busy || !countValid || !levelValid || !canGenerate}
+      disabled={
+        busy || !countValid || !levelValid || !canGenerate || !topicValid
+      }
       className="w-full gap-2"
     >
       <Sparkles className="h-4 w-4" />
@@ -191,9 +233,17 @@ export function QuizSetupForm({
           <Input
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="e.g. Photosynthesis"
+            placeholder={
+              requireTopic ? "e.g. Photosynthesis class 10" : "e.g. Photosynthesis"
+            }
             className="h-9"
           />
+          {requireTopic && !topicValid && (
+            <p className="text-[10px] text-muted-foreground">
+              Add a topic of at least two words (e.g. "Photosynthesis class 10")
+              {mediaAvailable ? ", or pick your uploaded material below" : ""}.
+            </p>
+          )}
         </div>
       )}
 
@@ -335,6 +385,12 @@ export function QuizSetupForm({
         <p className="text-[10px] text-muted-foreground">
           Pick specific formats, or leave it on Mixed to let the AI vary them.
         </p>
+        {types.includes("short_answer") && (
+          <p className="text-[10px] text-muted-foreground">
+            Short answers are typed in your own words and checked against the
+            key points when you submit.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">

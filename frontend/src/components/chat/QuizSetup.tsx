@@ -42,6 +42,7 @@ export function QuizSetup({
   mediaAvailable,
   busy,
   onGenerate,
+  requireTopic,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -58,6 +59,8 @@ export function QuizSetup({
   mediaAvailable?: boolean;
   busy?: boolean;
   onGenerate: (options: QuizOptions) => void;
+  /** See {@link QuizSetupForm}: Generate needs a two-word topic or files. */
+  requireTopic?: boolean;
 }) {
   const handleGenerate = (opts: QuizOptions) => {
     onOpenChange(false);
@@ -88,6 +91,7 @@ export function QuizSetup({
           mediaAvailable={mediaAvailable}
           busy={busy}
           onGenerate={handleGenerate}
+          requireTopic={requireTopic}
         />
       </ResponsiveModalContent>
     </ResponsiveModal>

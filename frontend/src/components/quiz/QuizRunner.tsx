@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -16,6 +16,8 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { SHORT_ANSWER_MAX_CHARS } from "@/components/quiz/shortAnswer";
 import { useSubmitQuiz } from "@/hooks/api";
 import { useSwipe } from "@/hooks/useSwipe";
 import { markingSummary } from "@/lib/quizFormat";
@@ -32,10 +34,37 @@ function clock(seconds: number): string {
 /** How long the answer stays locked on screen before auto-advancing. */
 const AUTO_NEXT_MS = 1250;
 
+/** Keep the written-answer box above the on-screen keyboard: once the
+ * keyboard has opened, scroll the box to the middle of what is left. Touch
+ * devices only (the same test as the `touch:` Tailwind variant), so focusing
+ * the box with a mouse never moves the page. */
+const revealOnFocus = (e: FocusEvent<HTMLTextAreaElement>) => {
+  if (!window.matchMedia("(hover: none), (pointer: coarse)").matches) return;
+  const el = e.currentTarget;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.setTimeout(
+    () =>
+      el.scrollIntoView({
+        block: "center",
+        behavior: reduce ? "auto" : "smooth",
+      }),
+    300,
+  );
+};
+
+/** True when a key press belongs to a text field (so it must not also
+ * drive question navigation). */
+const isTyping = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.tagName === "TEXTAREA" ||
+    target.tagName === "INPUT" ||
+    target.isContentEditable);
+
 /**
  * The quiz-taking experience: one question at a time, single/true-false answers
- * auto-advance, multi-select is manual. Submission is scored instantly by the
- * backend; the result is handed back via `onSubmitted`.
+ * auto-advance, multi-select is manual, and a short-answer question is a text
+ * box. Submission is scored by the backend (written answers are graded against
+ * their rubric there); the result is handed back via `onSubmitted`.
  */
 export function QuizRunner({
   quiz,
@@ -64,6 +93,11 @@ export function QuizRunner({
   const total = questions.length;
   const q = questions[idx];
   const answered = Object.values(answers).filter((a) => a.length).length;
+  // Written answers are graded on submit, which takes a few seconds longer.
+  const shortAnswerCount = useMemo(
+    () => questions.filter((x) => x.type === "short_answer").length,
+    [questions],
+  );
 
   // Exam Mode: countdown timer + a live exam info panel. Absent for ordinary
   // practice quizzes, which render exactly as before.
@@ -145,6 +179,8 @@ export function QuizRunner({
   useEffect(() => {
     const last = total - 1;
     const onKey = (e: KeyboardEvent) => {
+      // Arrow keys move the caret while writing an answer, not the question.
+      if (isTyping(e.target)) return;
       if (e.key === "ArrowRight") setIdx((i) => Math.min(last, i + 1));
       else if (e.key === "ArrowLeft") setIdx((i) => Math.max(0, i - 1));
     };
@@ -182,6 +218,10 @@ export function QuizRunner({
       }, AUTO_NEXT_MS);
     }
   };
+  // A written answer is stored like every other answer (a string list): one
+  // item, or none while the box is blank so it still counts as unanswered.
+  const setWritten = (qid: string, v: string) =>
+    setAnswers((p) => ({ ...p, [qid]: v.trim() ? [v] : [] }));
   const toggleMulti = (qid: string, v: string) =>
     setAnswers((p) => {
       const cur = p[qid] || [];
@@ -229,6 +269,7 @@ export function QuizRunner({
         final_score: ev?.final_score ?? undefined,
         max_marks: ev?.max_marks ?? undefined,
         is_guest: !!onSubmit,
+        short_answer_count: shortAnswerCount,
       });
       if (auto) toast.info("Time's up — your exam was submitted.");
       onSubmitted(res);
@@ -311,7 +352,56 @@ export function QuizRunner({
             <p className="text-base font-medium leading-relaxed sm:text-lg">
               <MathText>{q.prompt}</MathText>
             </p>
-            {q.type === "multi_select" ? (
+            {q.type === "short_answer" ? (
+              // Touches that start in the box (selecting text, moving the
+              // caret) must not also swipe to another question.
+              <div
+                className="space-y-1.5"
+                data-analytics-private
+                data-analytics-section="quiz_options"
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => e.stopPropagation()}
+              >
+                <Label
+                  htmlFor={`${q.id}-answer`}
+                  className="text-xs font-normal text-muted-foreground"
+                >
+                  Write your answer in one to three sentences.
+                </Label>
+                <Textarea
+                  id={`${q.id}-answer`}
+                  value={answers[q.id]?.[0] ?? ""}
+                  onChange={(e) => setWritten(q.id, e.target.value)}
+                  onFocus={revealOnFocus}
+                  maxLength={SHORT_ANSWER_MAX_CHARS}
+                  rows={5}
+                  placeholder="Type your answer…"
+                  autoCapitalize="sentences"
+                  enterKeyHint="enter"
+                  disabled={submitting}
+                  aria-describedby={`${q.id}-answer-help`}
+                  className="min-h-[132px] w-full resize-none rounded-xl p-3.5 leading-relaxed"
+                />
+                <div
+                  id={`${q.id}-answer-help`}
+                  className="flex items-start justify-between gap-3 text-xs text-muted-foreground"
+                >
+                  <span className="min-w-0">
+                    Aeva checks it against the key points when you submit.
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 tabular-nums",
+                      (answers[q.id]?.[0]?.length ?? 0) >=
+                        SHORT_ANSWER_MAX_CHARS &&
+                        "font-semibold text-amber-600 dark:text-amber-400",
+                    )}
+                  >
+                    {answers[q.id]?.[0]?.length ?? 0}/{SHORT_ANSWER_MAX_CHARS}
+                  </span>
+                </div>
+              </div>
+            ) : q.type === "multi_select" ? (
               <div
                 className="space-y-2"
                 data-analytics-private
@@ -440,7 +530,9 @@ export function QuizRunner({
             ) : (
               <CheckCircle2 className="h-4 w-4" />
             )}
-            Submit quiz
+            {submitting && shortAnswerCount > 0
+              ? "Checking answers…"
+              : "Submit quiz"}
           </Button>
         )}
       </footer>

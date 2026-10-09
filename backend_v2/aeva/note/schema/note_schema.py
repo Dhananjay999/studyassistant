@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from marshmallow import Schema, fields, post_load, validate
 
+from aeva.common.uuid_ref import uuid_validator
+
 _SOURCE_TYPES = ["manual", "response", "media", "quiz"]
 
 
@@ -31,7 +33,13 @@ class CreateNoteSchema(Schema):
     source_type = fields.Str(
         load_default="manual", validate=validate.OneOf(_SOURCE_TYPES)
     )
-    source_ref = fields.Str(load_default=None, allow_none=True)
+    # Id of the message / file / quiz the note came from: always a UUID, so
+    # a client placeholder ("stream-…") is rejected rather than stored.
+    source_ref = fields.Str(
+        load_default=None,
+        allow_none=True,
+        validate=uuid_validator("source_ref"),
+    )
     space_id = fields.Str(load_default=None, allow_none=True)
     session_id = fields.Str(load_default=None, allow_none=True)
 

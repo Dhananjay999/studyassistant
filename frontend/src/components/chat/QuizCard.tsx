@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -15,10 +16,45 @@ import { GlassCard } from "@/components/common/GlassCard";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { ShareQuizButton } from "@/components/quiz/ShareQuizButton";
 import { useExamPatterns } from "@/hooks/api";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { formatTimeLimit } from "@/lib/quizFormat";
 import { hasExamConfig, type QuizContent } from "@/types";
 
 const cap = (s?: string) => (s ? s[0].toUpperCase() + s.slice(1) : "");
+
+// Quiz ids already reported this page load, so a card that remounts (session
+// switch, tab change) still counts as one impression.
+const viewedQuizIds = new Set<string>();
+
+/** `QUIZ_CARD_VIEWED` once per quiz, when at least half the card is on
+ * screen. Lets "generated but never seen" be told apart from "seen, not
+ * opened". A card in a hidden keep-alive tab never intersects. */
+function useQuizCardViewed(quizId: string | undefined) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (
+      !el ||
+      !quizId ||
+      viewedQuizIds.has(quizId) ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        observer.disconnect();
+        if (viewedQuizIds.has(quizId)) return;
+        viewedQuizIds.add(quizId);
+        analytics.track(AnalyticsEvent.QUIZ_CARD_VIEWED, { quiz_id: quizId });
+      },
+      { threshold: 0.5 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [quizId]);
+  return ref;
+}
 
 export function QuizCard({
   quiz,
@@ -28,6 +64,7 @@ export function QuizCard({
   onStart: () => void;
 }) {
   const { data: patterns = [] } = useExamPatterns();
+  const viewRef = useQuizCardViewed(quiz.quiz_id);
   const count = quiz.questions?.length ?? 0;
   const mins = Math.max(1, Math.round(count * 2));
   const source = quiz.source || quiz.topic;
@@ -39,6 +76,7 @@ export function QuizCard({
 
   return (
     <motion.div
+      ref={viewRef}
       initial={{ opacity: 0, scale: 0.96, y: 10 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 320, damping: 24 }}

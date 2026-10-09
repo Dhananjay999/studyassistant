@@ -5,6 +5,8 @@
   "outputDirectory": "dist",
   "trailingSlash": false,
   "rewrites": [
+    { "source": "/ingest/static/:path*", "destination": "https://us-assets.i.posthog.com/static/:path*" },
+    { "source": "/ingest/:path*", "destination": "https://us.i.posthog.com/:path*" },
     { "source": "/features", "destination": "/features/index.html" },
     { "source": "/about", "destination": "/about/index.html" },
     { "source": "/privacy", "destination": "/privacy/index.html" },

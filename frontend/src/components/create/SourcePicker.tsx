@@ -96,7 +96,7 @@ export function SourcePicker({
           onChange={(e) => set({ topic: e.target.value })}
           placeholder={
             value.kind === "topic"
-              ? "e.g. Algebra, Photosynthesis, World War II"
+              ? "e.g. Photosynthesis class 10, World War II causes"
               : "e.g. Chapter 3 only"
           }
           className="h-9"

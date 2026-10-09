@@ -10,14 +10,20 @@ import {
 import {
   API_BASE_URL,
   ENDPOINTS,
+  apiErrorStatus,
   getLearningProfile,
   getMe,
   refreshSession,
   setTokenGetter,
   setUnauthorizedHandler,
 } from "@/lib/api";
+import { errorKind } from "@/lib/errorMessage";
 import { queryClient } from "@/lib/queryClient";
 import { noteLandingLogin } from "@/lib/analytics/landing";
+import {
+  consumeRedirectStart,
+  markRedirectStarted,
+} from "@/lib/signInRedirect";
 import { qk } from "@/hooks/api";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { setSentryUser } from "@/lib/sentry";
@@ -42,6 +48,12 @@ interface AuthContextValue {
   isDebugUser: boolean;
   loading: boolean;
   signingIn: boolean;
+  /** How the in-flight sign-in runs: `redirect` while this tab is leaving
+   * for Google, `popup` while a popup is open; null when idle. */
+  signingInMethod: LoginMethod | null;
+  /** True when `signInWithGoogle` would open a popup on this device (the
+   * opt-in desktop mode); false when it signs in within this tab. */
+  popupSignIn: boolean;
   /** Why the last sign-in attempt ended without a session (shown by
    * `SigningInModal`); null once dismissed or when a new attempt starts. */
   signInIssue: SignInIssue | null;
@@ -101,6 +113,47 @@ function prefersSameTabSignIn(): boolean {
   }
 }
 
+// Desktop popups are off unless opted in: 10 of 26 desktop starters lost the
+// popup within seconds (blocked or killed by the browser after `window.open`
+// returned a window, which the null-check fallback never catches). The
+// same-tab redirect is the flow every phone already uses. Set
+// `VITE_POPUP_SIGN_IN=true` to bring the popup back on mouse devices.
+const POPUP_SIGN_IN =
+  String(import.meta.env.VITE_POPUP_SIGN_IN ?? "").toLowerCase() === "true";
+
+function usesPopupSignIn(): boolean {
+  return POPUP_SIGN_IN && !prefersSameTabSignIn();
+}
+
+// The first `/auth/me` after a sign-in verifies a token minted seconds ago.
+// A transient refusal there (clock skew, a cold backend instance still
+// fetching signing keys) is retried once before the attempt is given up.
+const LOGIN_RETRY_DELAY_MS = 1000;
+
+async function fetchMeForLogin(): Promise<User> {
+  const extras = { skipUnauthorizedHandler: true };
+  try {
+    return await getMe(extras);
+  } catch {
+    await new Promise((r) => window.setTimeout(r, LOGIN_RETRY_DELAY_MS));
+    return getMe(extras);
+  }
+}
+
+// A same-tab sign-in that left for Google and came back without passing
+// through /auth/callback (back button, a reload, a bounce): the funnel would
+// otherwise only see another landing pageview.
+function noteRedirectReturn(): void {
+  if (window.location.pathname.startsWith("/auth/callback")) return;
+  const startedAt = consumeRedirectStart();
+  if (startedAt === null) return;
+  noteLandingLogin("abandoned");
+  analytics.track(AnalyticsEvent.LOGIN_ABANDONED, {
+    elapsed_ms: Math.max(0, Date.now() - startedAt),
+    via: "returned",
+  });
+}
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -128,6 +181,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   });
   const [signingIn, setSigningIn] = useState(false);
+  // True from the moment a same-tab redirect starts until the page is gone
+  // (or restored from the back-forward cache, see `pageshow` below).
+  const [redirecting, setRedirecting] = useState(false);
   const [signInIssue, setSignInIssue] = useState<SignInIssue | null>(null);
   const tokenRef = useRef<string | null>(null);
   const refreshTimer = useRef<number>();
@@ -144,7 +200,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const bootDoneRef = useRef(false);
 
   const clearSession = useCallback(() => {
-    Object.values(STORAGE).forEach((k) => localStorage.removeItem(k));
+    try {
+      Object.values(STORAGE).forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* storage unavailable: nothing persisted to clear */
+    }
     tokenRef.current = null;
     setToken(null);
     setUser(null);
@@ -188,7 +248,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [hardLogout, clearSession]);
 
   const doRefresh = useCallback(async (): Promise<boolean> => {
-    const rt = localStorage.getItem(STORAGE.refresh);
+    let rt: string | null = null;
+    try {
+      rt = localStorage.getItem(STORAGE.refresh);
+    } catch {
+      /* storage unavailable (WebKit, closing page): no refresh token */
+    }
     if (!rt) return false;
     try {
       const data = await refreshSession(rt);
@@ -219,9 +284,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const persist = useCallback(
     (accessToken: string, refreshToken: string, expiresIn: number) => {
       const expiresAt = Date.now() + expiresIn * 1000;
-      localStorage.setItem(STORAGE.access, accessToken);
-      localStorage.setItem(STORAGE.refresh, refreshToken);
-      localStorage.setItem(STORAGE.expires, String(expiresAt));
+      // Storage can be unavailable (WebKit on a closing popup, private
+      // mode); the session then lives in memory for this page only.
+      try {
+        localStorage.setItem(STORAGE.access, accessToken);
+        localStorage.setItem(STORAGE.refresh, refreshToken);
+        localStorage.setItem(STORAGE.expires, String(expiresAt));
+      } catch {
+        /* keep the in-memory session */
+      }
       tokenRef.current = accessToken;
       setToken(accessToken);
       scheduleRefresh(expiresAt);
@@ -230,7 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const loadUser = useCallback(async (reason: LoadReason = "boot") => {
-    const me = await getMe();
+    const me = reason === "login" ? await fetchMeForLogin() : await getMe();
     reconcileUserState(me.id);
     setUser(me);
     // Single place identity reaches analytics: covers popup login, redirect
@@ -314,9 +385,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setLoading(false);
       bootDoneRef.current = true;
+      noteRedirectReturn();
     })();
 
+    // Back from Google without finishing (back button): the page may come
+    // out of the back-forward cache with the "leaving" state still set.
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      setSigningIn(false);
+      setRedirecting(false);
+      noteRedirectReturn();
+    };
+    window.addEventListener("pageshow", onPageShow);
+
     return () => {
+      window.removeEventListener("pageshow", onPageShow);
       if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -328,11 +411,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       persist(accessToken, refreshToken, expiresIn);
       try {
         await loadUser("login");
+      } catch (err) {
+        // The token was refused (or the profile never loaded): forget it
+        // quietly. No hard logout here: the caller reports the failure and
+        // keeps its explanation on screen.
+        clearSession();
+        throw err;
       } finally {
         setLoading(false);
       }
     },
-    [persist, loadUser],
+    [persist, loadUser, clearSession],
   );
 
   const reportSignInIssue = useCallback(
@@ -343,8 +432,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithRedirect = useCallback(() => {
     setSignInIssue(null);
+    // Disable the buttons before leaving: a slow phone otherwise takes
+    // several taps and starts several OAuth flows.
+    setSigningIn(true);
+    setRedirecting(true);
     noteLandingLogin("started");
     analytics.track(AnalyticsEvent.LOGIN_STARTED, { method: "redirect" });
+    markRedirectStarted();
     analytics.flush();
     window.location.href = `${API_BASE_URL}${ENDPOINTS.AUTH_LOGIN_GOOGLE}`;
   }, []);
@@ -353,7 +447,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(() => {
     setSignInIssue(null);
-    if (prefersSameTabSignIn()) {
+    if (!usesPopupSignIn()) {
       signInWithRedirect();
       return;
     }
@@ -396,16 +490,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       setSession(d.access_token, d.refresh_token, d.expires_in)
-        .catch(() => failLogin("session"))
+        .catch((err: unknown) => failLogin("session", err))
         .finally(() => setSigningIn(false));
     };
 
-    function failLogin(reason: string) {
+    function failLogin(reason: string, err?: unknown) {
       setSigningIn(false);
       noteLandingLogin("failed");
       analytics.track(AnalyticsEvent.LOGIN_FAILED, {
         reason,
         method: "popup",
+        status: apiErrorStatus(err),
+        error_kind: err === undefined ? undefined : errorKind(err),
       });
       loginMethodRef.current = null;
       setSignInIssue({ kind: "failed", reason });
@@ -469,6 +565,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isDebugUser: !!user?.is_debug_user,
         loading,
         signingIn,
+        signingInMethod: redirecting ? "redirect" : signingIn ? "popup" : null,
+        popupSignIn: usesPopupSignIn(),
         signInIssue,
         signInWithGoogle,
         signInWithRedirect,

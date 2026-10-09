@@ -12,6 +12,9 @@ export interface ProcessingFrame {
   // The backend kept the media row + file after the failure (always true on
   // current backends; absent on legacy ones that scrubbed the record).
   kept?: boolean;
+  // Machine-readable cause on an error frame (`parse_failed`,
+  // `parse_timeout`, `not_found`, `unexpected`); absent on older backends.
+  reason?: string;
 }
 
 /** Which transport delivered the terminal state (analytics). */
@@ -25,6 +28,8 @@ export interface ProcessingCallbacks {
     recoverable: boolean,
     via: ProcessingVia,
     kept: boolean,
+    /** The backend's reason code when the error frame carried one. */
+    reason?: string,
   ) => void;
 }
 
@@ -143,6 +148,7 @@ export function useMediaProcessing() {
                 !!frame.recoverable,
                 "stream",
                 !!frame.kept,
+                frame.reason,
               );
               stopOne(mediaId);
               return;

@@ -25,6 +25,8 @@ function issueCopy(issue: SignInIssue): { title: string; body: string } {
 export function SigningInModal() {
   const {
     signingIn,
+    signingInMethod,
+    popupSignIn,
     signInIssue,
     signInWithGoogle,
     signInWithRedirect,
@@ -32,6 +34,8 @@ export function SigningInModal() {
     dismissSignInIssue,
   } = useAuth();
   const copy = signInIssue ? issueCopy(signInIssue) : null;
+  // Leaving this tab for Google: nothing to cancel, and no popup to point at.
+  const leaving = signingInMethod === "redirect";
   return (
     <>
       <Dialog open={signingIn}>
@@ -47,19 +51,23 @@ export function SigningInModal() {
             <div>
               <p className="font-display font-semibold">Signing you in…</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Complete the Google sign-in in the popup window.
+                {leaving
+                  ? "Taking you to Google to sign in…"
+                  : "Complete the Google sign-in in the popup window."}
               </p>
             </div>
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="min-h-11 px-6"
-              data-analytics-name="Sign in cancel"
-              onClick={cancelSignIn}
-            >
-              Cancel
-            </Button>
+            {!leaving && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="min-h-11 px-6"
+                data-analytics-name="Sign in cancel"
+                onClick={cancelSignIn}
+              >
+                Cancel
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -75,21 +83,28 @@ export function SigningInModal() {
         <DialogContent className="max-w-sm rounded-2xl">
           <DialogTitle>{copy?.title}</DialogTitle>
           <DialogDescription>{copy?.body}</DialogDescription>
+          {/* The same-tab sign-in is the primary way on: it is the flow
+              that works everywhere. The popup retry is only offered where
+              the popup is in use. */}
           <div className="flex flex-col gap-2">
             <Button
               variant="brand"
-              data-analytics-name="Sign in try again"
-              onClick={signInWithGoogle}
-            >
-              Try again
-            </Button>
-            <Button
-              variant="outline"
+              className="min-h-11"
               data-analytics-name="Sign in in this tab"
               onClick={signInWithRedirect}
             >
-              Sign in in this tab instead
+              {popupSignIn ? "Sign in in this tab" : "Try again"}
             </Button>
+            {popupSignIn && (
+              <Button
+                variant="outline"
+                className="min-h-11"
+                data-analytics-name="Sign in try again"
+                onClick={signInWithGoogle}
+              >
+                Try the popup again
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -45,7 +45,7 @@ export function GoogleButton({
       disabled={signingIn}
       className={cn(
         "group relative inline-flex items-center justify-center rounded-full p-[1.5px]",
-        "bg-[length:200%_200%] bg-brand-gradient motion-loop animate-gradient-pan shadow-glow",
+        "bg-[length:200%_200%] bg-brand-gradient motion-loop mouse:animate-gradient-pan shadow-glow",
         "transition-transform hover:scale-[1.02] active:scale-95",
         "disabled:cursor-not-allowed disabled:opacity-80",
         fullWidth && "w-full",

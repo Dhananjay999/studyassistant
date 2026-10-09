@@ -8,6 +8,7 @@ from aeva.mcp.tools.flashcard_generator import FlashcardGeneratorTool
 from aeva.mcp.tools.general import GeneralAnswerTool
 from aeva.mcp.tools.image_generator import ImageGeneratorTool
 from aeva.mcp.tools.media_llm import MediaLLMTool
+from aeva.mcp.tools.notes_generator import NotesGeneratorTool
 from aeva.mcp.tools.product_info import ProductInfoTool
 from aeva.mcp.tools.quiz_generator import QuizGeneratorTool
 from aeva.mcp.tools.web_search import WebSearchTool
@@ -27,12 +28,14 @@ def build_tool_registry(
     product_info_llm: LLMClient,
     supabase: SupabaseService,
     retrieval: RetrievalService | None = None,
+    notes_llm: LLMClient | None = None,
 ) -> ToolRegistry:
     """Create registry with per-tool LLM clients.
 
     ``retrieval`` is the shared hybrid retrieval service every
     material-grounded tool uses; ``None`` lets the media tool build its own
-    (tests, ad-hoc scripts).
+    (tests, ad-hoc scripts). ``notes_llm`` writes saved notes; ``None`` lets
+    the notes tool build its own client from ``LLM_MEDIA_MODEL``.
     """
     registry = ToolRegistry()
     # Default text answerer (no web grounding); shares the web-search model.
@@ -59,6 +62,13 @@ def build_tool_registry(
         )
     )
     registry.register(ImageGeneratorTool(llm=image_llm, supabase=supabase))
+    # Revision sheets / formula sheets / important questions, saved to Notes.
+    # Reads files and writes prose, so it shares the media model.
+    registry.register(
+        NotesGeneratorTool(
+            llm=notes_llm, supabase=supabase, retrieval=retrieval
+        )
+    )
     return registry
 
 
@@ -131,4 +141,5 @@ class Container(containers.DeclarativeContainer):
         product_info_llm=llm_fast,
         supabase=supabase_service,
         retrieval=retrieval_service,
+        notes_llm=llm_media,
     )

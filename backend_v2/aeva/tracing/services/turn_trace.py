@@ -664,8 +664,9 @@ def _why_forced(ctx: Any, media_choice_ids: Any) -> str:
     if media_choice_ids is not None:
         return (
             'This turn answers a "which file?" clarification, resolved '
-            f"to {len(media_choice_ids)} file(s), so media_llm runs on "
-            "that choice with the original question as the query."
+            f"to {len(media_choice_ids)} file(s), so the original intent's "
+            "tool (quiz/flashcard generator, else media_llm) runs on that "
+            "choice with the original question as the query."
         )
     if ctx.flashcard_options is not None:
         return (
@@ -678,13 +679,34 @@ def _why_forced(ctx: Any, media_choice_ids: Any) -> str:
     )
 
 
+def _why_notes(plan: Any) -> str | None:
+    """Return the sentence for a plan forced by the notes route, if it is."""
+    step = next(iter(_steps(plan)), {})
+    if step.get("tool") != "notes_generator":
+        return None
+    params = step.get("params") or {}
+    origin = (
+        "the answer its action was tapped on"
+        if params.get("from_answer")
+        else "the selected files"
+        if params.get("use_media")
+        else "the topic and the conversation"
+    )
+    return (
+        "The message asks for a note to keep (kind: "
+        f"{params.get('kind')}), which forces notes_generator; the note "
+        f"is built from {origin}."
+    )
+
+
 def _forced_after(call: dict[str, Any], _none: Any, plan: Any) -> None:
     """Record whether a forced plan applied, and which condition forced it."""
     _checked("forced", matched=plan is not None)
     if plan is not None:
         _decide(
             "forced_plan",
-            _why_forced(call["ctx"], call.get("media_choice_ids")),
+            _guard(_why_notes, plan)
+            or _why_forced(call["ctx"], call.get("media_choice_ids")),
             after=plan,
         )
 
@@ -760,9 +782,9 @@ def _continuation_after(call: dict[str, Any], _none: Any, plan: Any) -> None:
     _decide(
         "continuation",
         f'The message has the repeat cue "{phrase}", names no quiz or '
-        "flashcard keyword and comes with no files, and the last "
-        f"tool-bearing assistant turn used {_primary_tool(plan)}, so "
-        "that tool runs again.",
+        "flashcard keyword, and the last tool-bearing assistant turn used "
+        f"{_primary_tool(plan)}, so that tool runs again (over the selected "
+        "files when any).",
         after=plan,
     )
 
@@ -1273,6 +1295,30 @@ def _finish_after(call: dict[str, Any], _none: Any, result: Any) -> None:
             "streamed": outcome.streamed,
         },
     )
+
+
+def exam_prep_offer(offer: _T) -> _T:
+    """Record the exam-soon offer stamped on the result; return it unchanged.
+
+    Called by ``_finish_turn`` with the payload ``exam_offer.for_turn``
+    built during setup. The offer rides beside the answer, so this is a
+    decision of its own, not one of the turn's endings.
+    """
+    if tracing.is_active() and isinstance(offer, dict):
+        _guard(
+            _decide,
+            "exam_prep_offer",
+            "The message names an exam with a near date "
+            f"({offer.get('date_hint')}), exam prep is enabled and the "
+            "student has no active plan, so the answer carries a cram-plan "
+            "offer.",
+            after={
+                "date_hint": offer.get("date_hint"),
+                "has_exam_name": bool(offer.get("exam_name")),
+                "subjects": len(offer.get("subjects") or []),
+            },
+        )
+    return offer
 
 
 def finish(func: Callable[_P, _R]) -> Callable[_P, _R]:

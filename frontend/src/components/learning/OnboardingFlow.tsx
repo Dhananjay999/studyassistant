@@ -937,21 +937,25 @@ function ExamPrepCelebrationActions({ onDone }: { onDone: () => void }) {
     onDone();
     navigate("/exam/setup");
   };
+  // "Start learning" leads: the chat opens with Aeva's first message and
+  // prompts for this profile, so the student sees an answer before any
+  // multi-step setup. The exam plan stays one tap away as a secondary link.
   return (
     <div className="mt-8 w-full space-y-2">
       <Button
-        onClick={setUp}
-        data-analytics-name="Set up my exam plan"
+        onClick={onDone}
+        data-analytics-name="Start learning"
         className="h-12 w-full gap-2 rounded-xl bg-brand-gradient text-base text-white shadow-glow"
       >
-        <Target className="h-4 w-4" /> Set up my exam plan
+        <Sparkles className="h-4 w-4" /> Start learning
       </Button>
       <Button
         variant="ghost"
-        onClick={onDone}
-        className="h-11 w-full rounded-xl text-muted-foreground"
+        onClick={setUp}
+        data-analytics-name="Set up my exam plan"
+        className="h-11 w-full gap-2 rounded-xl text-muted-foreground"
       >
-        Maybe later
+        <Target className="h-4 w-4" /> Set up my exam plan
       </Button>
     </div>
   );

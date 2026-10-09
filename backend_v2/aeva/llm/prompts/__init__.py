@@ -63,6 +63,14 @@ from aeva.llm.prompts.media import (
     attached_files_block,
     no_context_message,
 )
+from aeva.llm.prompts.notes import (
+    DEFAULT_NOTE_KIND,
+    NOTE_KIND_LABELS,
+    NOTE_KIND_RULES,
+    NOTES_GENERATION_TEMPLATE,
+    NOTES_GENERATOR_PARAMS,
+    split_title,
+)
 from aeva.llm.prompts.orchestrator import (
     PLAN_TURN_SCHEMA,
     PLAN_TURN_TEMPLATE,
@@ -110,6 +118,7 @@ from aeva.llm.prompts.web_search import (
 )
 
 __all__ = [
+    "DEFAULT_NOTE_KIND",
     "EXAM_DAY_DETAIL_SCHEMA",
     "EXAM_DAY_DETAIL_TEMPLATE",
     "EXAM_PLAN_SCHEMA",
@@ -129,6 +138,10 @@ __all__ = [
     "MEDIA_PARAMS",
     "MEDIA_TEMPLATE",
     "META_SENTINEL",
+    "NOTES_GENERATION_TEMPLATE",
+    "NOTES_GENERATOR_PARAMS",
+    "NOTE_KIND_LABELS",
+    "NOTE_KIND_RULES",
     "NO_CONTEXT_MESSAGE",
     "NO_MEDIA_MESSAGE",
     "PARAPHRASE_RULE_OFF",
@@ -174,5 +187,6 @@ __all__ = [
     "search_mode_block",
     "skill_ids",
     "skills_for_planner",
+    "split_title",
     "user_profile_segment",
 ]

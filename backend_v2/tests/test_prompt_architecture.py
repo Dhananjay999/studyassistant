@@ -313,9 +313,16 @@ def _tool_ctx(message: str) -> ToolContext:
 
 class TestPastedMaterial:
     def test_pasted_list_is_detected(self):
-        assert _needs_fresh_info(PASTED_LIST)
+        # Years alone are no longer a freshness cue (students paste them
+        # constantly), and pasted material never upgrades even with one.
+        assert not _needs_fresh_info(PASTED_LIST)
+        with_cue = PASTED_LIST.replace(
+            "Discuss NextGen", "Discuss the latest news on NextGen"
+        )
+        assert _needs_fresh_info(with_cue)
         assert _is_pasted_material(PASTED_LIST)
-        assert not _needs_web_upgrade(PASTED_LIST)
+        assert _is_pasted_material(with_cue)
+        assert not _needs_web_upgrade(with_cue)
 
     def test_short_or_search_messages_are_not_pasted(self):
         assert not _is_pasted_material("what is the JEE 2026 exam date?")

@@ -115,7 +115,11 @@ class ExamPrepOrchestrator(AssistantOrchestrator):
         }
         turn_trace.user_message(
             self.supabase.add_message(
-                exam.session_id, "user", exam.message, metadata=metadata or None
+                exam.session_id,
+                "user",
+                exam.message,
+                metadata=metadata or None,
+                user_id=exam.user_id,
             )
         )
         plan = self._exam_plan(exam, enriched_message)

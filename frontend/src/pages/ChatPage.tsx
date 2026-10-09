@@ -34,7 +34,11 @@ import {
   type ComposerNotice,
 } from "@/components/chat/ChatComposer";
 import { ClarificationPanel } from "@/components/chat/ClarificationPanel";
+import { FirstConversation } from "@/components/chat/FirstConversation";
 import { QuizSetup } from "@/components/chat/QuizSetup";
+import { ReturnStrip } from "@/components/chat/ReturnStrip";
+import { isRepeatCue } from "@/components/chat/QuizSetupForm";
+import type { FeedbackRating } from "@/components/chat/SuggestedActions";
 // Lazy chunks: these two pull the whole quiz/flashcard stack (runner, report,
 // share, PDF export...). Loading them on first open keeps the chat page's
 // critical request chain small (Lighthouse LCP finding).
@@ -61,9 +65,12 @@ import {
   DocumentViewerContext,
   useDocumentViewerController,
 } from "@/contexts/DocumentViewerContext";
-import { useIsDesktop } from "@/hooks/use-mobile";
+import { useIsDesktop, useIsMobile } from "@/hooks/use-mobile";
 import { useBackClose } from "@/hooks/useBackClose";
-import { useAssistantStream } from "@/hooks/useAssistantStream";
+import {
+  useAssistantStream,
+  type StreamFailureInfo,
+} from "@/hooks/useAssistantStream";
 import { useFeature } from "@/hooks/useFeature";
 import { useMediaProcessing } from "@/hooks/useMediaProcessing";
 import { useSwipe } from "@/hooks/useSwipe";
@@ -83,19 +90,21 @@ import {
   attachMedia,
   getMessages,
   getQuiz,
+  submitMessageFeedback,
   uploadFileWithProgress,
 } from "@/lib/api";
 import { normalizeAgents } from "@/lib/agents";
 import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
 import { detectExamIntent } from "@/lib/examIntent";
 import { isTeamTurn, mapAssistantContent } from "@/lib/messageMeta";
+import { mapChatArtifacts, NOTES_TOOL } from "@/lib/chatArtifacts";
 import {
   analytics,
   AnalyticsEvent,
   type ChatIntent,
   type ChatSource,
 } from "@/lib/analytics";
-import { compressFile } from "@/utils/compress";
+import { compressFile, ensureFileName } from "@/utils/compress";
 import {
   UPLOAD_FAILURES,
   exceedsUploadLimit,
@@ -140,6 +149,12 @@ const fileExtension = (file: File) =>
 // and desktop (where ChatPage remounts). Cleared only by New Chat.
 const LAST_SESSION_KEY = "aeva_last_session";
 
+// A dropped stream is recovered by refetching the session: the backend keeps
+// working and persists the answer, so poll for it a few times before giving
+// up (~20 s, well inside the backend's own turn limit).
+const RECOVERY_ATTEMPTS = 4;
+const RECOVERY_INTERVAL_MS = 5000;
+
 export default function ChatPage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -173,6 +188,17 @@ export default function ChatPage() {
 
   const sessionsQuery = useSessions();
   const sessions = sessionsQuery.data ?? [];
+  // For callbacks that outlive a render (send's analytics): whether the
+  // account has any chat yet.
+  const sessionCountRef = useRef(sessions.length);
+  sessionCountRef.current = sessions.length;
+  // Aeva speaks first (R6): set the moment onboarding resolves in this mount
+  // so the chat opens with her greeting + prompts and the idle demo armed.
+  // An account that has never chatted gets the same opener (without the
+  // demo) instead of the blank empty state.
+  const [onboardingJustDone, setOnboardingJustDone] = useState(false);
+  const isMobile = useIsMobile();
+  const voiceEnabled = useFeature("voice_input");
   const createSession = useCreateSession();
   const createNote = useCreateNote();
   const deleteSession = useDeleteSession();
@@ -206,10 +232,18 @@ export default function ChatPage() {
   activeIdRef.current = activeId;
 
   const [messages, setMessages] = useState<Message[]>([]);
+  // Latest thread for async recovery code that must not read a stale list.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const [pendingClar, setPendingClar] = useState<PendingClarification | null>(
     null,
   );
   const [pendingQuiz, setPendingQuiz] = useState<PendingQuizSetup | null>(null);
+  // The last quiz generated in this chat: "another one" repeats its settings
+  // and sources instead of falling back to a text quiz on a junk topic.
+  const lastQuizRef = useRef<{ options: QuizOptions; mediaIds: string[] } | null>(
+    null,
+  );
   // The setup popup is dismissible without losing the pending request: closing
   // it keeps `pendingQuiz` + the typed draft and surfaces a resume banner.
   const [quizSetupOpen, setQuizSetupOpen] = useState(false);
@@ -474,6 +508,11 @@ export default function ChatPage() {
         source?: ChatSource;
         /** Dictation contributed to the text (analytics). */
         voiceUsed?: boolean;
+        /** "Regenerate" re-sent an earlier question (analytics). */
+        regenerate?: boolean;
+        /** Files to ground this turn in, overriding the current selection
+         * (a repeated quiz keeps the previous quiz's files). */
+        mediaIds?: string[];
       },
     ) => {
       if (streaming) return;
@@ -515,7 +554,12 @@ export default function ChatPage() {
         source: opts?.source ?? "composer",
         voice_used: !!opts?.voiceUsed,
         has_seed_context: !!seedContextRef.current,
+        is_first_message: !activeId && sessionCountRef.current === 0,
+        regenerate: !!opts?.regenerate,
       });
+      // The first conversation has started (by tap, typing or the demo):
+      // a later "New chat" must not arm the idle demo again.
+      setOnboardingJustDone(false);
       if (
         examPrepEnabled &&
         !examBannerShownRef.current &&
@@ -637,11 +681,60 @@ export default function ChatPage() {
       // Agent roster of this turn (one agent on ordinary turns).
       let team: AgentInfo[] = [];
 
+      const mediaIds = opts?.mediaIds?.length
+        ? opts.mediaIds
+        : selected.size
+          ? Array.from(selected)
+          : undefined;
+
+      // The error card (with retry) for a turn that failed or could not be
+      // recovered. Shared by the in-band error path and a dropped stream.
+      const fail = (msg: string, info?: StreamFailureInfo) => {
+        // Keep the turn in the thread as a friendly, AI-styled error card
+        // (with retry) instead of dropping it to a transient toast.
+        const friendly = friendlyErrorMessage(msg);
+        analytics.track(AnalyticsEvent.CHAT_RESPONSE_FAILED, {
+          chat_session_id: sid,
+          error_kind: errorKind(msg),
+          phase: firstChunkAt === null ? "pre_stream" : "mid_stream",
+          latency_ms: Math.round(performance.now() - sentAt),
+          stage: info?.stage,
+          elapsed_ms: info?.elapsed_ms,
+          trace_id: info?.trace_id ?? null,
+        });
+        retryHandlers.current.set(streamId, () => {
+          retryHandlers.current.delete(streamId);
+          analytics.track(AnalyticsEvent.CHAT_RESPONSE_RETRIED, {
+            chat_session_id: sid,
+          });
+          setMessages((prev) =>
+            prev.filter((m) => m.id !== streamId && m.id !== userMsgId),
+          );
+          void send(text, opts);
+        });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamId
+              ? {
+                  ...m,
+                  content: "",
+                  streaming: false,
+                  meta: {
+                    ...m.meta,
+                    error: { message: friendly, prompt: display },
+                  },
+                }
+              : m,
+          ),
+        );
+        setThinkingHint(undefined);
+      };
+
       start(
         {
           message: outgoing,
           session_id: sid,
-          media_ids: selected.size ? Array.from(selected) : undefined,
+          media_ids: mediaIds,
           run_id: opts?.runId,
           clarification: opts?.clarification,
           quiz_options: opts?.quizOptions,
@@ -720,6 +813,13 @@ export default function ChatPage() {
             const content = (meta.content ?? {}) as Record<string, unknown>;
             const toolUsed = meta.tool_used as Message["meta"]["tool_used"];
             const mapped = mapAssistantContent(content, toolUsed);
+            // The saved note of a notes turn / the exam-soon offer, if any.
+            Object.assign(mapped, mapChatArtifacts(content));
+            // Developer Mode: the "powered by" trailer arrives as its own
+            // frame (never in the text); ChatMessages draws it from `model`.
+            if (!mapped.model && meta.model_badge?.model) {
+              mapped.model = meta.model_badge.model;
+            }
             const { quiz, flashcards } = mapped;
             const teamTurn = isTeamTurn(mapped);
             analytics.track(AnalyticsEvent.CHAT_RESPONSE_COMPLETED, {
@@ -752,11 +852,18 @@ export default function ChatPage() {
               image_style:
                 typeof content.style === "string" ? content.style : undefined,
             });
+            // Swap the optimistic ids for the persisted ones (when the
+            // backend sends them): Bookmark and Save-note reference the
+            // message id, and a `stream-…` placeholder must never be stored.
+            const assistantId = meta.assistant_message_id || streamId;
+            const userId = meta.user_message_id || userMsgId;
+            if (assistantId !== streamId) streamIdRef.current = assistantId;
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamId
                   ? {
                       ...m,
+                      id: assistantId,
                       // Everything is streamed, but a dropped frame must
                       // not lose text the final result carries.
                       content:
@@ -768,13 +875,44 @@ export default function ChatPage() {
                       streaming: false,
                       meta: mapped,
                     }
-                  : m,
+                  : m.id === userMsgId
+                    ? { ...m, id: userId }
+                    : m,
               ),
             );
             sessionsQuery.refetch();
             // Surface a freshly generated resource in the sidebar workspace.
             if (quiz) qc.invalidateQueries({ queryKey: qk.quizzes });
             if (flashcards) qc.invalidateQueries({ queryKey: qk.flashcards });
+            // A notes turn ("revision sheet", "important questions") saved a
+            // note: refresh the Notes lists and report it. A notes agent
+            // that failed or timed out is reported too.
+            if (mapped.note) {
+              qc.invalidateQueries({ queryKey: ["notes"] });
+              analytics.track(AnalyticsEvent.NOTES_GENERATED, {
+                note_id: mapped.note.note_id,
+                source: mapped.note.source ?? "topic",
+                length: mapped.note.length ?? full.length,
+                kind: mapped.note.kind,
+                chat_session_id: sid,
+              });
+            } else {
+              const failedNotes = normalizeAgents(content.agents).find(
+                // Compared as a string: the notes tool is not one of
+                // the planner's tools in `ToolUsed`.
+                (a) =>
+                  a.tool === NOTES_TOOL && a.status === "failed",
+              );
+              if (failedNotes) {
+                analytics.track(AnalyticsEvent.NOTES_GENERATE_FAILED, {
+                  error_kind:
+                    failedNotes.error === "timeout" ? "timeout" : "generic",
+                  chat_session_id: sid,
+                });
+              }
+            }
+            // The in-thread cram card replaces the generic exam banner.
+            if (mapped.exam_prep_offer) setShowExamBanner(false);
             // Generated images are media rows — refresh the library so the
             // sidebar/Files page (and stale-URL re-resolution) see them.
             if ((content.images as unknown[] | undefined)?.length) {
@@ -810,57 +948,99 @@ export default function ChatPage() {
             });
             quizDraftRef.current = null;
             setQuizSetupOpen(true);
+            // "Another one" after a quiz: a repeat cue is not a topic, and
+            // the previous quiz's settings and files carry forward so the
+            // repeat is one tap and keeps the uploaded material.
+            const topicText = (data.topic as string) || "";
+            // The student's own words decide: "do another" is a repeat even
+            // if the planner echoed it as the topic; "quiz on photosynthesis"
+            // is not, even if the planner sent no topic.
+            const repeat =
+              !!lastQuizRef.current &&
+              isRepeatCue(text) &&
+              (!topicText || isRepeatCue(topicText));
+            const last = repeat ? lastQuizRef.current?.options : undefined;
+            const lastHadMedia = repeat && !!lastQuizRef.current?.mediaIds.length;
             setPendingQuiz({
-              topic: (data.topic as string) || "",
-              mediaAvailable: Boolean(data.media_available),
-              questionCount: (data.question_count as number | null) ?? null,
+              topic: repeat ? last?.topic ?? "" : topicText,
+              mediaAvailable: Boolean(data.media_available) || lastHadMedia,
+              questionCount:
+                (data.question_count as number | null) ??
+                last?.question_count ??
+                null,
               questionTypes:
                 (data.question_types as PendingQuizSetup["questionTypes"]) ??
+                last?.question_types ??
                 null,
               difficulty:
-                (data.difficulty as PendingQuizSetup["difficulty"]) ?? null,
+                (data.difficulty as PendingQuizSetup["difficulty"]) ??
+                last?.difficulty ??
+                null,
               examConfig:
-                (data.exam_config as PendingQuizSetup["examConfig"]) ?? null,
+                (data.exam_config as PendingQuizSetup["examConfig"]) ??
+                last?.exam_config ??
+                null,
               useMedia:
-                typeof data.use_media === "boolean" ? data.use_media : null,
+                typeof data.use_media === "boolean"
+                  ? data.use_media
+                  : last?.use_media ?? null,
             });
           },
-          onError: (msg) => {
-            // Keep the turn in the thread as a friendly, AI-styled error card
-            // (with retry) instead of dropping it to a transient toast.
-            const friendly = friendlyErrorMessage(msg);
-            analytics.track(AnalyticsEvent.CHAT_RESPONSE_FAILED, {
-              chat_session_id: sid,
-              error_kind: errorKind(msg),
-              phase: firstChunkAt === null ? "pre_stream" : "mid_stream",
-              latency_ms: Math.round(performance.now() - sentAt),
-            });
-            retryHandlers.current.set(streamId, () => {
-              retryHandlers.current.delete(streamId);
-              analytics.track(AnalyticsEvent.CHAT_RESPONSE_RETRIED, {
-                chat_session_id: sid,
-              });
-              setMessages((prev) =>
-                prev.filter((m) => m.id !== streamId && m.id !== userMsgId),
-              );
-              void send(text, opts);
-            });
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === streamId
-                  ? {
-                      ...m,
-                      content: "",
-                      streaming: false,
-                      meta: {
-                        ...m.meta,
-                        error: { message: friendly, prompt: display },
-                      },
-                    }
-                  : m,
-              ),
-            );
-            setThinkingHint(undefined);
+          onError: fail,
+          onDropped: (info) => {
+            // The server accepted the turn and then the connection went quiet
+            // (phones suspend idle streams during a long tool run) or broke.
+            // The backend finishes and persists the answer regardless, so
+            // refetch the session a few times instead of showing an error.
+            const droppedAt = performance.now();
+            const knownIds = new Set(messagesRef.current.map((m) => m.id));
+            const threadLength = messagesRef.current.length;
+            let attempts = 0;
+            const poll = async () => {
+              attempts += 1;
+              // The student moved on (new send / other chat): drop this
+              // turn's placeholder only, never the newer turn's.
+              if (streamIdRef.current !== streamId || !sid) {
+                setMessages((prev) => prev.filter((m) => m.id !== streamId));
+                return;
+              }
+              try {
+                const rows = await getMessages(sid);
+                const last = rows.at(-1);
+                // The answer is there once the session holds at least as many
+                // rows as the thread shows and ends with an unseen reply.
+                if (
+                  last &&
+                  last.role === "assistant" &&
+                  last.content &&
+                  rows.length >= threadLength &&
+                  !knownIds.has(last.id)
+                ) {
+                  analytics.track(AnalyticsEvent.CHAT_RESPONSE_RECOVERED, {
+                    chat_session_id: sid,
+                    elapsed_ms: Math.round(performance.now() - droppedAt),
+                    attempts,
+                  });
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === streamId ? { ...last, streaming: false } : m,
+                    ),
+                  );
+                  streamIdRef.current = last.id;
+                  setThinkingHint(undefined);
+                  sessionsQuery.refetch();
+                  return;
+                }
+              } catch {
+                /* still offline — try again below */
+              }
+              if (attempts >= RECOVERY_ATTEMPTS) {
+                fail("Stream dropped", info);
+                return;
+              }
+              window.setTimeout(() => void poll(), RECOVERY_INTERVAL_MS);
+            };
+            void poll();
           },
         },
       );
@@ -948,6 +1128,13 @@ export default function ChatPage() {
     setQuizSetupOpen(false);
     quizDraftRef.current = null;
     const resolved = { ...options, topic: options.topic || topic || undefined };
+    // A quiz from files keeps those files for a later "another one", even if
+    // the selection was cleared in between.
+    const quizMediaIds =
+      resolved.use_media && selected.size === 0 && lastQuizRef.current?.mediaIds.length
+        ? lastQuizRef.current.mediaIds
+        : Array.from(selected);
+    lastQuizRef.current = { options: resolved, mediaIds: quizMediaIds };
     analytics.track(AnalyticsEvent.QUIZ_GENERATION_REQUESTED, {
       question_count: resolved.question_count ?? 0,
       difficulty: resolved.target_exam
@@ -968,7 +1155,42 @@ export default function ChatPage() {
       quizOptions: resolved,
       sourceContent,
       displayText: `Start quiz${resolved.topic ? `: ${resolved.topic}` : ""}`,
+      mediaIds: resolved.use_media ? quizMediaIds : undefined,
     });
+  };
+
+  // Thumbs up / down on an answer. The rating is stored on the message row
+  // (`messages.metadata.feedback`) so quality reviews can join it to traces.
+  const handleFeedback = async (
+    messageId: string,
+    rating: FeedbackRating | null,
+    toolUsed?: string,
+  ) => {
+    try {
+      await submitMessageFeedback(messageId, rating);
+      analytics.track(AnalyticsEvent.CHAT_RESPONSE_FEEDBACK, {
+        rating: rating ?? "none",
+        tool_used: toolUsed,
+        message_id: messageId,
+        chat_session_id: activeId,
+      });
+      return true;
+    } catch {
+      toast.error("Couldn't save your feedback");
+      return false;
+    }
+  };
+
+  // "Regenerate": re-send the question that produced this answer through the
+  // ordinary send path (same files, same session), as a fresh turn.
+  const handleRegenerate = (messageId: string) => {
+    const index = messages.findIndex((m) => m.id === messageId);
+    if (index === -1) return;
+    const prompt = [...messages.slice(0, index)]
+      .reverse()
+      .find((m) => m.role === "user")?.content;
+    if (!prompt) return;
+    send(prompt, { source: "action", regenerate: true });
   };
 
   const handleCreateFlashcards = (sourceContent: string) => {
@@ -1125,8 +1347,8 @@ export default function ChatPage() {
         }
         dropUpload(rowId, 900);
       },
-      onError: (msg, recoverable, _via, kept) => {
-        const { reason, message } = processingFailure(msg);
+      onError: (msg, recoverable, _via, kept, serverReason) => {
+        const { reason, message } = processingFailure(msg, serverReason);
         analytics.track(AnalyticsEvent.MEDIA_PROCESSING_FAILED, {
           media_id: mediaId,
           stage_last: lastStage,
@@ -1196,7 +1418,7 @@ export default function ChatPage() {
 
   const startUpload = async (
     file: File,
-    rowId = uid(),
+    rowId: string = uid(),
     meta: {
       batchSize?: number;
       isRetry?: boolean;
@@ -1258,7 +1480,11 @@ export default function ChatPage() {
   };
 
   const handleUpload = async (files: FileList) => {
-    const picked = Array.from(files);
+    // Camera shots and pasted images arrive as "blob" / "image.jpg": give
+    // them a readable name ("Photo 2 · 14:27.jpg") before anything else.
+    const picked = Array.from(files).map((f, i) =>
+      ensureFileName(f, files.length > 1 ? i + 1 : undefined),
+    );
     await Promise.all(
       picked.map(async (original) => {
         const rowId = uid();
@@ -1365,6 +1591,7 @@ export default function ChatPage() {
     // user actually sends their first message.
     newChatRef.current = true;
     loadedSession.current = null;
+    setOnboardingJustDone(false);
     setPreview(null);
     setMessages([]);
     setPendingClar(null);
@@ -1534,7 +1761,16 @@ export default function ChatPage() {
       flashcardSets={sessionFlashcards}
       resourcesLoading={resourcesLoading}
       onToggle={toggleMedia}
-      onDelete={(id) => deleteMedia.mutateAsync(id)}
+      onDelete={async (id) => {
+        await deleteMedia.mutateAsync(id, {
+          // A 404 means the row is already gone server-side: the hook's
+          // rollback just restored it, so drop it from the cache again.
+          onError: (err) => {
+            if (/not found/i.test(err instanceof Error ? err.message : String(err)))
+              removeMediaCache(id);
+          },
+        });
+      }}
       onUpload={handleUpload}
       onRetryUpload={handleRetryUpload}
       onReprocess={handleReprocess}
@@ -1561,6 +1797,7 @@ export default function ChatPage() {
         <div className="flex flex-1 overflow-hidden">
           {/* Chat column */}
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden pb-bottomnav lg:pb-0">
+            <ReturnStrip onOpenQuiz={openQuizById} onOpenFlashcards={openFlashcards} />
             <div className="flex-1 overflow-y-auto" {...chatSwipe}>
               {preview ? (
                 <BookmarkPreview
@@ -1573,6 +1810,32 @@ export default function ChatPage() {
               ) : historyLoading || loadingSession ? (
                 <ChatSkeleton />
               ) : messages.length === 0 && !streaming ? (
+                onboardingJustDone ||
+                (sessionsQuery.isSuccess &&
+                  sessions.length === 0 &&
+                  !showOnboarding) ? (
+                  // Aeva speaks first: greeting + prompts from the learning
+                  // profile; the idle demo only right after onboarding.
+                  <FirstConversation
+                    autoDemo={onboardingJustDone}
+                    onPick={(t, kind) =>
+                      send(t, {
+                        source:
+                          kind === "first_conversation_demo"
+                            ? "auto_demo"
+                            : "suggested_prompt",
+                      })
+                    }
+                    onVoice={
+                      isMobile &&
+                      voiceEnabled &&
+                      typeof window !== "undefined" &&
+                      !!(window.SpeechRecognition ?? window.webkitSpeechRecognition)
+                        ? () => composerRef.current?.startVoice()
+                        : undefined
+                    }
+                  />
+                ) : (
                 <div className="h-full">
                   {/* Rich revision-aware welcome; falls back to EmptyState
                      for brand-new users. */}
@@ -1582,6 +1845,7 @@ export default function ChatPage() {
                   {/* Opt-in: renders nothing until real Study Spaces exist. */}
                   <ContinueLearningRail />
                 </div>
+                )
               ) : (
                 <ChatMessages
                   messages={messages}
@@ -1635,7 +1899,10 @@ export default function ChatPage() {
                   onOpenQuiz={openQuiz}
                   onOpenFlashcards={openFlashcards}
                   onRetry={(id) => retryHandlers.current.get(id)?.()}
+                  onFeedback={handleFeedback}
+                  onRegenerate={handleRegenerate}
                   highlightId={highlightId}
+                  noteActions
                 />
               )}
             </div>
@@ -1667,6 +1934,9 @@ export default function ChatPage() {
                 mediaAvailable={pendingQuiz.mediaAvailable}
                 busy={streaming}
                 onGenerate={(opts) => handleGenerateQuiz(pendingQuiz.topic, opts)}
+                // No answer card behind this form: a one-word topic with no
+                // files would make a junk quiz.
+                requireTopic
               />
             )}
 
@@ -1845,6 +2115,9 @@ export default function ChatPage() {
         open={showOnboarding}
         onDone={() => {
           setOnboardingDismissed(true);
+          // Only on a fresh chat: a session opened from a deep link keeps
+          // its conversation.
+          if (!activeId && !preview) setOnboardingJustDone(true);
           void refreshUser();
         }}
       />

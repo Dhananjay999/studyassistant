@@ -7,10 +7,10 @@ import type { QuizContent, QuizEvaluation } from "@/types";
 
 const esc = (s: string) =>
   s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
 function statRow(label: string, value: string): string {
   return `<tr><td>${esc(label)}</td><td class="v">${esc(value)}</td></tr>`;

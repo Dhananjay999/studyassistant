@@ -32,6 +32,11 @@ class FeatureFlagDef:
     label: str
     description: str
     default_enabled: bool = True
+    # Off for accounts created on/after FEATURE_NEW_USER_SINCE (app config),
+    # while existing users keep whatever the global flag says. Lets a surface
+    # with no measured use stop being shown to newcomers without taking it
+    # away from anyone who already has it.
+    hidden_for_new_users: bool = False
 
 
 FEATURE_FLAGS: tuple[FeatureFlagDef, ...] = (
@@ -54,6 +59,7 @@ FEATURE_FLAGS: tuple[FeatureFlagDef, ...] = (
         "study_spaces",
         "Study spaces",
         "Study Spaces pages, sidebar list and continue-learning rail.",
+        hidden_for_new_users=True,
     ),
     FeatureFlagDef(
         "notes",
@@ -70,6 +76,7 @@ FEATURE_FLAGS: tuple[FeatureFlagDef, ...] = (
         "Sharing",
         "Share buttons for quizzes, results and notes. Existing share "
         "links keep working when disabled.",
+        hidden_for_new_users=True,
     ),
     FeatureFlagDef(
         "voice_input",
@@ -123,6 +130,20 @@ def get_flags() -> dict[str, bool]:
             flags[row["key"]] = bool(row.get("enabled"))
     _cache = (time.monotonic(), flags)
     return flags
+
+
+def hidden_for_new_users() -> list[str]:
+    """Flag keys that new accounts do not get, in registry order.
+
+    Only flags that are currently enabled globally are listed: a flag the
+    admin turned off is already hidden for everyone.
+    """
+    flags = get_flags()
+    return [
+        f.key
+        for f in FEATURE_FLAGS
+        if f.hidden_for_new_users and flags.get(f.key, f.default_enabled)
+    ]
 
 
 def is_enabled(key: str) -> bool:

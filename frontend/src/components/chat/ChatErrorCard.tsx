@@ -36,7 +36,7 @@ export function ChatErrorCard({
           size="sm"
           variant="default"
           className="h-8 gap-1.5"
-          onClick={() => onRetry(error)}
+          onClick={() => onRetry()}
         >
           <RotateCcw className="h-3.5 w-3.5" />
           Retry

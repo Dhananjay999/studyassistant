@@ -58,7 +58,8 @@ import type {
   StudySpace,
   User,
 } from "@/types";
-import { mapAssistantContent } from "@/lib/messageMeta";
+import { mapAssistantContent, mapFeedback } from "@/lib/messageMeta";
+import { mapChatArtifacts } from "@/lib/chatArtifacts";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { errorKind } from "@/lib/errorMessage";
 import { UploadError, reasonFromResponse } from "@/lib/uploadErrors";
@@ -110,6 +111,7 @@ export const ENDPOINTS = {
   BOOKMARK: (id: string) => `/bookmarks/${id}`,
   COLLECTIONS: "/bookmarks/collections",
   COLLECTION: (id: string) => `/bookmarks/collections/${id}`,
+  CHAT_MESSAGE_FEEDBACK: (id: string) => `/chat/messages/${id}/feedback`,
   SEARCH: "/search/",
   FLASHCARDS: "/flashcards/",
   FLASHCARDS_GENERATE: "/flashcards/generate",
@@ -122,6 +124,8 @@ export const ENDPOINTS = {
   REVISION_DASHBOARD: "/revision/dashboard",
   REVISION_HOME: "/revision/home",
   REVISION_CONFIDENCE: "/revision/confidence",
+  // Return hook: what the signed-in user has waiting (chat strip).
+  NOTIFICATIONS_PENDING: "/notifications/pending",
   // Exam Prep (feature flag `exam_prep`).
   EXAM_PLAN: "/exam-prep/plan",
   EXAM_PLAN_ARCHIVE: (planId: string) => `/exam-prep/plan/${planId}/archive`,
@@ -169,10 +173,21 @@ function authHeaders(json = true): Record<string, string> {
 // `public` marks an unauthenticated (guest) call: a 401 must NOT tear down the
 // session, since there is no session to lose — it would wrongly bounce a
 // logged-out visitor toward login on a public share page.
-interface RequestExtras {
+export interface RequestExtras {
   public?: boolean;
   /** Overrides the default request timeout (ms) for slow endpoints. */
   timeoutMs?: number;
+  /** A 401 is handed back to the caller instead of the unauthorized
+   * handler. For calls whose caller owns the outcome of a rejected token
+   * (the first `/auth/me` of a sign-in: a transient refusal must not become
+   * a hard logout). Every other call keeps tearing the session down. */
+  skipUnauthorizedHandler?: boolean;
+}
+
+/** HTTP status of an error thrown by the API client, if it was one. */
+export function apiErrorStatus(err: unknown): number | undefined {
+  const status = (err as { status?: unknown } | null)?.status;
+  return typeof status === "number" ? status : undefined;
 }
 
 // Analytics: collapse ids so `API_ERROR` groups by route, never by record.
@@ -227,9 +242,18 @@ async function request<T>(
       // An expired/invalid token surfaces as 401 here (the proactive refresh
       // timer failed or never ran). Tear the session down so the app logs out —
       // but never for an intentionally public call.
-      if (res.status === 401 && !extras.public) onUnauthorized();
+      if (
+        res.status === 401 &&
+        !extras.public &&
+        !extras.skipUnauthorizedHandler
+      ) {
+        onUnauthorized();
+      }
       const err = await res.json().catch(() => ({}));
-      const error = new Error(err.msg || `Request failed (${res.status})`);
+      const error = Object.assign(
+        new Error(err.msg || `Request failed (${res.status})`),
+        { status: res.status },
+      );
       reportApiError(path, method, res.status, error, false);
       throw error;
     }
@@ -263,7 +287,8 @@ export const getAppConfig = () =>
 
 /* ---------------------------------- auth ---------------------------------- */
 
-export const getMe = () => unwrap<User>(ENDPOINTS.AUTH_ME);
+export const getMe = (extras?: RequestExtras) =>
+  unwrap<User>(ENDPOINTS.AUTH_ME, undefined, extras);
 
 export async function refreshSession(refreshToken: string): Promise<{
   access_token: string;
@@ -421,9 +446,13 @@ export async function getMessages(id: string): Promise<Message[]> {
         // the live stream, so a reloaded thread renders identically
         // (quiz/flashcard cards, images, agent roster, follow-ups).
         ...mapAssistantContent(inner, toolUsed),
+        // Saved-note and exam-soon offer cards (same mapper as the stream).
+        ...mapChatArtifacts(inner),
         status: md.status as Message["meta"]["status"],
         run_id: md.run_id as string | undefined,
         clarification: md.clarification as Message["meta"]["clarification"],
+        // Thumbs rating saved earlier, so it survives a reload.
+        feedback: mapFeedback(md.feedback),
       },
     } satisfies Message;
   });
@@ -714,6 +743,19 @@ export const updateBookmark = (
 export const deleteBookmark = (id: string) =>
   unwrap<{ id: string }>(ENDPOINTS.BOOKMARK(id), { method: "DELETE" });
 
+/* ----------------------------- answer feedback ---------------------------- */
+
+/** Thumbs up / down on an assistant message (`null` clears it). Stored in
+ *  `messages.metadata.feedback` so quality reviews can join it to traces. */
+export const submitMessageFeedback = (
+  messageId: string,
+  rating: "up" | "down" | null,
+) =>
+  unwrap<{ message_id: string; rating: "up" | "down" | null }>(
+    ENDPOINTS.CHAT_MESSAGE_FEEDBACK(messageId),
+    { method: "POST", body: JSON.stringify({ rating }) },
+  );
+
 export const listCollections = () =>
   unwrap<BookmarkCollection[]>(ENDPOINTS.COLLECTIONS);
 
@@ -807,6 +849,36 @@ export const postRevisionConfidence = (input: ConfidenceInput) =>
     method: "POST",
     body: JSON.stringify(input),
   });
+
+/* ------------------------------ return hook ------------------------------- */
+
+/** One thing waiting for the user. `count` is topics still open today
+ * (plan), topics due (revision) or unused artifacts (quiz / flashcards);
+ * the id is what one tap opens. Ids and counts only, no titles. */
+export type PendingNotification =
+  | {
+      kind: "plan";
+      count: number;
+      plan_id: string | null;
+      day_id: string | null;
+      day_number: number | null;
+      total_days: number | null;
+    }
+  | { kind: "revision"; count: number }
+  | { kind: "quiz"; count: number; quiz_id: string | null }
+  | { kind: "flashcards"; count: number; set_id: string | null };
+
+export interface PendingNotifications {
+  /** False while the backend runs without `NOTIFICATIONS_ENABLED`. */
+  enabled: boolean;
+  /** Most important first: plan, revision, quiz, flashcards. */
+  items: PendingNotification[];
+}
+
+export const getPendingNotifications = () =>
+  unwrap<PendingNotifications>(
+    `${ENDPOINTS.NOTIFICATIONS_PENDING}${tzQuery()}`,
+  );
 
 /* --------------------------------- search --------------------------------- */
 

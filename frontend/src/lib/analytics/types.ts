@@ -33,7 +33,12 @@ export interface AnalyticsConfig {
   /** Console logging of every event (see config.ts for the rules). */
   debug: boolean;
   posthogKey: string | null;
+  /** Where events are sent: the first-party `/ingest` proxy in deployed
+   *  builds, PostHog's host directly in development (see config.ts). */
   posthogHost: string;
+  /** PostHog's own UI host (toolbar, replay player) when `posthogHost` is a
+   *  proxy; null when events go to PostHog directly. */
+  posthogUiHost: string | null;
   appEnv: string;
   appVersion: string;
   buildId: string;

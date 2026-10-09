@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  FileDown,
   Layers,
   Loader2,
   MessageSquarePlus,
@@ -121,13 +122,19 @@ export default function NoteEditorPage() {
     else void run();
   };
 
-  const exportPdf = () => {
+  /** Print the rendered note, or save it as a PDF: both go through the
+   * browser's print dialog (lib/printReport), which is where every phone and
+   * desktop browser offers "Save as PDF". */
+  const exportPdf = (mode: "print" | "pdf" = "pdf") => {
     const html = previewRef.current?.innerHTML;
     if (!html) {
       // Preview not mounted (edit tab) — flip to it and let the user retry.
       setTab("preview");
       toast.info("Preview opened — tap Export again");
       return;
+    }
+    if (mode === "pdf") {
+      toast.info("Choose “Save as PDF” in the print dialog.");
     }
     printNote(title.trim() || "Note", html);
   };
@@ -236,14 +243,28 @@ export default function NoteEditorPage() {
               <MessageSquarePlus className="h-3.5 w-3.5 text-brand-1" />
               Continue with Aeva
             </Button>
-            <span className="ml-auto flex items-center gap-1">
+            <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
+              {/* The names keep the long-standing PRINT_CLICK / EXPORT_CLICK
+                 click events; the location tells note prints from others. */}
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 gap-1.5 text-xs text-muted-foreground"
-                onClick={exportPdf}
+                className="h-8 gap-1.5 text-xs text-muted-foreground touch:h-11"
+                onClick={() => exportPdf("print")}
+                data-analytics-name="Print"
+                data-analytics-location="note_editor"
               >
-                <Printer className="h-3.5 w-3.5" /> Export
+                <Printer className="h-3.5 w-3.5" /> Print
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 gap-1.5 text-xs text-muted-foreground touch:h-11"
+                onClick={() => exportPdf("pdf")}
+                data-analytics-name="Export"
+                data-analytics-location="note_editor"
+              >
+                <FileDown className="h-3.5 w-3.5" /> Export PDF
               </Button>
               {sharingEnabled && (
                 <Button

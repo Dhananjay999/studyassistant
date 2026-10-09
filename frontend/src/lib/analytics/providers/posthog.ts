@@ -29,6 +29,8 @@ export class PostHogProvider implements AnalyticsProvider {
     const { default: posthog } = await import("posthog-js");
     posthog.init(config.posthogKey, {
       api_host: config.posthogHost,
+      // Set only behind the first-party proxy (toolbar / replay player).
+      ...(config.posthogUiHost ? { ui_host: config.posthogUiHost } : {}),
       defaults: "2026-05-30",
       bootstrap: { distinctID: ctx.anonymousId },
       // We emit page lifecycle ourselves (route tracker) and map it below.

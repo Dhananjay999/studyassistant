@@ -5,14 +5,20 @@ import { Badge } from "@/components/ui/badge";
 import { AgentWorkboard } from "@/components/chat/AgentWorkboard";
 import { QuizCard } from "@/components/chat/QuizCard";
 import { FlashcardCard } from "@/components/chat/FlashcardCard";
+import { NoteCard } from "@/components/chat/NoteCard";
+import { ExamPrepOfferCard } from "@/components/chat/ExamPrepOfferCard";
 import { ChatErrorCard } from "@/components/chat/ChatErrorCard";
 import { DebugInfoPanel } from "@/components/chat/DebugInfoPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMedia } from "@/hooks/api";
+import { useFeature } from "@/hooks/useFeature";
 import type { GeneratedImage } from "@/types";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { SourceCards } from "@/components/chat/SourceCards";
-import { SuggestedActions } from "@/components/chat/SuggestedActions";
+import {
+  SuggestedActions,
+  type FeedbackRating,
+} from "@/components/chat/SuggestedActions";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { cn } from "@/lib/utils";
 import { copyRich, markdownToPlainText } from "@/lib/clipboard";
@@ -41,6 +47,24 @@ const TOOL_LABEL: Partial<Record<ToolUsed, string>> = {
 // off (or a message predates the per-user gate), strip it at render time so
 // non-debug users never see it.
 const POWERED_BY_RE = /\n+---\n_⚡ powered by:[^_\n]*_\s*$/;
+
+// The optimistic assistant bubble carries this prefix until the final stream
+// frame brings the persisted id. Such an id must never be saved anywhere.
+const PLACEHOLDER_PREFIX = "stream-";
+// Below this many characters an answer is a greeting, an acknowledgement or
+// Aeva describing itself: nothing worth a quiz or flashcards.
+const GENERATOR_MIN_CHARS = 300;
+// Response categories that carry no study content either.
+const NON_CONTENT_TYPES = new Set(["CLARIFICATION", "NOT_RELEVANT", "ERROR"]);
+
+/** Hide "Create Quiz / Flashcards" on meta or very short answers. */
+function isMetaAnswer(msg: Message): boolean {
+  if (msg.meta?.tool_used === "product_info") return true;
+  if (msg.meta?.response_type && NON_CONTENT_TYPES.has(msg.meta.response_type)) {
+    return true;
+  }
+  return msg.content.trim().length < GENERATOR_MIN_CHARS;
+}
 
 /**
  * Images Aeva generated for an answer. Each is a media-library row; the
@@ -102,8 +126,11 @@ export function ChatMessages({
   onSaveNote,
   onRetry,
   onRetryAgent,
+  onFeedback,
+  onRegenerate,
   highlightId,
   followOnLoad = true,
+  noteActions = false,
 }: {
   messages: Message[];
   mediaAvailable: boolean;
@@ -129,6 +156,15 @@ export function ChatMessages({
   onRetry: (messageId: string) => void;
   /** Re-run one failed agent of a multi-agent turn. */
   onRetryAgent: (messageId: string, agent: AgentInfo) => void;
+  /** Thumbs up / down on an answer (`null` clears); resolves true on success.
+   *  Omit to hide the controls. */
+  onFeedback?: (
+    messageId: string,
+    rating: FeedbackRating | null,
+    toolUsed?: string,
+  ) => Promise<boolean>;
+  /** "Regenerate" on the latest answer: re-send its question. Omit to hide. */
+  onRegenerate?: (messageId: string) => void;
   /** Message to scroll to and flash-highlight (e.g. opened from a bookmark). */
   highlightId?: string | null;
   /** Scroll to the newest message when the conversation first loads or
@@ -136,10 +172,14 @@ export function ChatMessages({
    *  content the user came for (the exam topic page): loading history then
    *  leaves the viewport alone, while sends and streaming still follow. */
   followOnLoad?: boolean;
+  /** Offer "Save as revision sheet" / "Important questions" on answers.
+   *  Only the main chat turns these into saved notes, so it opts in. */
+  noteActions?: boolean;
 }) {
   // Developer Mode: the single switch for every debug-only element here (tool
   // badge, diagnostics panel). Normal users get a production-clean bubble.
   const { isDebugUser } = useAuth();
+  const notesEnabled = useFeature("notes");
   const bottomRef = useRef<HTMLDivElement>(null);
   // Rendered markdown nodes, so Copy yields clean text + rich HTML.
   const contentRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -160,6 +200,47 @@ export function ChatMessages({
   // into view) from an assistant streaming update (which respects scroll pos).
   const lastUserIdRef = useRef<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
+  // Thumbs ratings changed in this view, by message id (`null` = cleared).
+  // The server keeps the record in `messages.metadata.feedback`; a message
+  // not touched here shows its saved rating (`meta.feedback`), so thumbs
+  // survive a reload.
+  const [ratings, setRatings] = useState<
+    Record<string, FeedbackRating | null>
+  >({});
+
+  // Stable React keys across an id swap. When the final stream frame arrives,
+  // the optimistic `stream-…` id of the answer (and the user bubble's client
+  // id) is replaced by the persisted one in the same list position. The row
+  // keeps the key it mounted with, so the finished bubble does not re-mount
+  // and replay its enter animation, and the scroll heuristics below do not
+  // mistake the swap for a new turn or a conversation switch. Only a swap is
+  // aliased: at most two ids change and one of them is a placeholder.
+  const prevIdsRef = useRef<string[]>([]);
+  const keyAliasRef = useRef(new Map<string, string>());
+  {
+    const prev = prevIdsRef.current;
+    const current = messages.map((m) => m.id);
+    if (prev.length === current.length) {
+      const changed = current
+        .map((_, i) => i)
+        .filter((i) => prev[i] !== current[i]);
+      const isSwap =
+        changed.length > 0 &&
+        changed.length <= 2 &&
+        changed.some((i) => prev[i].startsWith(PLACEHOLDER_PREFIX)) &&
+        changed.every((i) => !current.includes(prev[i]));
+      if (isSwap) {
+        for (const i of changed) {
+          keyAliasRef.current.set(
+            current[i],
+            keyAliasRef.current.get(prev[i]) ?? prev[i],
+          );
+        }
+      }
+    }
+    prevIdsRef.current = current;
+  }
+  const keyOf = (m: Message) => keyAliasRef.current.get(m.id) ?? m.id;
 
   // Track whether the user is near the bottom of the scroll container. A user
   // scroll up disables auto-follow; scrolling back to the bottom re-enables it.
@@ -186,7 +267,7 @@ export function ChatMessages({
   // starts at its newest message. Suppressed while a highlight target is pending
   // so it doesn't fight the jump-to-message scroll (opened from a bookmark).
   useEffect(() => {
-    const convoKey = messages[0]?.id ?? null;
+    const convoKey = messages[0] ? keyOf(messages[0]) : null;
     const convoChanged = convoKey !== convoKeyRef.current;
     if (convoChanged) {
       convoKeyRef.current = convoKey;
@@ -197,7 +278,7 @@ export function ChatMessages({
     // message (not the last message) is the signal. Assistant streaming keeps
     // the same user id, so it instead respects the near-bottom gate.
     const lastUser = messages.reduce<string | null>(
-      (id, m) => (m.role === "user" ? m.id : id),
+      (id, m) => (m.role === "user" ? keyOf(m) : id),
       null,
     );
     const userSent = lastUser !== null && lastUser !== lastUserIdRef.current;
@@ -209,6 +290,8 @@ export function ChatMessages({
     // its first send is scrolled by the page itself.
     if (!followOnLoad && convoChanged) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // keyOf reads render-time refs; it is stable for a given `messages`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, highlightId, followOnLoad]);
 
   // Scroll to and briefly flash the highlighted message once it's rendered.
@@ -243,6 +326,10 @@ export function ChatMessages({
   const lastAssistantId = messages
     .filter((m) => m.role === "assistant")
     .at(-1)?.id;
+  // At most one exam-soon offer is on screen: the newest answer carrying one.
+  const lastOfferId = messages
+    .filter((m) => m.role === "assistant" && m.meta?.exam_prep_offer)
+    .at(-1)?.id;
 
   return (
     <div
@@ -265,9 +352,12 @@ export function ChatMessages({
               ? [msg.meta.tool_used]
               : []
         ).filter((tool) => TOOL_LABEL[tool]);
+        const rowKey = keyOf(msg);
+        // Until the persisted id arrives nothing may reference this answer.
+        const canPersist = !msg.id.startsWith(PLACEHOLDER_PREFIX);
         return (
           <motion.div
-            key={msg.id}
+            key={rowKey}
             ref={(el) => {
               if (el) rowRefs.current.set(msg.id, el);
               else rowRefs.current.delete(msg.id);
@@ -358,6 +448,21 @@ export function ChatMessages({
                 msg.content
               )}
 
+              {/* Developer Mode: the "powered by" trailer. It is display-only
+                 (sent as its own stream frame, kept as `meta.model`), so it
+                 sits outside the copied content node. Older answers that
+                 still carry the trailer in their text are left as they are. */}
+              {isDebugUser &&
+                msg.role === "assistant" &&
+                !msg.streaming &&
+                !msg.meta?.error &&
+                !!msg.meta?.model &&
+                !POWERED_BY_RE.test(msg.content) && (
+                  <p className="mt-3 border-t border-border/60 pt-2 text-xs italic text-muted-foreground [overflow-wrap:anywhere]">
+                    ⚡ powered by: {msg.meta.model}
+                  </p>
+                )}
+
               {/* Once text exists the team sits under it: live while agents
                  are still finishing, then a collapsed summary (also what a
                  reloaded conversation shows). */}
@@ -393,6 +498,23 @@ export function ChatMessages({
                 />
               ) : null}
 
+              {msg.meta?.note && !msg.streaming && (
+                <NoteCard note={msg.meta.note} />
+              )}
+
+              {/* Exam-soon hand-off ("my exam is tomorrow"): a one-screen
+                 cram setup under the answer, once its id is persisted. */}
+              {msg.role === "assistant" &&
+                !msg.streaming &&
+                canPersist &&
+                msg.id === lastOfferId &&
+                msg.meta?.exam_prep_offer && (
+                  <ExamPrepOfferCard
+                    offer={msg.meta.exam_prep_offer}
+                    messageId={msg.id}
+                  />
+                )}
+
               {/* Developer Mode diagnostics — debug users only, after the
                  turn has finished streaming. */}
               {isDebugUser &&
@@ -422,8 +544,44 @@ export function ChatMessages({
                     }
                     onCreateFlashcards={() => onCreateFlashcards(msg.content)}
                     onCopy={() => copyMessage(msg.id, msg.content)}
-                    onSaveNote={() =>
-                      onSaveNote(msg.id, msg.content, topic)
+                    onSaveNote={
+                      // A generated note is already saved in Notes.
+                      msg.meta?.note
+                        ? undefined
+                        : () => onSaveNote(msg.id, msg.content, topic)
+                    }
+                    onMakeNotes={
+                      noteActions && notesEnabled && !msg.meta?.note
+                        ? (instruction) => onAction(instruction, msg.content)
+                        : undefined
+                    }
+                    canPersist={canPersist}
+                    hideGenerators={isMetaAnswer(msg)}
+                    feedback={
+                      msg.id in ratings
+                        ? ratings[msg.id]
+                        : (msg.meta?.feedback?.rating ?? null)
+                    }
+                    onFeedback={
+                      onFeedback
+                        ? async (rating) => {
+                            const ok = await onFeedback(
+                              msg.id,
+                              rating,
+                              msg.meta?.tool_used,
+                            );
+                            if (ok) {
+                              setRatings((prev) => ({
+                                ...prev,
+                                [msg.id]: rating,
+                              }));
+                            }
+                            return ok;
+                          }
+                        : undefined
+                    }
+                    onRegenerate={
+                      onRegenerate ? () => onRegenerate(msg.id) : undefined
                     }
                     bookmarkItem={{
                       item_type: "response",
