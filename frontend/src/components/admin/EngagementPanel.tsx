@@ -10,16 +10,36 @@ import {
   CalendarDays,
   LineChart as LineIcon,
   Repeat,
+  UserPlus,
+  Users,
+  Zap,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useAdminEngagement } from "@/hooks/adminApi";
-import { formatNumber } from "@/lib/adminFormat";
-import type { AdminEngagement } from "@/types/admin";
+import { formatNumber, zoneLabel } from "@/lib/adminFormat";
+import type {
+  AdminEngagement,
+  AdminEngagementUserKind,
+} from "@/types/admin";
 import type { EngagementChartKind } from "./EngagementChart";
+import { EngagementUsersSheet } from "./EngagementUsersSheet";
 
 const EngagementChart = lazy(() => import("./EngagementChart"));
+
+/** "See who they are" chips under the window summary. */
+const DRILLS: {
+  kind: AdminEngagementUserKind;
+  label: string;
+  icon: typeof Users;
+  count: (w: AdminEngagement["window"]) => number;
+}[] = [
+  { kind: "returning", label: "Returning", icon: Repeat, count: (w) => w.returning_users },
+  { kind: "new", label: "New", icon: UserPlus, count: (w) => w.new_users },
+  { kind: "active", label: "All active", icon: Zap, count: (w) => w.active_users },
+];
 
 /** Range choices; the backend caps `days` at 90. */
 const RANGES: { days: number; label: string; aria: string }[] = [
@@ -203,8 +223,14 @@ function ViewControls({
   );
 }
 
-export function EngagementPanel() {
+export function EngagementPanel({
+  onSelectUser,
+}: {
+  /** Opens a user's detail view from the drill-down list. */
+  onSelectUser?: (id: string) => void;
+}) {
   const [view, setView] = useState<ViewPrefs>(loadView);
+  const [drill, setDrill] = useState<AdminEngagementUserKind | null>(null);
   const { data, isLoading, isError, isFetching, error } = useAdminEngagement(
     view.days,
   );
@@ -236,7 +262,7 @@ export function EngagementPanel() {
           <SectionTitle
             icon={CalendarDays}
             title="Users per day"
-            hint={`Last ${view.days} days · active vs new sign-ups (UTC)`}
+            hint={`Last ${view.days} days · active vs new sign-ups (${zoneLabel(data?.timezone ?? "UTC")})`}
           />
           <ViewControls view={view} onChange={changeView} />
           {isError ? (
@@ -265,14 +291,56 @@ export function EngagementPanel() {
             </Suspense>
           )}
           {win && data?.available && (
-            <p className="text-xs text-muted-foreground">
-              {formatNumber(win.active_users)} active in the last {days} days:{" "}
-              {formatNumber(win.returning_users)} returning (signed up before
-              the window), {formatNumber(win.new_users)} new.
-            </p>
+            <>
+              <p className="text-xs text-muted-foreground">
+                {formatNumber(win.active_users)} active in the last {days} days:{" "}
+                {formatNumber(win.returning_users)} returning (signed up before
+                the window), {formatNumber(win.new_users)} new.
+              </p>
+              <div
+                className="flex flex-wrap gap-2"
+                role="group"
+                aria-label="See who they are"
+              >
+                {DRILLS.map(({ kind, label, icon: Icon, count }) => {
+                  const n = count(win);
+                  return (
+                    <Button
+                      key={kind}
+                      variant="outline"
+                      size="sm"
+                      className="h-11 gap-1.5 px-3 text-xs sm:h-9"
+                      disabled={n === 0}
+                      onClick={() => setDrill(kind)}
+                      data-analytics-name={`ENGAGEMENT_${kind.toUpperCase()}_USERS`}
+                      aria-label={`Show ${label.toLowerCase()} users (${n})`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatNumber(n)}
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </Card>
       </motion.div>
+
+      <EngagementUsersSheet
+        kind={drill}
+        days={days}
+        timezone={data?.timezone ?? "UTC"}
+        total={
+          drill && win
+            ? DRILLS.find((d) => d.kind === drill)?.count(win) ?? 0
+            : 0
+        }
+        onClose={() => setDrill(null)}
+        onSelectUser={onSelectUser}
+      />
 
       <motion.div
         {...enter}

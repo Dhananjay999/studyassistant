@@ -170,7 +170,9 @@ function AdminInner() {
       username={username}
       onLogout={logout}
     >
-      {view.name === "overview" && <AdminOverview />}
+      {view.name === "overview" && (
+        <AdminOverview onSelectUser={(id) => setView({ name: "user", id })} />
+      )}
       {view.name === "debug" && <AdminDebugUsers />}
       {view.name === "audit" && <AdminAuditLog />}
       {view.name === "users" && (

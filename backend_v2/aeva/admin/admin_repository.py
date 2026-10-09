@@ -12,8 +12,11 @@ single user and acceptable for an internal tool.
 """
 
 import logging
+import os
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import current_app
 
@@ -98,19 +101,69 @@ _RESOURCE_CONFIG: dict[str, dict[str, Any]] = {
 # 030 not applied).
 _MISSING_FUNCTION_CODES = frozenset({"PGRST202", "42883"})
 _ENGAGEMENT_FUNCTION = "admin_engagement"
+_ENGAGEMENT_USERS_FUNCTION = "admin_engagement_users"
+_ENGAGEMENT_USER_KINDS = frozenset({"returning", "new", "active"})
+_MAX_ENGAGEMENT_USERS_PAGE = 100
+_CURSOR_SEP = "~"
 _MAX_TIMELINE_DAYS = 90
 _MAX_COHORT_DAYS = 365
 
+# Calendar days on the admin dashboard ("New Today", users per day, the
+# retention cohort) are counted in this zone, so they line up with the joined
+# dates the user list shows to admins in India. Override with ADMIN_TIMEZONE
+# (an IANA name); an unknown name falls back to UTC rather than breaking the
+# dashboard.
+_DEFAULT_ADMIN_TIMEZONE = "Asia/Kolkata"
 
-def _is_missing_function(exc: Exception) -> bool:
-    """Whether ``exc`` says the engagement function is not in the database."""
+
+def _load_admin_timezone() -> str:
+    name = os.environ.get("ADMIN_TIMEZONE", "").strip() or _DEFAULT_ADMIN_TIMEZONE
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning("Unknown ADMIN_TIMEZONE %r, using UTC", name)
+        return "UTC"
+    return name
+
+
+ADMIN_TIMEZONE = _load_admin_timezone()
+
+
+def _is_missing_function(
+    exc: Exception, name: str = _ENGAGEMENT_FUNCTION
+) -> bool:
+    """Whether ``exc`` says the function ``name`` is not in the database."""
     code = getattr(exc, "code", None)
     if code is not None:
         return str(code) in _MISSING_FUNCTION_CODES
     text = f"{getattr(exc, 'message', '') or ''} {exc}".lower()
-    return _ENGAGEMENT_FUNCTION in text and (
+    return name in text and (
         "could not find" in text or "does not exist" in text
     )
+
+
+def _encode_cursor(last_active: Any, user_id: Any) -> str | None:
+    """Opaque keyset cursor for ``admin_engagement_users()``."""
+    if not last_active or not user_id:
+        return None
+    return f"{last_active}{_CURSOR_SEP}{user_id}"
+
+
+def _decode_cursor(cursor: str | None) -> tuple[str | None, str | None]:
+    """Split a cursor back into ``(last_active_iso, user_id)``.
+
+    Raises ``VALIDATION_ERROR`` on anything that is not a timestamp and a
+    uuid, so a tampered or stale cursor cannot reach the database.
+    """
+    if not cursor:
+        return None, None
+    try:
+        raw_ts, raw_id = cursor.split(_CURSOR_SEP, 1)
+        ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+        uid = uuid.UUID(raw_id)
+    except (ValueError, TypeError) as exc:
+        raise CustomError(ERROR_CODES["VALIDATION_ERROR"]) from exc
+    return ts.isoformat(), str(uid)
 
 
 def _rate(numerator: Any, denominator: Any) -> float | None:
@@ -133,7 +186,12 @@ def _int(value: Any) -> int:
 
 
 def _shape_engagement(
-    raw: Any, days: int, cohort_days: int, *, available: bool = True
+    raw: Any,
+    days: int,
+    cohort_days: int,
+    *,
+    available: bool = True,
+    timezone: str = ADMIN_TIMEZONE,
 ) -> dict[str, Any]:
     """Normalise the ``admin_engagement()`` payload and add the rates."""
     if isinstance(raw, list):
@@ -160,6 +218,7 @@ def _shape_engagement(
     return {
         "available": available,
         "days": _int(raw.get("days")) or days,
+        "timezone": str(raw.get("timezone") or timezone),
         "daily": daily,
         "window": {
             "active_users": active,
@@ -227,7 +286,8 @@ class AdminRepository:
         return datetime.now(tz=UTC)
 
     def _today_start_iso(self) -> str:
-        start = self._now().replace(
+        """Midnight today in the admin timezone, as an offset-aware ISO string."""
+        start = self._now().astimezone(ZoneInfo(ADMIN_TIMEZONE)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
         return start.isoformat()
@@ -274,6 +334,7 @@ class AdminRepository:
             "total_files": self._count("media"),
             "active_users": active_users,
             "new_users_today": new_today,
+            "timezone": ADMIN_TIMEZONE,
         }
         return success_response("Overview loaded", data)
 
@@ -288,9 +349,10 @@ class AdminRepository:
 
         One call to ``admin_engagement()``, which reads only the last
         ``max(days, cohort_days)`` days of sessions, messages and profiles
-        through their time indexes. When the function is missing (migration
-        030 not applied) the dashboard gets an ``available: false`` payload
-        instead of an error, like the trace stats do.
+        through their time indexes. Days are bucketed in ``ADMIN_TIMEZONE``
+        (migration 033). When the function is missing (migration 030 not
+        applied) the dashboard gets an ``available: false`` payload instead
+        of an error, like the trace stats do.
         """
         days = max(1, min(int(days), _MAX_TIMELINE_DAYS))
         cohort_days = max(1, min(int(cohort_days), _MAX_COHORT_DAYS))
@@ -298,7 +360,11 @@ class AdminRepository:
             raw = (
                 self.client.rpc(
                     _ENGAGEMENT_FUNCTION,
-                    {"p_days": days, "p_cohort_days": cohort_days},
+                    {
+                        "p_days": days,
+                        "p_cohort_days": cohort_days,
+                        "p_tz": ADMIN_TIMEZONE,
+                    },
                 )
                 .execute()
                 .data
@@ -313,6 +379,97 @@ class AdminRepository:
             )
         return success_response(
             "Engagement loaded", _shape_engagement(raw, days, cohort_days)
+        )
+
+    def engagement_users(
+        self,
+        days: int = 7,
+        kind: str = "returning",
+        limit: int = 25,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """One page of the users behind the engagement window figures.
+
+        ``kind`` is ``returning`` (active in the window, signed up before
+        it), ``new`` (signed up inside it) or ``active`` (both). Rows have the
+        same shape as the user list plus ``active_days`` and ``is_new``, so
+        the dashboard can reuse the user-list columns. ``next_cursor`` is
+        None on the last page. Missing function (migration 034 not applied)
+        degrades to ``available: false`` like ``engagement()``.
+        """
+        days = max(1, min(int(days), _MAX_TIMELINE_DAYS))
+        if kind not in _ENGAGEMENT_USER_KINDS:
+            raise CustomError(ERROR_CODES["VALIDATION_ERROR"])
+        limit = max(1, min(int(limit), _MAX_ENGAGEMENT_USERS_PAGE))
+        after_active, after_id = _decode_cursor(cursor)
+        base = {
+            "available": True,
+            "kind": kind,
+            "days": days,
+            "timezone": ADMIN_TIMEZONE,
+            "users": [],
+            "next_cursor": None,
+        }
+        try:
+            rows = (
+                self.client.rpc(
+                    _ENGAGEMENT_USERS_FUNCTION,
+                    {
+                        "p_days": days,
+                        "p_tz": ADMIN_TIMEZONE,
+                        "p_kind": kind,
+                        "p_limit": limit,
+                        "p_after_active": after_active,
+                        "p_after_id": after_id,
+                    },
+                )
+                .execute()
+                .data
+                or []
+            )
+        except Exception as exc:
+            if not _is_missing_function(exc, _ENGAGEMENT_USERS_FUNCTION):
+                raise
+            logger.info("admin_engagement_users() not found (migration 034)")
+            return success_response(
+                "Engagement users unavailable", {**base, "available": False}
+            )
+
+        ids = [str(r["user_id"]) for r in rows if r.get("user_id")]
+        if not ids:
+            return success_response("Engagement users loaded", base)
+
+        # One profiles query for the page, then the same per-page aggregates
+        # the user list uses (each bounded to this page's ids).
+        profiles = (
+            self.client.table("profiles")
+            .select("*")
+            .in_("id", ids)
+            .execute()
+            .data
+            or []
+        )
+        by_id = {p["id"]: p for p in profiles}
+        agg = self._user_aggregates(ids)
+        users = []
+        for r in rows:
+            profile = by_id.get(str(r.get("user_id")))
+            if not profile:
+                continue  # deleted between the two reads
+            summary = self._user_summary(profile, agg)
+            summary["active_days"] = _int(r.get("active_days"))
+            summary["is_new"] = bool(r.get("is_new"))
+            users.append(summary)
+
+        next_cursor = None
+        if len(rows) >= limit:
+            last = rows[-1]
+            next_cursor = _encode_cursor(
+                last.get("last_active"), last.get("user_id")
+            )
+        return success_response(
+            "Engagement users loaded",
+            {**base, "users": users, "next_cursor": next_cursor},
         )
 
     # ------------------------------------------------------------------

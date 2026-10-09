@@ -16,6 +16,10 @@ The Super Admin panel reports as `page_name: admin` with `page_path` /
 `page_url` / `landing_page` scrubbed to plain `/admin` (`publicPath()` in
 `routeName.ts`): its real URL is a secret and never leaves the browser. Admin
 lists are `data-analytics-private`; nav clicks are `ADMIN_NAV_<SECTION>_CLICK`.
+The overview's engagement drill-down reports as
+`ENGAGEMENT_<RETURNING|NEW|ACTIVE>_USERS_CLICK` (the chips),
+`ENGAGEMENT_USERS_SHEET_OPENED` / `_CLOSED` (the sheet) and `OPEN_USER_CLICK`
+in section `admin_engagement_users` (the rows, masked).
 
 ## Core (emitted by the SDK)
 

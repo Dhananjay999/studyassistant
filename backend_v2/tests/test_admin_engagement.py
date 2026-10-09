@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from aeva.admin import admin_repository
 from aeva.admin.admin_repository import AdminRepository
 
 
@@ -46,6 +47,7 @@ def repo_for(answer):
 
 RAW = {
     "days": 7,
+    "timezone": "Asia/Kolkata",
     "daily": [
         {"day": "2026-10-02", "active_users": 3, "new_users": 1},
         {"day": "2026-10-03", "active_users": 0, "new_users": 0},
@@ -67,7 +69,11 @@ def test_calls_function_with_bounded_arguments():
     repo.engagement(days=500, cohort_days=0)
     (call,) = client.executed
     assert call.name == "admin_engagement"
-    assert call.params == {"p_days": 90, "p_cohort_days": 1}
+    assert call.params == {
+        "p_days": 90,
+        "p_cohort_days": 1,
+        "p_tz": admin_repository.ADMIN_TIMEZONE,
+    }
 
 
 def test_shapes_counts_into_rates():
@@ -76,6 +82,7 @@ def test_shapes_counts_into_rates():
 
     assert data["available"] is True
     assert data["days"] == 7
+    assert data["timezone"] == "Asia/Kolkata"
     assert data["daily"] == RAW["daily"]
     assert data["window"] == {
         "active_users": 10,
@@ -133,6 +140,7 @@ def test_missing_function_degrades_gracefully(code):
     data = repo.engagement()["data"]
 
     assert data["available"] is False
+    assert data["timezone"] == admin_repository.ADMIN_TIMEZONE
     assert data["daily"] == []
     assert data["window"]["active_users"] == 0
     assert data["retention"]["cohort_size"] == 0
@@ -219,3 +227,28 @@ def test_engagement_route_passes_range_to_repository(monkeypatch):
     assert client.get("/admin/overview/engagement", headers=headers).status_code == 200
     assert client.get("/admin/overview/engagement?days=90", headers=headers).status_code == 200
     assert calls == [(7, 30), (90, 90)]
+
+
+# ---------------------------------------------------------------------------
+# Timezone
+# ---------------------------------------------------------------------------
+
+
+def test_today_start_is_midnight_in_admin_timezone():
+    from datetime import datetime
+
+    repo, _ = repo_for(RAW)
+    start = datetime.fromisoformat(repo._today_start_iso())
+    assert (start.hour, start.minute, start.second) == (0, 0, 0)
+    expected = datetime.now(admin_repository.ZoneInfo(admin_repository.ADMIN_TIMEZONE))
+    assert start.utcoffset() == expected.utcoffset()
+    assert start.date() == expected.date()
+
+
+def test_unknown_admin_timezone_falls_back_to_utc(monkeypatch):
+    monkeypatch.setenv("ADMIN_TIMEZONE", "Mars/Olympus_Mons")
+    assert admin_repository._load_admin_timezone() == "UTC"
+    monkeypatch.setenv("ADMIN_TIMEZONE", "Europe/London")
+    assert admin_repository._load_admin_timezone() == "Europe/London"
+    monkeypatch.delenv("ADMIN_TIMEZONE")
+    assert admin_repository._load_admin_timezone() == "Asia/Kolkata"

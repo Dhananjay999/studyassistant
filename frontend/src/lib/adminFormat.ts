@@ -39,3 +39,20 @@ export function formatDateTime(iso: string | null | undefined): string {
     minute: "2-digit",
   });
 }
+
+/** Short label for an IANA timezone: "Asia/Kolkata" at today's date → "IST". */
+export function zoneLabel(tz: string): string {
+  try {
+    const part = new Intl.DateTimeFormat("en", {
+      timeZone: tz,
+      timeZoneName: "short",
+    })
+      .formatToParts(new Date())
+      .find((p) => p.type === "timeZoneName");
+    // Zones without a short name come back as "GMT+5:30"; keep the zone's city then.
+    if (part && !/^GMT[+-]/.test(part.value)) return part.value;
+  } catch {
+    // Unknown zone name: fall through to the raw name.
+  }
+  return tz.split("/").pop()?.replace(/_/g, " ") ?? tz;
+}

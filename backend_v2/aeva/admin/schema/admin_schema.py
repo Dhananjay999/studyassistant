@@ -86,6 +86,24 @@ class EngagementQuerySchema(Schema):
     days = fields.Int(load_default=7, validate=validate.Range(min=1, max=90))
 
 
+_ENGAGEMENT_USER_KINDS = ["returning", "new", "active"]
+
+
+class EngagementUsersQuerySchema(Schema):
+    """``GET /admin/overview/engagement/users``: one page of window users."""
+
+    days = fields.Int(load_default=7, validate=validate.Range(min=1, max=90))
+    kind = fields.Str(
+        load_default="returning", validate=validate.OneOf(_ENGAGEMENT_USER_KINDS)
+    )
+    limit = fields.Int(
+        load_default=25, validate=validate.Range(min=1, max=100)
+    )
+    cursor = fields.Str(
+        load_default=None, allow_none=True, validate=validate.Length(max=120)
+    )
+
+
 class UserSearchQuerySchema(Schema):
     """Per-user search query."""
 

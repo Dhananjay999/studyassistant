@@ -19,8 +19,10 @@ Write markdown of at most about 1800 words, dense and factual, covering:
    where quiz and flashcard generation fit.
 3. **Database:** the tables that matter per flow with their key columns; how to
    join a user to sessions, messages, quizzes, quiz attempts, flashcard sets and
-   study events; how to identify debug and internal users. Include current row
-   counts and the earliest and latest timestamps for each key table.
+   study events; how to identify debug and internal users; how an upload in
+   `media` links to its `media_pages` and `media_chunks` rows and to the
+   session and messages that used it. Include current row counts and the
+   earliest and latest timestamps for each key table.
 4. **Trace system:** the columns of `ai_traces`, `ai_trace_spans` and
    `ai_prompt_versions`, the span kinds and names that exist, how a trace links
    to a message, session and user, and three ready-to-run SQL queries (failures
@@ -103,7 +105,9 @@ Use `ai_traces` and `ai_trace_spans` to attribute each problem to a specific
 prompt, agent, tool, pipeline step, retrieved context or API call. Give trace
 ids, span names, latency, token and error data, and the file path of the prompt
 or code involved. Give latency and failure rates per span kind. Say what share
-of turns were good, so the verdict is balanced.
+of turns were good, so the verdict is balanced. Agent 7 validates the
+uploaded-material index and retrieval in depth: note grounding problems you
+see, but do not analyse the index yourself.
 
 ## Agent 5 — User Engagement & Satisfaction
 
@@ -140,7 +144,104 @@ types, languages); features that exist but are unused and add friction
 An opportunity needs demand evidence from more than one user. With less,
 classify it as Monitor and say what data would confirm it.
 
-## Agent 7 — Product Intelligence / Decision Maker
+## Agent 7 — Uploaded Material & Retrieval Validation
+
+Validate that the study materials users upload are parsed, chunked and embedded
+correctly, and that Aeva actually answers from them. Agent 4 judges answer
+quality in general; you cover only turns that used uploaded material, and you
+go all the way down to the index. Work in three passes: the index, the
+retrieval, and the answers.
+
+Read the code first so your checks match what the pipeline does:
+`backend_v2/aeva/media/media_processor.py` (parse, extract, chunk, embed,
+index; `processing_status` on `media`), `chunking.py`, `text_quality.py`
+(glyph-junk and blank-page detection that triggers an OCR re-parse),
+`retrieval.py` (hybrid search, query rewrite, the `min_similarity`,
+`floor_similarity` and `min_results` thresholds), the media tool in
+`backend_v2/aeva/mcp/tools/media_llm.py` (whole-file attachment fallback,
+`sources`), `grounding.py`, `citations.py`, and migrations 007, 023 and 032.
+Tables: `media` (`processing_status`, `processing_error`, `parse_tier`,
+`page_count`, `chunk_count`, `processed_at`), `media_pages` (one row per page:
+`text`, `markdown`) and `media_chunks` (`chunk_index`, `content`, `context`,
+`page_number`, `section`, `token_count`, `embedding vector(768)`,
+`embedding_version`, `search_vector`). RPCs: `search_media_chunks` (hybrid)
+and `match_media_chunks` (vector only). Read the RAG settings in
+`backend_v2/aeva/app.py` (`RAG_*`) for the configured chunk size, top-k and
+candidate counts.
+
+**Pass 1 — Index integrity.** For every upload in the window (and the whole
+`media` table where the window holds few uploads), report:
+
+- the `processing_status` distribution, failed rows grouped by
+  `processing_error`, and rows stuck in an intermediate status (`parsing`,
+  `extracting`, `chunking`, `embedding`, `indexing`) for more than an hour;
+- per document, `media.chunk_count` against `count(*)` of its `media_chunks`
+  rows and `page_count` against its `media_pages` rows; `ready` documents with
+  zero chunks;
+- gaps in `chunk_index` (missing or duplicate indices within a document), and
+  pages that have text in `media_pages` but no chunk pointing at them;
+- embedding health: `vector_dims(embedding)` other than 768, zero or NaN
+  vectors (`embedding <=> embedding` not 0, or a zero norm), exact duplicate
+  `content` within a document, and the `embedding_version` mix (version 1
+  rows have no `context` header and were embedded from the old text);
+- text quality: chunks whose `content` is mostly glyph junk (the code-point
+  ranges in `text_quality.py`) or shorter than one sentence, the `token_count`
+  distribution against `RAG_CHUNK_TOKENS`, and which documents needed the OCR
+  `parse_tier`;
+- upload and parse failures from PostHog upload events and Sentry (LlamaParse
+  and embedding API errors), and the time from `created_at` to `processed_at`.
+
+**Pass 2 — Retrieval correctness.** You cannot call the embedding model, so
+test the index with the vectors it already holds:
+
+- self-retrieval: for a sample of at least 20 chunks across different users
+  and documents, call `search_media_chunks` with the chunk's own `embedding`
+  as `query_embedding`, its `content` as `p_query`, scoped to that user. The
+  chunk must come back at rank 1 with similarity close to 1, and its
+  neighbours should be from the same document and section. Report every miss
+  and whether `exact_scan` was used;
+- keyword retrieval: pick distinctive terms from `media_pages.text` (a
+  heading, a formula name, a rare word) and check that
+  `search_vector @@ websearch_to_tsquery('english', term)` finds the chunk on
+  that page;
+- cross-user isolation: confirm the RPC never returns another user's chunks;
+- live retrieval from `ai_trace_spans` where `kind = 'retrieval'`: list the
+  distinct `name` values first (expect `retrieve`, `rewrite`, `search`,
+  `rerank`, `grounding`), then read `input`, `output` and `meta` for
+  `candidates`, `after_threshold`, `after_quota`, `top_similarity`,
+  `exact_scan`, `mode`, `rewritten`, `rerank_timeout` and the `embed_ms`,
+  `search_ms`, `rerank_ms` and `rewrite_ms` timings. Report turns that ended
+  with zero results after the threshold for a user who had `ready` documents,
+  the `top_similarity` distribution, how often the rewrite changed the query,
+  rerank timeouts, span failures, and p50 and p95 latency per step;
+- how often the media tool fell back to whole-file attachment because a
+  document was not `ready` (`RAG_ATTACHMENT_FALLBACK`), and the status of
+  those documents now.
+
+**Pass 3 — Answer grounding.** Take a systematic sample of traced turns in
+which the media tool ran (say how you sampled and how many you read; aim for
+at least 30, or every one if fewer exist). For each, read the user question,
+the chunks the span retrieved, the `sources` cited and Aeva's reply, and judge
+three things, giving counts for each outcome:
+
+- (a) did the retrieved chunks contain what the user asked for: relevant,
+  wrong document, wrong section, or not in the materials at all;
+- (b) does the reply use those chunks, and does every cited page actually
+  contain the claim (verify against `media_pages.text`);
+- (c) did the reply say the material does not cover something that the index
+  actually holds, or answer from general knowledge instead of the upload.
+
+Record the trace id, span name and the `file:line` of the prompt or code
+responsible for each failure, and classify the cause as parsing (junk or
+missing text), chunking (answer split across a boundary or wrong section),
+embedding (right chunk present but low similarity), threshold (right chunk
+retrieved then dropped), rewrite (query changed meaning), rerank, or
+generation (right chunk retrieved, reply ignored it).
+
+State what share of documents are healthy and what share of turns were
+correctly grounded, so the verdict is balanced.
+
+## Agent 8 — Product Intelligence / Decision Maker
 
 Act as a product manager and strategist, not as an editor who joins reports
 together. The owner will read your report to decide what to implement and must

@@ -16,6 +16,8 @@ import type {
   AdminLoginResult,
   AdminMediaFullDetail,
   AdminEngagement,
+  AdminEngagementUserKind,
+  AdminEngagementUsers,
   AdminOverview,
   AdminQuizFullDetail,
   AdminResourceList,
@@ -135,6 +137,22 @@ export const adminApi = {
   overview: () => unwrap<AdminOverview>("/overview"),
   engagement: (days = 7) =>
     unwrap<AdminEngagement>(`/overview/engagement?days=${days}`),
+  engagementUsers: (
+    days: number,
+    kind: AdminEngagementUserKind,
+    cursor: string | null = null,
+    limit = 25,
+  ) => {
+    const sp = new URLSearchParams({
+      days: String(days),
+      kind,
+      limit: String(limit),
+    });
+    if (cursor) sp.set("cursor", cursor);
+    return unwrap<AdminEngagementUsers>(
+      `/overview/engagement/users?${sp.toString()}`,
+    );
+  },
   listUsers: (params: AdminUsersParams) =>
     unwrap<AdminUserList>(`/users?${usersQuery(params)}`),
   getUser: (id: string) => unwrap<AdminUserDetail>(`/users/${id}`),

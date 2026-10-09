@@ -14,6 +14,8 @@ export interface AdminOverview {
   total_files: number;
   active_users: number;
   new_users_today: number;
+  /** IANA zone the "today" counter is measured in (absent before migration 033: UTC). */
+  timezone?: string;
 }
 
 /** One day of the dashboard timeline (GET /admin/overview/engagement). */
@@ -28,6 +30,8 @@ export interface AdminEngagement {
   /** False when migration 030 (admin_engagement) is not applied. */
   available: boolean;
   days: number;
+  /** IANA zone the days are bucketed in (absent before migration 033: UTC). */
+  timezone?: string;
   daily: AdminEngagementDay[];
   window: {
     active_users: number;
@@ -73,6 +77,28 @@ export interface AdminUserList {
   total: number;
   page: number;
   page_size: number;
+}
+
+/** Which slice of the engagement window to list (GET /admin/overview/engagement/users). */
+export type AdminEngagementUserKind = "returning" | "new" | "active";
+
+/** A user-list row plus how they sit in the engagement window. */
+export interface AdminEngagementUserRow extends AdminUserRow {
+  /** Distinct days with activity inside the window. */
+  active_days: number;
+  /** Signed up inside the window. */
+  is_new: boolean;
+}
+
+export interface AdminEngagementUsers {
+  /** False when migration 034 (admin_engagement_users) is not applied. */
+  available: boolean;
+  kind: AdminEngagementUserKind;
+  days: number;
+  timezone: string;
+  users: AdminEngagementUserRow[];
+  /** Opaque keyset cursor for the next page; null on the last page. */
+  next_cursor: string | null;
 }
 
 /** A user with Developer Mode enabled (GET /admin/debug-users). */

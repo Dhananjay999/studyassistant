@@ -1,11 +1,11 @@
 ---
 name: product-intelligence
-description: Run the read-only, multi-agent product intelligence analysis of StudyAssistant (Aeva). Eight agents study the code, PostHog, Sentry, Supabase and AI traces, then produce a prioritized report of what to fix, improve, add, remove or monitor. Use when the user runs /product-intelligence or asks for a product intelligence report, product review, or "what should we fix or build next". Analysis only; it changes nothing.
+description: Run the read-only, multi-agent product intelligence analysis of StudyAssistant (Aeva). Nine agents study the code, PostHog, Sentry, Supabase, the uploaded-material index and AI traces, then produce a prioritized report of what to fix, improve, add, remove or monitor. Use when the user runs /product-intelligence or asks for a product intelligence report, product review, or "what should we fix or build next". Analysis only; it changes nothing.
 ---
 
 # Product intelligence
 
-You are the orchestrator. You run eight agents with the Agent tool and hand the
+You are the orchestrator. You run nine agents with the Agent tool and hand the
 user the final report. The agents do the analysis; you do not analyse the data
 yourself.
 
@@ -34,16 +34,16 @@ Tell the user in one line what is starting before each step.
 1. **Agent 0 (context).** Start one agent. When it finishes, check that
    `<work folder>/context.md` exists and is not empty. If it is missing, stop
    and tell the user why; the analysts cannot work without it.
-2. **Agents 1–6 (analysts).** Start all six in a single message so they run at
-   the same time. Each writes `<work folder>/agent-<n>.md`.
-3. **Agent 7 (decision maker).** Start it after all six have returned. It writes
-   `<work folder>/final-report.md` and returns the full report.
-4. **Deliver.** Post Agent 7's report to the user in full, unedited. Above it,
+2. **Agents 1–7 (analysts).** Start all seven in a single message so they run
+   at the same time. Each writes `<work folder>/agent-<n>.md`.
+3. **Agent 8 (decision maker).** Start it after all seven have returned. It
+   writes `<work folder>/final-report.md` and returns the full report.
+4. **Deliver.** Post Agent 8's report to the user in full, unedited. Above it,
    add at most three lines: the window, which agents reported, and anything
    that went wrong (an agent that failed, a data source that was unreachable).
    Then stop. Do not start implementing any recommendation.
 
-Use the `general-purpose` agent type for all eight.
+Use the `general-purpose` agent type for all nine.
 
 ## Prompt for each agent
 
@@ -71,12 +71,13 @@ This analysis is read-only. Do the work now; nothing has been cancelled.
 | 4 | Aeva Quality & Technical Performance | same as Agent 1 | `agent-4.md` |
 | 5 | User Engagement & Satisfaction | same as Agent 1 | `agent-5.md` |
 | 6 | Product Opportunity | same as Agent 1 | `agent-6.md` |
-| 7 | Product Intelligence / Decision Maker | "Read `context.md` and `agent-1.md` to `agent-6.md` in `<work folder>`." | `final-report.md` |
+| 7 | Uploaded Material & Retrieval Validation | same as Agent 1 | `agent-7.md` |
+| 8 | Product Intelligence / Decision Maker | "Read `context.md` and `agent-1.md` to `agent-7.md` in `<work folder>`." | `final-report.md` |
 
 ## If something fails
 
 - **An analyst fails or returns nothing:** continue with the others, and tell
-  Agent 7 which report is missing so the final report says so.
+  Agent 8 which report is missing so the final report says so.
 - **A data source is unreachable** (an MCP server that is not signed in): the
   agents report it as a data gap. Mention it to the user with the fix: run
   `/mcp` and sign in.

@@ -21,6 +21,7 @@ import {
   ResponsiveTable,
   type ResponsiveColumn,
 } from "@/components/admin/ResponsiveTable";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import { useAdminUsers } from "@/hooks/adminApi";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/adminFormat";
 import type { AdminUserRow, AdminUsersParams } from "@/types/admin";
@@ -33,7 +34,12 @@ const COLUMNS: ResponsiveColumn<AdminUserRow>[] = [
     header: "Name",
     role: "primary",
     className: "font-medium",
-    cell: (u) => u.full_name || "—",
+    cell: (u) => (
+      <span className="flex min-w-0 items-center gap-2.5">
+        <UserAvatar name={u.full_name} email={u.email} src={u.avatar_url} />
+        <span className="truncate">{u.full_name || "—"}</span>
+      </span>
+    ),
   },
   {
     key: "email",

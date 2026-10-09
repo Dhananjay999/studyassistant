@@ -16,16 +16,25 @@ import { EngagementPanel } from "@/components/admin/EngagementPanel";
 import { StatCard } from "@/components/admin/StatCard";
 import { useAdminOverview } from "@/hooks/adminApi";
 import type { AdminOverview as Overview } from "@/types/admin";
+import { zoneLabel } from "@/lib/adminFormat";
+
+/** Numeric counters shown as tiles (the response's other fields are metadata). */
+type StatKey = Exclude<keyof Overview, "timezone">;
 
 const TILES: {
-  key: keyof Overview;
+  key: StatKey;
   label: string;
   icon: typeof Users;
-  hint?: string;
+  hint?: string | ((data: Overview | undefined) => string | undefined);
 }[] = [
   { key: "total_users", label: "Total Users", icon: Users },
   { key: "active_users", label: "Active Users", icon: Zap, hint: "last 7 days" },
-  { key: "new_users_today", label: "New Today", icon: UserPlus },
+  {
+    key: "new_users_today",
+    label: "New Today",
+    icon: UserPlus,
+    hint: (d) => (d?.timezone ? `${zoneLabel(d.timezone)} day` : undefined),
+  },
   { key: "total_chats", label: "Total Chats", icon: MessageSquare },
   { key: "total_sessions", label: "Total Sessions", icon: Files },
   { key: "total_messages", label: "Total Messages", icon: MessageSquare },
@@ -35,7 +44,12 @@ const TILES: {
   { key: "total_files", label: "Uploaded Files", icon: FileText },
 ];
 
-export function AdminOverview() {
+export function AdminOverview({
+  onSelectUser,
+}: {
+  /** Opens a user's detail view (from the engagement drill-down). */
+  onSelectUser?: (id: string) => void;
+}) {
   const { data, isLoading, isError, error } = useAdminOverview();
 
   return (
@@ -58,14 +72,14 @@ export function AdminOverview() {
             label={tile.label}
             value={data?.[tile.key]}
             icon={tile.icon}
-            hint={tile.hint}
+            hint={typeof tile.hint === "function" ? tile.hint(data) : tile.hint}
             loading={isLoading}
             index={i}
           />
         ))}
       </div>
 
-      <EngagementPanel />
+      <EngagementPanel onSelectUser={onSelectUser} />
     </div>
   );
 }

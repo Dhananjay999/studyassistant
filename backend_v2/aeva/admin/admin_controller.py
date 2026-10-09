@@ -26,6 +26,7 @@ from aeva.admin.schema.admin_schema import (
     DebugUserToggleSchema,
     EditProfileSchema,
     EngagementQuerySchema,
+    EngagementUsersQuerySchema,
     FeatureFlagToggleData,
     FeatureFlagToggleSchema,
     ResourceListQuery,
@@ -107,6 +108,23 @@ class AdminEngagement(MethodView):
         """
         days = int(query.get("days") or 7)
         return repo.engagement(days=days, cohort_days=max(30, days))
+
+
+class AdminEngagementUsers(MethodView):
+    """The users behind the engagement window figures, one page at a time."""
+
+    @staticmethod
+    @blueprint.arguments(EngagementUsersQuerySchema, location="query")
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str, query: dict[str, Any]) -> dict[str, Any]:
+        """List returning / new / active users of the last ``days`` days."""
+        return repo.engagement_users(
+            days=int(query.get("days") or 7),
+            kind=str(query.get("kind") or "returning"),
+            limit=int(query.get("limit") or 25),
+            cursor=query.get("cursor"),
+        )
 
 
 class AdminUsers(MethodView):
@@ -381,6 +399,11 @@ blueprint.add_url_rule(
     "/overview/engagement",
     view_func=AdminEngagement,
     endpoint="admin_engagement",
+)
+blueprint.add_url_rule(
+    "/overview/engagement/users",
+    view_func=AdminEngagementUsers,
+    endpoint="admin_engagement_users",
 )
 blueprint.add_url_rule(
     "/users", view_func=AdminUsers, endpoint="admin_users"

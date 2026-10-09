@@ -4,6 +4,7 @@
 
 import {
   keepPreviousData,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -11,6 +12,7 @@ import {
 import { adminApi } from "@/lib/adminApi";
 import type {
   AdminEditProfileInput,
+  AdminEngagementUserKind,
   AdminResourcesParams,
   AdminUsersParams,
   GlobalResource,
@@ -21,6 +23,8 @@ import type {
 export const adminQk = {
   overview: ["admin", "overview"] as const,
   engagement: (days: number) => ["admin", "engagement", days] as const,
+  engagementUsers: (days: number, kind: AdminEngagementUserKind) =>
+    ["admin", "engagement-users", days, kind] as const,
   users: (params: AdminUsersParams) => ["admin", "users", params] as const,
   user: (id: string) => ["admin", "user", id] as const,
   session: (id: string) => ["admin", "session", id] as const,
@@ -50,6 +54,22 @@ export function useAdminEngagement(days = 7) {
     // Keep the last range on screen while the next one loads.
     placeholderData: keepPreviousData,
     // The query reads weeks of activity; a minute of staleness is fine.
+    staleTime: 60_000,
+  });
+}
+
+/** Pages of the users behind the engagement window (keyset cursor). */
+export function useAdminEngagementUsers(
+  days: number,
+  kind: AdminEngagementUserKind,
+  enabled = true,
+) {
+  return useInfiniteQuery({
+    queryKey: adminQk.engagementUsers(days, kind),
+    queryFn: ({ pageParam }) => adminApi.engagementUsers(days, kind, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next_cursor,
+    enabled,
     staleTime: 60_000,
   });
 }

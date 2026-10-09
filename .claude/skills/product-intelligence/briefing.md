@@ -17,7 +17,11 @@ Load each MCP tool's schema with ToolSearch (`select:<name>`) before calling it.
   `mcp__supabase__execute_sql` (SELECT only), `mcp__supabase__list_tables`,
   `mcp__supabase__get_advisors`, `mcp__supabase__query_logs`. AI execution
   traces are in `ai_traces`, `ai_trace_spans` and `ai_prompt_versions`; tracing
-  started on 2026-10-01, so earlier turns have no trace.
+  started on 2026-10-01, so earlier turns have no trace. Uploaded study
+  materials and their RAG index are in `media`, `media_pages` and
+  `media_chunks` (pgvector, 768 dimensions), searched through the
+  `search_media_chunks` RPC. The RPC and the `vector` operators are plain
+  SELECT calls and are allowed; they change nothing.
 - **Sentry:** organizationSlug `docquity-bd`, regionUrl `https://us.sentry.io`,
   projects `studyassistant_client` and `studyassistant_backend`. A third
   project, `python-flask`, exists; check whether it belongs to this product
@@ -72,7 +76,7 @@ say so as a data gap and continue with the other sources.
 9. **Stay in scope.** If you notice something outside your scope, add one line
    under "Cross-scope notes" instead of investigating it.
 
-## Report format for Agents 1–6
+## Report format for Agents 1–7
 
 Write your report as markdown to the file named in your prompt, with these
 sections:
