@@ -140,7 +140,9 @@ export function ThinkingIndicator({ hint }: { hint?: ThinkingHint }) {
               transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
               className="inline-block"
             >
-              {steps[step].text}
+              {/* Clamped: the hint can switch to a shorter progression
+                  (`image` has 4 steps) before the reset effect runs. */}
+              {steps[Math.min(step, steps.length - 1)].text}
             </motion.span>
           </AnimatePresence>
         </span>

@@ -228,6 +228,45 @@ def _generator_intent(text: str) -> str | None:
     return None
 
 
+# An explicit refusal of the quiz form: no quiz, don't make a quiz, in text,
+# not as a quiz. A "quiz me" ask is excluded because that IS a quiz request.
+# Kept narrow on purpose so a quiz ask with a stray "no" or "not" elsewhere in
+# the sentence still opens the quiz flow.
+_NOT_QUIZ_RE = re.compile(
+    r"\b(?:no|not|don'?t|dont|do not|never|without|stop|instead of|"
+    r"rather than)(?:\s+\w+){0,3}?\s+"
+    r"(?:a\s+|an\s+|the\s+|any\s+|another\s+)?(?:quiz(?:zes)?|mcqs?)\b"
+    r"(?!\s+me\b)"
+    r"|\b(?:in|as|plain)\s+text\b"
+    r"|\bnot\s+(?:as\s+)?(?:a|an)?\s*(?:quiz|mcq)\b",
+    re.IGNORECASE,
+)
+
+# Exam-paper practice: marks-weighted questions, question papers, important
+# or written questions. 19 of 93 chatting users asked for these in the
+# 2026-10-16 analysis; the product only offered the objective quiz form.
+_PAPER_STYLE_RE = re.compile(
+    r"\b\d+\s*-?\s*marks?\b"
+    r"|\b(?:question|model|sample|previous[- ]year|board|exam)\s+papers?\b"
+    r"|\bpyqs?\b"
+    r"|\bimportant\s+questions?\b"
+    r"|\b(?:long|short)[- ]answer\b"
+    r"|\bwritten\s+(?:answers?|practice|questions?)\b"
+    r"|\b(?:descriptive|essay|subjective)(?:[- ]type)?\s+questions?\b",
+    re.IGNORECASE,
+)
+
+
+def _text_practice_intent(text: str) -> bool:
+    """Return True when the student wants practice as text, not a quiz.
+
+    Covers both an explicit refusal ("do not make a quiz", "in text") and
+    exam-paper style asks ("4 and 8 marks questions", "question paper",
+    "important questions") that the quiz tool cannot produce.
+    """
+    return bool(_NOT_QUIZ_RE.search(text) or _PAPER_STYLE_RE.search(text))
+
+
 # One-line note prepended to an answer when a selected file id could not be
 # resolved (an upload that never finished, or a deleted file).
 _STALE_MEDIA_NOTE = (
@@ -332,6 +371,10 @@ class AssistantOrchestrator:
         self._user_message_id: str | None = None
         # Note for the student when a selected file id did not resolve.
         self._media_note: str | None = None
+        # Selected ids that did not resolve this turn (sent back in the
+        # terminal frame so the client drops them from its selection and
+        # the "no longer available" note is shown once, not on every turn).
+        self._dropped_media_ids: list[str] = []
         # The user's media rows by id, fetched once per turn on demand.
         self._media_by_id: dict[str, dict[str, Any]] | None = None
         # Last repeatable generator tool per "again" message, looked up once.
@@ -369,7 +412,9 @@ class AssistantOrchestrator:
         planning_ms = int((time.perf_counter() - t_start) * 1000)
         debug_enabled = self._debug_enabled
 
-        if self._should_open_quiz_setup(plan, ctx, enriched_message):
+        if self._should_open_quiz_setup(
+            plan, ctx, enriched_message, history=history
+        ):
             return self._quiz_setup_result(plan, ctx)
 
         if plan.get("action") == "clarify":
@@ -430,7 +475,9 @@ class AssistantOrchestrator:
         # Quiz requested but not yet configured -> open the setup popover
         # first, pre-filled with whatever the planner detected. Explicit
         # settings in the message and multi-agent chains run straight away.
-        if self._should_open_quiz_setup(plan, ctx, enriched_message):
+        if self._should_open_quiz_setup(
+            plan, ctx, enriched_message, history=history
+        ):
             logger.info("Turn → quiz setup popover (pre-filled)")
             yield self._quiz_setup_frame(plan, ctx)
             return
@@ -499,6 +546,9 @@ class AssistantOrchestrator:
                 # placeholder and bookmark / save the real message.
                 "assistant_message_id": _row_id(msg),
                 "user_message_id": self._user_message_id,
+                # Stale selected files (deleted / never finished): the
+                # client deselects them so the note is not repeated.
+                "dropped_media_ids": self._dropped_media_ids,
             },
         )
 
@@ -859,6 +909,7 @@ class AssistantOrchestrator:
                         ctx.session_id,
                         "user",
                         ctx.message,
+                        metadata={"source": ctx.source} if ctx.source else None,
                         user_id=ctx.user_id,
                     )
                 )
@@ -922,7 +973,32 @@ class AssistantOrchestrator:
             ctx,
             enriched_message,
         )
+        plan = self._text_practice_guard(plan, ctx, enriched_message)
         return session, history, enriched_message, plan, personalization
+
+    def _text_practice_guard(
+        self, plan: dict[str, Any], ctx: AssistantContext, message: str
+    ) -> dict[str, Any]:
+        """Answer "not a quiz" and exam-paper asks as text, not a quiz.
+
+        The planner reads "100 practice questions in text, no quiz" as a quiz
+        request; the student then meets the setup popover again and again
+        (one did four times in a row). When the message says it wants text,
+        the answer step becomes ``media_llm`` (files selected) or ``general``
+        and the quiz step is dropped.
+        """
+        if ctx.quiz_options is not None or not _text_practice_intent(message):
+            return plan
+        steps = AssistantOrchestrator._plan_steps(plan)
+        if not steps or steps[0].get("tool") != "quiz_generator":
+            return plan
+        tool = "media_llm" if ctx.media_ids else "general"
+        logger.info("Turn → %s: practice asked as text, not a quiz", tool)
+        plan["steps"] = [{"tool": tool, "params": {"query": message}}]
+        plan.pop("tool", None)
+        source = plan.get("_source", "planner")
+        plan["_source"] = f"{source}+text_practice"
+        return plan
 
     def _drop_stale_media(self, ctx: AssistantContext) -> None:
         """Narrow ``ctx.media_ids`` to the ids that exist for this user.
@@ -945,6 +1021,9 @@ class AssistantOrchestrator:
         self._media_note = (
             _STALE_MEDIA_NOTE_SOME if resolved else _STALE_MEDIA_NOTE
         )
+        self._dropped_media_ids = [
+            mid for mid in ctx.media_ids if mid not in resolved
+        ]
         ctx.media_ids = resolved or None
 
     def _general_without_media(
@@ -1606,7 +1685,11 @@ class AssistantOrchestrator:
 
     @turn_trace.outcome_quiz_setup
     def _should_open_quiz_setup(
-        self, plan: dict[str, Any], ctx: AssistantContext, message: str
+        self,
+        plan: dict[str, Any],
+        ctx: AssistantContext,
+        message: str,
+        history: list[dict[str, str]] | None = None,
     ) -> bool:
         """Whether to collect quiz settings in the popover before running.
 
@@ -1614,10 +1697,24 @@ class AssistantOrchestrator:
         already in the message. It is skipped when the setup form was just
         submitted (``quiz_options``), for a flashcard turn, for a multi-agent
         chain (the student typed a compound instruction; planner params +
-        defaults apply), and when the message already names both a count
-        and a difficulty ("10 hard questions from this PDF").
+        defaults apply), when the message already names both a count and a
+        difficulty ("10 hard questions from this PDF"), when the student
+        asks for practice as text rather than a quiz, and when the previous
+        turn already opened the popover and the student typed again instead
+        of submitting it (a decline: the quiz then runs with defaults rather
+        than asking a second time).
         """
         if ctx.quiz_options is not None or ctx.flashcard_options is not None:
+            return False
+        if _text_practice_intent(message):
+            return False
+        if (
+            history
+            and history[-1].get("role") == "user"
+            and not ctx.clarification
+        ):
+            # No assistant reply follows the last user message: that turn
+            # ended in the popover (or a clarification). Do not reopen it.
             return False
         steps = self._plan_steps(plan)
         tools = [str(s.get("tool") or "") for s in steps]
@@ -1656,7 +1753,7 @@ class AssistantOrchestrator:
         tool_params = quiz_step.get("params") or {}
         return {
             "status": "quiz_setup",
-            "topic": tool_params.get("topic") or "",
+            "topic": self._quiz_topic(tool_params.get("topic"), ctx),
             "question_count": tool_params.get("question_count"),
             "question_types": tool_params.get("question_types"),
             "difficulty": tool_params.get("difficulty"),
@@ -1668,6 +1765,30 @@ class AssistantOrchestrator:
                 else None
             ),
         }
+
+    def _quiz_topic(self, raw: Any, ctx: AssistantContext) -> str:
+        """A usable default topic for the setup form.
+
+        The planner sometimes echoes the whole message as the topic ("do
+        another", "can you anothr pls", a 20-word request); that is not a
+        topic. An echo or an over-long value is dropped, and when files are
+        selected the first file's name stands in, so the form never opens
+        with the student's own sentence in the Topic field.
+        """
+        topic = str(raw or "").strip()
+        message = (ctx.message or "").strip().rstrip(".!?").lower()
+        if topic and (
+            topic.rstrip(".!?").lower() == message or len(topic.split()) > 10
+        ):
+            topic = ""
+        if not topic and ctx.media_ids:
+            files = self._selected_media(ctx)
+            if files:
+                stem = re.sub(r"\.[A-Za-z0-9]{1,5}$", "", files[0]["name"])
+                stem = re.sub(r"[_\-]+", " ", stem).strip()
+                if 0 < len(stem.split()) <= 8:
+                    topic = stem
+        return topic
 
     def _quiz_setup_result(
         self, plan: dict[str, Any], ctx: AssistantContext

@@ -28,6 +28,7 @@ class AssistantRepository:
             quiz_options=request_data.quiz_options,
             flashcard_options=request_data.flashcard_options,
             source_content=request_data.source_content,
+            source=request_data.source,
         )
 
     @staticmethod

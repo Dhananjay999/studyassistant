@@ -52,8 +52,13 @@ import {
   setAuthPromptEnvironment,
   subscribeAuthPrompt,
   type AuthPromptDismissVia,
+  AUTH_PROMPT_DELAY_ACTIVE_MS,
+  AUTH_PROMPT_DELAY_ACTIVE_TOUCH_MS,
 } from "@/lib/authPrompt";
 import { cn } from "@/lib/utils";
+import { isTouchDevice } from "@/lib/device";
+import { LANDING_HERO_EXPERIMENT } from "@/lib/experiments";
+import { useExperimentVariant } from "@/hooks/useExperimentVariant";
 
 /** Contextual copy: the reason the prompt opened shapes what it says. */
 const COPY: Record<AuthPromptTrigger, { title: string; description: string }> =
@@ -72,6 +77,16 @@ const COPY: Record<AuthPromptTrigger, { title: string; description: string }> =
       title: "Ready to study smarter?",
       description:
         "Chat with Aeva, upload your notes, and turn any answer into quizzes and flashcards. Free to start, and your progress is saved.",
+    },
+    hero_chip: {
+      title: "Ask Aeva that for real",
+      description:
+        "Sign in with Google and Aeva answers your own questions, from your own notes and PDFs — then turns the answer into quizzes and flashcards.",
+    },
+    exit_intent: {
+      title: "Before you go — try one question",
+      description:
+        "A free account takes seconds with Google. Ask Aeva anything from your syllabus and see the answer, quiz and flashcards in one go.",
     },
   };
 
@@ -141,8 +156,14 @@ export function AuthPrompt() {
     closeAuthPrompt();
   }, [isAuthenticated]);
 
+  // landing-hero-v2: phones leave the landing page in ~20 s, before the
+  // 30 s passive prompt ever fires; the test variant asks after 15 s.
+  const heroVariant = useExperimentVariant(LANDING_HERO_EXPERIMENT);
   useDelayedAuthPrompt(
     !loading && !isAuthenticated && AUTH_PROMPT_ELIGIBLE_PATHS.has(pathname),
+    heroVariant === "test" && isTouchDevice()
+      ? AUTH_PROMPT_DELAY_ACTIVE_TOUCH_MS
+      : AUTH_PROMPT_DELAY_ACTIVE_MS,
   );
 
   // Impression.

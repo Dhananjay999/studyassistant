@@ -59,6 +59,8 @@ export class AnalyticsService {
   private outbox: Outbox | null = null;
   private initialized = false;
   private debugOn = false;
+  // Flag listeners registered before a provider was ready.
+  private flagListeners: Array<() => void> = [];
 
   /* ------------------------------- public ------------------------------- */
 
@@ -126,6 +128,30 @@ export class AnalyticsService {
 
   isReady(): boolean {
     return this.slots.some((s) => !s.disabled && s.provider.isReady());
+  }
+
+  /** Experiment variant / flag value from the first provider that has it
+   * (`undefined` before flags load, on the server, or with analytics off). */
+  getFeatureFlag(key: string): string | boolean | undefined {
+    for (const s of this.slots) {
+      if (s.disabled || !s.provider.isReady() || !s.provider.getFeatureFlag) {
+        continue;
+      }
+      const value = s.provider.getFeatureFlag(key);
+      if (value !== undefined) return value;
+    }
+    return undefined;
+  }
+
+  /** Run `cb` when flags are available (now if they already are). */
+  onFeatureFlags(cb: () => void): void {
+    this.ensureInit();
+    this.flagListeners.push(cb);
+    for (const s of this.slots) {
+      if (!s.disabled && s.provider.isReady()) {
+        this.call(s, () => s.provider.onFeatureFlags?.(cb));
+      }
+    }
   }
 
   getAnonymousId(): string | null {
@@ -270,6 +296,9 @@ export class AnalyticsService {
       );
     }
     for (const op of ops) this.apply(slot, op);
+    for (const cb of this.flagListeners) {
+      this.call(slot, () => slot.provider.onFeatureFlags?.(cb));
+    }
     // A provider can take events now: release anything the outbox held back.
     this.outbox?.drain(false);
   }

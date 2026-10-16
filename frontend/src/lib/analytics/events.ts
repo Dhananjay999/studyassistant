@@ -38,6 +38,7 @@ export enum AnalyticsEvent {
   LOGIN_ABANDONED = "LOGIN_ABANDONED",
   LOGIN_FAILED = "LOGIN_FAILED",
   LOGIN_CALLBACK_LOADED = "LOGIN_CALLBACK_LOADED",
+  LOGIN_RETRY_SHOWN = "LOGIN_RETRY_SHOWN",
   LOGIN_SUCCEEDED = "LOGIN_SUCCEEDED",
   LOGOUT_COMPLETED = "LOGOUT_COMPLETED",
   SESSION_INVALIDATED = "SESSION_INVALIDATED",
@@ -99,6 +100,7 @@ export enum AnalyticsEvent {
 
   // ---- Quiz --------------------------------------------------------------
   QUIZ_SETUP_REQUESTED = "QUIZ_SETUP_REQUESTED",
+  QUIZ_SETUP_DISMISSED = "QUIZ_SETUP_DISMISSED",
   QUIZ_GENERATION_REQUESTED = "QUIZ_GENERATION_REQUESTED",
   QUIZ_CREATE_FAILED = "QUIZ_CREATE_FAILED",
   QUIZ_CARD_VIEWED = "QUIZ_CARD_VIEWED",
@@ -254,7 +256,9 @@ export type CtaLocation =
   | "about"
   | "app_welcome"
   | "share"
-  | "auth_prompt";
+  | "auth_prompt"
+  /** "Sign-in didn't finish — try again" strip after a redirect bounce. */
+  | "retry_strip";
 
 /**
  * Why the sign-in encouragement prompt opened (see `lib/authPrompt.ts`):
@@ -262,7 +266,14 @@ export type CtaLocation =
  * (chips, sources, bookmark, copy, follow-ups), or simply stayed engaged on
  * a public page for a while.
  */
-export type AuthPromptTrigger = "demo_composer" | "demo_action" | "delayed";
+export type AuthPromptTrigger =
+  | "demo_composer"
+  | "demo_action"
+  | "delayed"
+  /** A tappable prompt chip in the hero (landing-hero-v2 experiment). */
+  | "hero_chip"
+  /** Mouse left through the top edge on desktop (landing-hero-v2). */
+  | "exit_intent";
 /** How the prompt was dismissed (never fired for CTA clicks). */
 export type AuthPromptDismissVia =
   | "close"
@@ -613,6 +624,12 @@ export interface EventPropsMap {
     /** Error class of that call (`reason: session` only), never its text. */
     error_kind?: ErrorKind;
   };
+  /** The "Sign-in didn't finish — try again" strip appeared after a same-tab
+   * redirect came back without a session (`LOGIN_ABANDONED via=returned`). */
+  [AnalyticsEvent.LOGIN_RETRY_SHOWN]: {
+    /** How long the tab was away at Google before coming back. */
+    elapsed_ms: number;
+  };
   [AnalyticsEvent.LOGIN_CALLBACK_LOADED]: {
     /** Tokens arrived in the URL fragment; else `auth_error` says why not. */
     has_tokens: boolean;
@@ -742,6 +759,12 @@ export interface EventPropsMap {
     chat_session_id: string | null;
     elapsed_ms: number;
     attempts: number;
+    /** Where the stream was when it dropped (added 2026-10-16). */
+    stage?: string;
+    /** `inactivity` (no frame for a while) or `network` (connection broke). */
+    reason?: "inactivity" | "network";
+    /** ms since the last frame when the client gave up on the stream. */
+    dropped_after_ms?: number;
   };
   /** Thumbs up / down on an answer (`none` = rating cleared). */
   [AnalyticsEvent.CHAT_RESPONSE_FEEDBACK]: {
@@ -891,6 +914,15 @@ export interface EventPropsMap {
     source: "assistant" | "slash" | "quizzes_page";
     /** Which Quizzes-page control opened the panel. */
     entry?: CreateEntry;
+  };
+  /** The quiz setup popover closed without a quiz being generated. */
+  [AnalyticsEvent.QUIZ_SETUP_DISMISSED]: {
+    chat_session_id: string | null;
+    /** `close`: the sheet/modal was closed; `card`: the "set up later"
+     * card under the composer was dismissed. */
+    via: "close" | "card";
+    /** The student had typed into the form before closing it. */
+    had_draft: boolean;
   };
   [AnalyticsEvent.QUIZ_GENERATION_REQUESTED]: {
     question_count: number;
@@ -1107,6 +1139,8 @@ export interface EventPropsMap {
   [AnalyticsEvent.EXAM_PREP_SETUP_COMPLETED]: {
     exam_kind?: string;
     research?: boolean;
+    /** The student ticked "I don't know the date yet" (plan is two weeks). */
+    date_unknown?: boolean;
     days_remaining: number;
     subject_count: number;
     daily_minutes: number;

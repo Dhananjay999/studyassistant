@@ -33,6 +33,9 @@ export interface StreamCallbacks {
       /** Developer Mode only: the "powered by" trailer, sent as its own
        *  frame so it is never part of the answer text. */
       model_badge?: { model: string; badge: string };
+      /** Selected file ids the server could not resolve (deleted or never
+       *  finished); the client drops them from its selection. */
+      dropped_media_ids?: string[];
     },
   ) => void;
   onClarification: (data: Record<string, unknown>) => void;
@@ -285,6 +288,11 @@ export function useAssistantStream(streamUrl: string = assistantStreamUrl) {
               if (assistantId) meta.assistant_message_id = assistantId;
               if (typeof parsed.user_message_id === "string" && parsed.user_message_id) {
                 meta.user_message_id = parsed.user_message_id;
+              }
+              if (Array.isArray(parsed.dropped_media_ids)) {
+                meta.dropped_media_ids = parsed.dropped_media_ids.filter(
+                  (id): id is string => typeof id === "string",
+                );
               }
               cb.onComplete(full, meta);
               setStreaming(false);

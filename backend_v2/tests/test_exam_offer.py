@@ -139,7 +139,7 @@ class TestStaysQuiet:
             "solve this sample paper today",
             # Not near.
             "my exam is on 25 December",
-            "exam in 20 days",
+            "exam in 25 days",
             # No date, or no exam.
             "explain photosynthesis",
             "what is tomorrow",
@@ -157,9 +157,19 @@ class TestStaysQuiet:
     def test_exam_and_date_must_be_in_the_same_sentence(self):
         assert detect("I have an exam. Tomorrow I will travel") is None
 
-    def test_window_is_a_week(self):
+    def test_window_is_three_weeks(self):
         assert detect("exam in 7 days") is not None
-        assert detect("exam in 8 days") is None
+        assert detect("exam in 8 days") is not None
+        assert detect("exam in 21 days") is not None
+        assert detect("exam in 22 days") is None
+
+    def test_next_week_and_weeks_ahead_count(self):
+        assert detect("my boards start next week") is not None
+        offer = detect("physics exam in 2 weeks")
+        assert offer is not None
+        payload = offer if isinstance(offer, dict) else offer.to_payload()
+        assert payload["days_ahead"] == 14
+        assert detect("exam in three weeks") is not None
 
     def test_a_date_that_already_passed_this_year_is_not_near(self):
         # 3 October is before the reference date: next year, so not "soon".

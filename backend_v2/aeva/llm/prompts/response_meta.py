@@ -25,6 +25,7 @@ After your answer, append this metadata trailer exactly:
 {{"available_actions":[],"suggested_followups":[]}}
 
 Rules:
+- Write your full reply first. Never start your output with the sentinel: the trailer always follows a non-empty answer, even for a greeting or a one-line reply.
 - Output the sentinel, then one valid JSON object, and nothing after it.
 - available_actions: choose only relevant actions from [{_ACTIONS}]. Use [] for greetings, small talk, refusals, or non-study replies. Prefer a few high-value actions.
 - Offer an action only when your reply contains study content it can be built from: never offer a quiz or flashcards on a reply that only asks a question, chats, or says what you cannot do.

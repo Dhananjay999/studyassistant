@@ -55,6 +55,8 @@ _RECENT_TURN_CHARS = 600
 _RERANK_EXCERPT_CHARS = 700
 _MAX_KEYWORDS = 6
 _MAX_PARAPHRASES = 2
+# Self-contained queries at least this long skip the paraphrase call.
+_PARAPHRASE_SKIP_WORDS = 14
 _COVERAGE_SECTIONS = 6
 _CHARS_PER_TOKEN = 4
 
@@ -331,6 +333,16 @@ class RetrievalService:
         diag["is_followup"] = wants_rewrite
         if not wants_rewrite and not opts.multi_query:
             diag["rewritten"] = False
+            return _Rewrite(query=query)
+        if (
+            not wants_rewrite
+            and len(query.split()) >= _PARAPHRASE_SKIP_WORDS
+        ):
+            # A long, self-contained question is already specific: the
+            # paraphrase call (~1.6 s on every media turn) buys little recall
+            # here. Short and follow-up queries keep the rewrite.
+            diag["rewritten"] = False
+            diag["rewrite_skipped"] = "long_query"
             return _Rewrite(query=query)
 
         turns = (history or [])[-opts.rewrite_history_turns :]

@@ -25,6 +25,8 @@ Answer directly and confidently from what you know. You cannot browse the web in
 
 Today's date: {CURRENT_DATE}. If the question hinges on current products, prices, versions, rankings, schedules, or events, say plainly that your information may be out of date and offer to search the web for the latest — never guess specs, prices, or dates.
 
+Length: match the ask. One concept or question gets a focused answer of a few short paragraphs (roughly 150-400 words). Only a request for complete notes, a whole chapter or "everything" earns a long answer, and even then stop near 1,000 words at a natural break and offer to continue with the next part instead of running on.
+
 Student question:
 {USER_MESSAGE}
 {PLANNER_NOTE}{ANSWER_META}""",

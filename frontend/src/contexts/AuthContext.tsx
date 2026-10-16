@@ -61,6 +61,12 @@ interface AuthContextValue {
   /** Same sign-in as a full-page redirect — the way out when the popup
    * keeps failing. */
   signInWithRedirect: () => void;
+  /** Milliseconds a same-tab sign-in spent away at Google before coming
+   * back to the site without a session (back button, bounce); null when
+   * that did not happen or the strip was dismissed. Drives the "Sign-in
+   * didn't finish — try again" strip on the landing page. */
+  signInReturned: number | null;
+  dismissSignInReturned: () => void;
   /** Stop waiting on an open sign-in popup (the dialog's Cancel button). */
   cancelSignIn: () => void;
   reportSignInIssue: (issue: SignInIssue) => void;
@@ -143,15 +149,21 @@ async function fetchMeForLogin(): Promise<User> {
 // A same-tab sign-in that left for Google and came back without passing
 // through /auth/callback (back button, a reload, a bounce): the funnel would
 // otherwise only see another landing pageview.
-function noteRedirectReturn(): void {
-  if (window.location.pathname.startsWith("/auth/callback")) return;
+// Returns the time away (ms) when such a return happened, else null, so the
+// caller can offer a retry: 17 of 97 starters came back this way with no
+// session in the week after the redirect flow shipped, and nothing invited
+// them to try again.
+function noteRedirectReturn(): number | null {
+  if (window.location.pathname.startsWith("/auth/callback")) return null;
   const startedAt = consumeRedirectStart();
-  if (startedAt === null) return;
+  if (startedAt === null) return null;
+  const elapsed = Math.max(0, Date.now() - startedAt);
   noteLandingLogin("abandoned");
   analytics.track(AnalyticsEvent.LOGIN_ABANDONED, {
-    elapsed_ms: Math.max(0, Date.now() - startedAt),
+    elapsed_ms: elapsed,
     via: "returned",
   });
+  return elapsed;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -185,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // (or restored from the back-forward cache, see `pageshow` below).
   const [redirecting, setRedirecting] = useState(false);
   const [signInIssue, setSignInIssue] = useState<SignInIssue | null>(null);
+  const [signInReturned, setSignInReturned] = useState<number | null>(null);
   const tokenRef = useRef<string | null>(null);
   const refreshTimer = useRef<number>();
   // How the in-flight login was started; null after a full-page redirect
@@ -385,7 +398,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setLoading(false);
       bootDoneRef.current = true;
-      noteRedirectReturn();
+      const away = noteRedirectReturn();
+      if (away !== null) setSignInReturned(away);
     })();
 
     // Back from Google without finishing (back button): the page may come
@@ -394,7 +408,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!e.persisted) return;
       setSigningIn(false);
       setRedirecting(false);
-      noteRedirectReturn();
+      const away = noteRedirectReturn();
+      if (away !== null) setSignInReturned(away);
     };
     window.addEventListener("pageshow", onPageShow);
 
@@ -430,8 +445,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const dismissSignInIssue = useCallback(() => setSignInIssue(null), []);
 
+  const dismissSignInReturned = useCallback(
+    () => setSignInReturned(null),
+    [],
+  );
+
   const signInWithRedirect = useCallback(() => {
     setSignInIssue(null);
+    setSignInReturned(null);
     // Disable the buttons before leaving: a slow phone otherwise takes
     // several taps and starts several OAuth flows.
     setSigningIn(true);
@@ -568,6 +589,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signingInMethod: redirecting ? "redirect" : signingIn ? "popup" : null,
         popupSignIn: usesPopupSignIn(),
         signInIssue,
+        signInReturned,
+        dismissSignInReturned,
         signInWithGoogle,
         signInWithRedirect,
         cancelSignIn,

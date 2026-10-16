@@ -10,8 +10,15 @@ It is a streaming state machine — a marker split across two chunks is
 handled by holding back the unfinished tail.
 """
 
+import re
+
 _OPEN = "[cite:"
 _CLOSE = "]"
+# A file name may itself contain "]" ("Syllabus [AICTE].pdf"): when the
+# marker has no "#" before its first "]", the real close is the one after
+# the page number, if it follows within a short distance.
+_PAGE_TAIL_RE = re.compile(r"[^\[\]]{0,48}?#\s*\d+\s*\]")
+_LOOKAHEAD = 48
 
 
 def canonical_marker(marker: str) -> str:
@@ -40,6 +47,7 @@ class CitationFilter:
             canonical_marker(m).lower(): canonical_marker(m) for m in allowed
         }
         self._buffer = ""
+        self._final = False
         self.cited: list[str] = []
         self.dropped = 0
 
@@ -61,6 +69,17 @@ class CitationFilter:
                 # Unterminated marker: wait for the rest of it.
                 self._buffer = self._buffer[start:]
                 break
+            if "#" not in self._buffer[start:end]:
+                tail = _PAGE_TAIL_RE.match(self._buffer, end + 1)
+                if tail is not None:
+                    end = tail.end() - 1
+                elif (
+                    not self._final
+                    and len(self._buffer) - end - 1 < _LOOKAHEAD
+                ):
+                    # The name may continue past this "]": wait for more.
+                    self._buffer = self._buffer[start:]
+                    break
             marker = self._buffer[start : end + 1]
             self._buffer = self._buffer[end + 1 :]
             canonical = self._allowed.get(canonical_marker(marker).lower())
@@ -73,10 +92,14 @@ class CitationFilter:
 
     def flush(self) -> str:
         """Return whatever is still buffered once the stream has ended."""
+        # One last pass with the look-ahead disabled, so a page-less marker
+        # held back for a possible continuation is resolved.
+        self._final = True
+        out = self.feed("")
         rest = self._buffer
         self._buffer = ""
         if rest.startswith(_OPEN):
             # An unfinished marker at the very end is noise, not a citation.
             self.dropped += 1
-            return ""
-        return rest
+            rest = ""
+        return out + rest

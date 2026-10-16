@@ -42,6 +42,13 @@ export const AUTH_PROMPT_ELIGIBLE_PATHS: ReadonlySet<string> = new Set([
  */
 export const AUTH_PROMPT_DELAY_ACTIVE_MS = 30_000;
 
+/**
+ * Shorter threshold for touch devices in the `landing-hero-v2` test variant:
+ * phone visits that do not convert last about 20 s, so the 30 s prompt was
+ * reaching 1 visitor in 9.
+ */
+export const AUTH_PROMPT_DELAY_ACTIVE_TOUCH_MS = 15_000;
+
 // localStorage: `{ at, via }` once dismissed/converted — permanent.
 const DISMISSED_KEY = "aeva_auth_prompt_dismissed";
 // sessionStorage: "1" once shown in this tab — at most one prompt per visit.

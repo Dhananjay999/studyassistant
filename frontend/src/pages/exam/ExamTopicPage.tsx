@@ -45,6 +45,7 @@ import { ExamContextPanel } from "@/components/exam/ExamContextPanel";
 import { NextUpSheet } from "@/components/exam/NextUpSheet";
 import { StudyBar } from "@/components/exam/StudyBar";
 import { formatMinutes, subjectTone } from "@/components/exam/examFormat";
+import { DocumentViewerHost } from "@/components/media/DocumentViewerHost";
 import {
   ExamArtifactsProvider,
   useExamArtifacts,
@@ -177,18 +178,23 @@ export default function ExamTopicPage() {
     <PageContainer title="Topic">
       {SEO}
       <ExamArtifactsProvider>
-        {/* Keyed so timer, sheet and stream state start fresh per topic
-            (the next-up sheet navigates topic → topic). */}
-        <TopicView
-          key={topic.id}
-          dashboard={plan}
-          topic={topic}
-          dayNumber={dayNumber}
-          lesson={lesson ?? null}
-          lessonPending={lessonQ.isPending}
-          lessonError={lessonQ.isError}
-          refetchLesson={() => void lessonQ.refetch()}
-        />
+        {/* The lesson chat reuses ChatMessages / MarkdownContent, whose
+            citation chips and source cards need a document viewer; without
+            this host every grounded answer crashed the page. */}
+        <DocumentViewerHost>
+          {/* Keyed so timer, sheet and stream state start fresh per topic
+              (the next-up sheet navigates topic → topic). */}
+          <TopicView
+            key={topic.id}
+            dashboard={plan}
+            topic={topic}
+            dayNumber={dayNumber}
+            lesson={lesson ?? null}
+            lessonPending={lessonQ.isPending}
+            lessonError={lessonQ.isError}
+            refetchLesson={() => void lessonQ.refetch()}
+          />
+        </DocumentViewerHost>
       </ExamArtifactsProvider>
     </PageContainer>
   );

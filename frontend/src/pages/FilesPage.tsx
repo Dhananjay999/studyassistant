@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { FileText, FolderOpen, ImageIcon, Loader2, X } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { FileText, FolderOpen, ImageIcon, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { Button } from "@/components/ui/button";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { GlassCard } from "@/components/common/GlassCard";
 import { CardGridSkeleton } from "@/components/common/CardGridSkeleton";
@@ -72,6 +73,7 @@ function prettySize(bytes: number) {
 }
 
 export default function FilesPage() {
+  const navigate = useNavigate();
   const { data: media = [], isLoading } = useMedia();
   const [pdfDoc, setPdfDoc] = useState<{ url: string; fileName: string } | null>(
     null,
@@ -150,12 +152,23 @@ export default function FilesPage() {
         {isLoading && media.length === 0 ? (
           <CardGridSkeleton />
         ) : !hasFiles ? (
-          <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-20 text-center">
+          <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 px-4 py-16 text-center">
             <FolderOpen className="mb-3 h-8 w-8 text-muted-foreground" />
             <p className="font-medium">No study material yet</p>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Upload PDFs or images from a chat to build your study material.
+              Upload PDFs or photos of your notes and Aeva answers from them.
             </p>
+            {/* 31 dead clicks landed on this empty state in 30 days: people
+                tapped it expecting to upload. Uploading lives in the chat's
+                media panel, so take them there with the panel open. */}
+            <Button
+              variant="brand"
+              className="mt-5 min-h-11 gap-2 rounded-full px-5"
+              data-analytics-name="Files empty upload"
+              onClick={() => navigate("/chat", { state: { openMedia: true } })}
+            >
+              <Upload className="h-4 w-4" /> Upload study material
+            </Button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="grid place-items-center rounded-2xl border border-dashed border-border/60 py-16 text-center">

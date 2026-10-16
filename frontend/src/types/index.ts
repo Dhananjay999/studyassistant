@@ -855,6 +855,9 @@ export interface AssistantRequest {
   flashcard_options?: { count?: number };
   /** Exact card content an action targets; grounds the turn on it only. */
   source_content?: string;
+  /** Where the message came from (same values as the `CHAT_MESSAGE_SENT`
+   * `source` prop); stored on the user message's metadata. */
+  source?: string;
 }
 
 export interface APIEnvelope<T> {
@@ -1379,8 +1382,9 @@ export function hasExamPlan(
 
 export interface CreateExamPlanRequest {
   exam_name: string;
-  /** ISO date (yyyy-mm-dd), today or later. */
-  exam_date: string;
+  /** ISO date (yyyy-mm-dd), today or later. Omitted when the student does
+   * not know it yet: the backend plans two weeks ahead. */
+  exam_date?: string;
   class_level?: string;
   stream?: string;
   subjects: string[];

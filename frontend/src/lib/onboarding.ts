@@ -46,11 +46,22 @@ export const CONTEXTS: Option[] = [
 
 const SCHOOL_CLASSES = opts("Class 6–8", "Class 9–10", "Class 11–12");
 const BOARDS = opts("CBSE", "ICSE", "State Board", "Not sure");
+// 8 of 31 college students left onboarding at this step because their
+// degree was not listed and 9 of 23 who finished had to type it (2026-10-16).
 const DEGREES: Option[] = [
   { id: "btech", label: "B.Tech / B.E." },
   { id: "bsc", label: "B.Sc" },
+  { id: "bcom", label: "B.Com" },
+  { id: "ba", label: "BA" },
   { id: "bca", label: "BCA" },
   { id: "bba", label: "BBA" },
+  { id: "mbbs", label: "MBBS" },
+  { id: "bpharm", label: "B.Pharm" },
+  { id: "nursing", label: "Nursing" },
+  { id: "llb", label: "LLB" },
+  { id: "bed", label: "B.Ed" },
+  { id: "mca", label: "MCA" },
+  { id: "msc", label: "M.Sc" },
   { id: "mba", label: "MBA" },
   { id: "mtech", label: "M.Tech" },
 ];

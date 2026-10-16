@@ -1,6 +1,10 @@
 import { ArrowRight, Sparkles } from "lucide-react";
 import { AuroraBackground } from "@/components/common/AuroraBackground";
 import { analyticsAttrs } from "@/lib/analytics";
+import { requestAuthPrompt } from "@/lib/authPrompt";
+import { LANDING_HERO_EXPERIMENT } from "@/lib/experiments";
+import { useExperimentVariant } from "@/hooks/useExperimentVariant";
+import { useAuth } from "@/contexts/AuthContext";
 import { RotatingWords } from "@/components/common/RotatingWords";
 import { Marquee } from "@/components/common/Marquee";
 import { GoogleButton } from "@/components/landing/GoogleButton";
@@ -25,7 +29,51 @@ const SUBJECTS = [
 // classes are inert under prefers-reduced-motion and the in-app toggle.
 const enter = (step: 0 | 1 | 2 | 3 | 4) => `hero-enter hero-enter-${step}`;
 
+// landing-hero-v2 test variant: a first action that is not "hand over your
+// Google account" — three things a student would actually type. A tap opens
+// the sign-in prompt with chip-specific copy (or starts sign-in directly when
+// the prompt has been dismissed on this device).
+const HERO_PROMPTS = [
+  "Explain photosynthesis like I'm in class 10",
+  "Make a quiz from my chapter notes",
+  "Plan my revision for an exam next week",
+];
+
+function HeroPrompts() {
+  const { signInWithGoogle, signingIn } = useAuth();
+  const pick = () => {
+    if (!requestAuthPrompt("hero_chip")) signInWithGoogle();
+  };
+  return (
+    <ul
+      className="mt-6 flex flex-wrap items-center justify-center gap-2"
+      aria-label="Try asking Aeva"
+    >
+      {HERO_PROMPTS.map((text) => (
+        <li key={text}>
+          <button
+            type="button"
+            disabled={signingIn}
+            onClick={pick}
+            {...analyticsAttrs(
+              "landing.hero.prompt_chip",
+              "Hero prompt chip",
+              "hero",
+            )}
+            className="glass inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-left text-sm transition-colors hover:border-primary/30 hover:shadow-sm active:scale-[0.98] disabled:opacity-70"
+          >
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-brand-1" aria-hidden="true" />
+            <span>{text}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function Hero() {
+  // Control until flags load (and always in the prerendered HTML).
+  const test = useExperimentVariant(LANDING_HERO_EXPERIMENT) === "test";
   return (
     <section
       id="top"
@@ -62,11 +110,20 @@ export function Hero() {
           <p
             className={`${enter(2)} mx-auto mt-5 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg`}
           >
-            StudyAssistant helps with homework, exam prep, and everyday
-            learning: chat with your PDFs and notes, search the web, and turn
-            any answer into flashcards, quizzes, and notes — then Aeva
-            remembers what you studied and tells you exactly what to revise.
-            Exam coming up? Aeva plans every day and teaches every topic.
+            {test ? (
+              <>
+                Chat with your notes and PDFs, turn any answer into a quiz or
+                flashcards, and get a day-by-day plan for your next exam.
+              </>
+            ) : (
+              <>
+                StudyAssistant helps with homework, exam prep, and everyday
+                learning: chat with your PDFs and notes, search the web, and
+                turn any answer into flashcards, quizzes, and notes — then Aeva
+                remembers what you studied and tells you exactly what to revise.
+                Exam coming up? Aeva plans every day and teaches every topic.
+              </>
+            )}
           </p>
 
           <div
@@ -85,6 +142,8 @@ export function Hero() {
               Explore features <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </a>
           </div>
+
+          {test && <HeroPrompts />}
         </div>
 
         <div className={`${enter(4)} mx-auto mt-14 max-w-3xl`}>

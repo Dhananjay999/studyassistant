@@ -73,9 +73,15 @@ function isMetaAnswer(msg: Message): boolean {
  * when a message actually carries images.
  */
 function GeneratedImages({ images }: { images: GeneratedImage[] }) {
-  const { data: media } = useMedia();
+  const { data: media, isError } = useMedia();
+  // The URL stored with the message was signed at generation time and lasts
+  // an hour; an old chat must not request it (storage answers 400). Wait for
+  // the media list and use its fresh URL; fall back to the stored one only
+  // when the list cannot be loaded at all.
+  if (!media && !isError) return null;
   const freshUrl = (img: GeneratedImage) =>
-    media?.find((m) => m.id === img.media_id)?.signed_url || img.url;
+    media?.find((m) => m.id === img.media_id)?.signed_url ||
+    (isError ? img.url : "");
 
   return (
     <div className="mt-3 flex flex-wrap gap-2">
@@ -430,6 +436,11 @@ export function ChatMessages({
                       else contentRefs.current.delete(msg.id);
                     }}
                     className="learning-content prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-pre:my-2"
+                    // Browser page translation rewrites text nodes; while
+                    // React is still appending tokens that ends in a DOM
+                    // NotFoundError (Sentry CLIENT-4). Translation resumes
+                    // once the answer is complete.
+                    translate={msg.streaming ? "no" : undefined}
                   >
                     <MarkdownContent
                       content={

@@ -26,6 +26,7 @@ from typing import Any
 
 from flask import current_app
 
+from aeva.common import sentry
 from aeva.llm.llm_client import LLMClient
 from aeva.media.chunking import (
     EMBEDDING_VERSION,
@@ -183,6 +184,7 @@ class MediaProcessor:
             yield from self._run(user_id, record)
         except MediaProcessingError as exc:
             logger.exception("Media processing failed for %s", media_id)
+            sentry.capture_exception(exc)
             yield from self._handle_failure(
                 user_id,
                 record,
@@ -190,8 +192,9 @@ class MediaProcessor:
                 recoverable=exc.recoverable,
                 reason=exc.reason,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Unexpected processing error for %s", media_id)
+            sentry.capture_exception(exc)
             yield from self._handle_failure(
                 user_id,
                 record,

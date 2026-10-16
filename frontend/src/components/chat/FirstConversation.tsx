@@ -1,9 +1,15 @@
 // Aeva speaks first. Shown instead of the blank empty state right after
 // onboarding resolves (and for an account that has never chatted): one
-// greeting built from the learning profile, three concrete prompts for that
-// class / exam / subject, and, when nobody does anything for a few seconds,
-// the first prompt is sent as a live demo so the student sees an answer
-// without having to know what to type.
+// greeting built from the learning profile and three concrete prompts for
+// that class / exam / subject. On a desktop with a completed profile, when
+// nobody does anything for a while, the "explain" prompt is sent as a live
+// demo so the student sees an answer without having to know what to type.
+//
+// The demo never runs on a touch device: 6 s was normal reading time on a
+// phone, and students whose first turn was the demo almost never continued
+// (0 of 9 mobile demo users typed afterwards, product intelligence
+// 2026-10-16). On desktop it waits longer and shows an explanation on the
+// student's own subject, never a generic flashcard build.
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -12,11 +18,27 @@ import { MemoryHint } from "@/components/chat/MemoryHint";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLearningProfile } from "@/hooks/api";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
-import { buildSuggestedPrompts } from "@/lib/suggestedPrompts";
+import { isTouchDevice } from "@/lib/device";
+import { buildSuggestedPrompts, kindOf } from "@/lib/suggestedPrompts";
 import type { LearningProfile } from "@/types";
 
-/** Idle time before the first prompt is auto-sent as a demo. */
-export const DEMO_IDLE_MS = 6000;
+/** Idle time before the demo prompt is auto-sent (desktop only; the demo is
+ *  never armed on a touch device, see `isTouchDevice`). */
+export const DEMO_IDLE_MS = 15000;
+
+/** The prompt the demo sends: an explanation ("question" kind) rather than
+ *  a flashcard or quiz build, so the first thing the student sees is Aeva
+ *  teaching. Null when the prompts are not based on the student's profile. */
+export function pickDemoPrompt<T extends { text: string }>(
+  prompts: T[],
+  profile: LearningProfile | null | undefined,
+): T | null {
+  if (profile?.personalization_status !== "completed") return null;
+  const explain = prompts.find(
+    (p) => kindOf(p as unknown as Parameters<typeof kindOf>[0]) === "question",
+  );
+  return explain ?? null;
+}
 
 export type FirstPromptKind = "first_conversation" | "first_conversation_demo";
 
@@ -95,12 +117,22 @@ export function FirstConversation({
   );
 
   // armed → fired (demo sent) | cancelled (the student did something).
+  // Touch devices start cancelled: the demo is a desktop-only affordance.
   const [demo, setDemo] = useState<"armed" | "fired" | "cancelled">(
-    autoDemo ? "armed" : "cancelled",
+    autoDemo && !isTouchDevice() ? "armed" : "cancelled",
+  );
+  const demoPrompt = useMemo(
+    () => (isLoading ? null : pickDemoPrompt(prompts, profile)),
+    [prompts, profile, isLoading],
   );
 
   useEffect(() => {
     if (demo !== "armed" || isLoading || prompts.length === 0) return;
+    if (!demoPrompt) {
+      // Generic prompts (onboarding skipped): nothing worth demoing.
+      setDemo("cancelled");
+      return;
+    }
     const cancel = () => setDemo("cancelled");
     const onVisibility = () => {
       if (document.visibilityState === "hidden") cancel();
@@ -118,7 +150,7 @@ export function FirstConversation({
       analytics.track(AnalyticsEvent.CHAT_SUGGESTED_PROMPT_CLICKED, {
         kind: "first_conversation_demo",
       });
-      onPick(prompts[0].text, "first_conversation_demo");
+      onPick(demoPrompt.text, "first_conversation_demo");
     }, DEMO_IDLE_MS);
     return () => {
       window.clearTimeout(timer);
@@ -127,7 +159,7 @@ export function FirstConversation({
       document.removeEventListener("visibilitychange", onVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demo, isLoading, prompts]);
+  }, [demo, isLoading, prompts, demoPrompt]);
 
   const enter = (delay: number) => ({
     initial: { opacity: 0, y: reduce ? 0 : 10 },
@@ -187,7 +219,7 @@ export function FirstConversation({
             ))}
 
         <AnimatePresence initial={false}>
-          {demo === "armed" && !isLoading && prompts.length > 0 && (
+          {demo === "armed" && !isLoading && demoPrompt && (
             <motion.p
               key="demo-hint"
               initial={{ opacity: 0 }}

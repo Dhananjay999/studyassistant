@@ -1,5 +1,8 @@
 import { Seo } from "@/components/common/Seo";
 import { useLandingAnalytics } from "@/hooks/useLandingAnalytics";
+import { useExperimentVariant } from "@/hooks/useExperimentVariant";
+import { LANDING_HERO_EXPERIMENT } from "@/lib/experiments";
+import { SignInRetryStrip } from "@/components/auth/SignInRetryStrip";
 import { SkipToContent } from "@/components/common/SkipToContent";
 import { Navbar } from "@/components/landing/Navbar";
 import { Hero } from "@/components/landing/Hero";
@@ -20,7 +23,8 @@ import {
 } from "@/lib/seo";
 
 export default function LandingPage() {
-  useLandingAnalytics("landing");
+  const heroVariant = useExperimentVariant(LANDING_HERO_EXPERIMENT);
+  useLandingAnalytics("landing", { exitIntentPrompt: heroVariant === "test" });
   return (
     <>
       <Seo
@@ -49,6 +53,7 @@ export default function LandingPage() {
           <CtaBand />
         </main>
         <Footer />
+        <SignInRetryStrip />
       </div>
     </>
   );

@@ -35,10 +35,12 @@ from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
 
-# How far ahead still counts as "soon".
-MAX_DAYS_AHEAD = 7
+# How far ahead still counts as "soon". Three weeks: "boards start on 22
+# October" said twelve days out produced no offer at the old one-week
+# horizon, and a plan is most useful with a couple of weeks to fill.
+MAX_DAYS_AHEAD = 21
 # Longer messages are pasted material or a detailed request, not a deadline.
-MAX_WORDS = 40
+MAX_WORDS = 60
 # Exam noun and date must sit this close together (characters between them).
 MAX_GAP_CHARS = 48
 
@@ -118,6 +120,12 @@ _IN_DAYS_RES = (
     ),
 )
 _IN_A_WEEK_RE = re.compile(r"\bin\s+(?:a|one|1)\s+week\b")
+_NEXT_WEEK_RE = re.compile(r"\b(?:next|coming)\s+week\b")
+_IN_WEEKS_RE = re.compile(
+    r"\bin\s+(2|3|two|three)\s+weeks?\b|\b(2|3|two|three)\s+weeks?\s+"
+    r"(?:left|to\s+go|away|remaining|later|baad|bache|baa?ki)\b"
+)
+_WEEK_WORDS = {"2": 2, "two": 2, "3": 3, "three": 3}
 
 _WEEKDAYS = {
     "monday": 0, "somvar": 0, "somwar": 0,
@@ -348,6 +356,17 @@ def _relative_hints(sentence: str) -> list[DateHint]:
     hints.extend(
         DateHint(KIND_IN_DAYS, m.start(), m.end(), days_ahead=7)
         for m in _IN_A_WEEK_RE.finditer(sentence)
+    )
+    hints.extend(
+        DateHint(KIND_IN_DAYS, m.start(), m.end(), days_ahead=7)
+        for m in _NEXT_WEEK_RE.finditer(sentence)
+    )
+    hints.extend(
+        DateHint(
+            KIND_IN_DAYS, m.start(), m.end(),
+            days_ahead=7 * _WEEK_WORDS[(m.group(1) or m.group(2)).lower()],
+        )
+        for m in _IN_WEEKS_RE.finditer(sentence)
     )
     hints.extend(
         DateHint(

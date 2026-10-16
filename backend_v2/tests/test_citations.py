@@ -41,3 +41,31 @@ class TestCitationFilter:
         assert out == "Done "
         assert f.flush() == ""
         assert f.dropped == 1
+
+
+class TestBracketInFileName:
+    """A ``]`` inside the file name must not end the marker early."""
+
+    allowed: ClassVar[set[str]] = {"[cite:Syllabus [AICTE].pdf#3]"}
+
+    def test_close_after_page_wins(self):
+        f = CitationFilter(self.allowed)
+        out = f.feed("See [cite:Syllabus [AICTE].pdf#3] for the units.")
+        out += f.flush()
+        assert out == "See [cite:Syllabus [AICTE].pdf#3] for the units."
+        assert f.cited == ["[cite:Syllabus [AICTE].pdf#3]"]
+        assert f.dropped == 0
+
+    def test_split_after_the_inner_bracket(self):
+        f = CitationFilter(self.allowed)
+        out = f.feed("See [cite:Syllabus [AICTE]")
+        # Held back: the marker may continue with the page part.
+        assert out == "See "
+        out += f.feed(".pdf#3] now") + f.flush()
+        assert out == "See [cite:Syllabus [AICTE].pdf#3] now"
+
+    def test_pageless_marker_at_end_is_still_resolved(self):
+        f = CitationFilter({"[cite:Notes.pdf]"})
+        out = f.feed("Water [cite:Notes.pdf]") + f.flush()
+        assert out == "Water [cite:Notes.pdf]"
+        assert f.cited == ["[cite:Notes.pdf]"]

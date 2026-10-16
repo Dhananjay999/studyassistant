@@ -152,6 +152,7 @@ class ExamPrepOrchestrator(AssistantOrchestrator):
         plan: dict[str, Any],  # noqa: ARG002 — base signature
         ctx: AssistantContext,  # noqa: ARG002
         message: str,  # noqa: ARG002
+        history: list[dict[str, str]] | None = None,  # noqa: ARG002
     ) -> bool:
         """Never: the exam coach runs quizzes on the current topic directly."""
         return False

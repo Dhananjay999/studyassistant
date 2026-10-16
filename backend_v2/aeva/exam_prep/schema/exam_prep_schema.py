@@ -58,6 +58,10 @@ def _uuid_field(**kwargs: object) -> fields.Str:
     )
 
 
+# Planning horizon used when the student does not know the exam date yet.
+DEFAULT_DAYS_AHEAD = 14
+
+
 @dataclass(frozen=True)
 class CreateExamPlanData:
     """Validated create-plan payload."""
@@ -88,7 +92,11 @@ class CreateExamPlanSchema(Schema):
     exam_name = fields.Str(
         required=True, validate=validate.Length(min=1, max=80)
     )
-    exam_date = fields.Date(required=True)
+    # Optional since 2026-10-16: half the students who started the setup were
+    # blocked here because they did not know the date yet. A missing date is
+    # planned as two weeks from today (``DEFAULT_DAYS_AHEAD``); the student
+    # can change it later.
+    exam_date = fields.Date(load_default=None, allow_none=True)
     class_level = fields.Str(load_default="", validate=validate.Length(max=60))
     stream = fields.Str(load_default="", validate=validate.Length(max=60))
     subjects = fields.List(
@@ -122,14 +130,22 @@ class CreateExamPlanSchema(Schema):
     research = fields.Bool(load_default=True)
 
     @validates("exam_date")
-    def _not_in_the_past(self, value: date, **_kwargs: object) -> None:
+    def _not_in_the_past(
+        self, value: date | None, **_kwargs: object
+    ) -> None:
         """Reject an exam date in the past (UTC, one day of grace)."""
+        if value is None:
+            return
         if value < datetime.now(tz=UTC).date() - _DATE_GRACE:
             raise ValidationError("Exam date must be today or later.")
 
     @post_load
     def make_data(self, data: dict, **_kwargs: object) -> CreateExamPlanData:
         """Convert to dataclass (subjects trimmed and de-duplicated)."""
+        if data.get("exam_date") is None:
+            data["exam_date"] = (
+                datetime.now(tz=UTC).date() + timedelta(days=DEFAULT_DAYS_AHEAD)
+            )
         subjects = list(
             dict.fromkeys(
                 s.strip() for s in data["subjects"] if s and s.strip()

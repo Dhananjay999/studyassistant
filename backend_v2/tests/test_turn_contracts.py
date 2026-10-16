@@ -24,6 +24,7 @@ from aeva.mcp.base import BaseTool, ToolContext, ToolDefinition
 from aeva.mcp.registry import ToolRegistry
 from aeva.orchestration.assistant_orchestrator import (
     _STALE_MEDIA_NOTE,
+    _text_practice_intent,
     _STALE_MEDIA_NOTE_SOME,
     AssistantOrchestrator,
     _is_image_file,
@@ -526,3 +527,123 @@ class TestPersistedIdsInFrames:
         result = orch.run(_ctx("explain osmosis"))
         assert result.message_id == _msg_id(2)
         assert result.user_message_id == _msg_id(1)
+
+
+class TestMessageSource:
+    """R1 (2026-10-16): the client's ``source`` is stored on the user row so
+    an auto-sent demo turn can be told apart from a student's own message."""
+
+    def test_source_is_persisted_in_user_message_metadata(self, app):
+        sb = _Supabase()
+        orch, _tools = _orch(sb, _plan("general"))
+        orch.run(_ctx("Explain osmosis", source="auto_demo"))
+        user_rows = sb.by_role("user")
+        assert len(user_rows) == 1
+        assert user_rows[0]["metadata"] == {"source": "auto_demo"}
+
+    def test_missing_source_leaves_metadata_empty(self, app):
+        sb = _Supabase()
+        orch, _tools = _orch(sb, _plan("general"))
+        orch.run(_ctx("Explain osmosis"))
+        assert sb.by_role("user")[0]["metadata"] == {}
+
+
+class TestTextPracticeNotQuiz:
+    """R7 / R12 phase 1 (2026-10-16): "not a quiz" and exam-paper asks are
+    answered as text; the quiz popover never intercepts them, and it is not
+    reopened after the student typed past it once."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "GIMME 100 practice questions in text, no quiz to be made",
+            "pls do not make quiz here",
+            "Ask me a few questions not a quiz which are imp",
+            "give me 4 and 8 marks question from unit 2",
+            "Make a question paper of 60m Q1) Case study Q2) a,b,c,d",
+            "important questions for the board exam on light",
+        ],
+    )
+    def test_detects_text_practice(self, message):
+        assert _text_practice_intent(message)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "make a quiz on photosynthesis",
+            "no, quiz me on chapter 2",
+            "a quiz on osmosis, not too hard",
+            "I have a test tomorrow, give me a quiz",
+        ],
+    )
+    def test_plain_quiz_asks_are_not_text_practice(self, message):
+        assert not _text_practice_intent(message)
+
+    def test_not_a_quiz_runs_general_instead_of_the_popover(self, app):
+        sb = _Supabase()
+        orch, tools = _orch(sb, _plan("quiz_generator"))
+        result = orch.run(
+            _ctx("GIMME 100 practice questions in text, no quiz to be made")
+        )
+        assert result.status == RunStatus.COMPLETED
+        assert result.tool_used == "general"
+        assert tools["general"].calls
+        assert not tools["quiz_generator"].calls
+
+    def test_marks_question_with_files_runs_media_llm(self, app):
+        sb = _Supabase(media=PDFS)
+        orch, tools = _orch(sb, _plan("quiz_generator"))
+        result = orch.run(
+            _ctx("give me 4 and 8 marks questions", media_ids=["m1"])
+        )
+        assert result.status == RunStatus.COMPLETED
+        assert result.tool_used == "media_llm"
+        assert not tools["quiz_generator"].calls
+
+    def test_plain_quiz_ask_still_opens_the_popover(self, app):
+        sb = _Supabase()
+        orch, _tools = _orch(sb, _plan("quiz_generator"))
+        result = orch.run(_ctx("make a quiz on cells"))
+        assert result.status == RunStatus.QUIZ_SETUP
+
+    def test_popover_is_not_reopened_after_a_decline(self, app):
+        # The previous turn ended in the popover: its user message has no
+        # assistant reply after it. The student typed again — run the quiz.
+        sb = _Supabase(
+            messages=[{"role": "user", "content": "make a quiz on cells"}]
+        )
+        orch, tools = _orch(sb, _plan("quiz_generator"))
+        result = orch.run(_ctx("make a quiz on cells, 10 questions"))
+        assert result.status == RunStatus.COMPLETED
+        assert result.tool_used == "quiz_generator"
+        assert tools["quiz_generator"].calls
+
+
+class TestQuizSetupTopic:
+    """The setup form never opens with the student's own sentence as topic."""
+
+    def test_echoed_message_is_dropped(self, app):
+        sb = _Supabase()
+        orch, _tools = _orch(sb, _plan("quiz_generator"))
+        ctx = _ctx("can you anothr pls")
+        assert orch._quiz_topic("can you anothr pls", ctx) == ""  # noqa: SLF001
+
+    def test_overlong_topic_is_dropped(self, app):
+        sb = _Supabase()
+        orch, _tools = _orch(sb, _plan("quiz_generator"))
+        long = " ".join(["word"] * 12)
+        assert orch._quiz_topic(long, _ctx("x")) == ""  # noqa: SLF001
+
+    def test_file_name_stands_in_when_files_are_selected(self, app):
+        sb = _Supabase(media=PDFS)
+        orch, _tools = _orch(sb, _plan("quiz_generator"))
+        topic = orch._quiz_topic("", _ctx("quiz", media_ids=["m2"]))  # noqa: SLF001
+        assert topic == "chemistry"
+
+    def test_real_topic_is_kept(self, app):
+        sb = _Supabase()
+        orch, _tools = _orch(sb, _plan("quiz_generator"))
+        assert (
+            orch._quiz_topic("Photosynthesis", _ctx("quiz on photosynthesis"))  # noqa: SLF001
+            == "Photosynthesis"
+        )

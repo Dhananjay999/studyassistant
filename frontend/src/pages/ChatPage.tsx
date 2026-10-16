@@ -247,6 +247,9 @@ export default function ChatPage() {
   // The setup popup is dismissible without losing the pending request: closing
   // it keeps `pendingQuiz` + the typed draft and surfaces a resume banner.
   const [quizSetupOpen, setQuizSetupOpen] = useState(false);
+  // Set by handleGenerateQuiz so the popover's close is not logged as a
+  // dismiss when it closes because Generate was pressed.
+  const quizGeneratedRef = useRef(false);
   const quizDraftRef = useRef<QuizSetupDraft | null>(null);
   const handleQuizDraftChange = useCallback((draft: QuizSetupDraft) => {
     quizDraftRef.current = draft;
@@ -278,6 +281,12 @@ export default function ChatPage() {
   // leaving the chat. (The quiz dashboard and flashcard viewer bind their own
   // back handlers inside their components, covering every call site.)
   useBackClose(mediaOpen, () => setMediaOpen(false));
+  // Files page empty state → "Upload study material": arrive with the media
+  // panel (and its upload button) already open.
+  useEffect(() => {
+    const st = location.state as { openMedia?: boolean } | null;
+    if (st?.openMedia) setMediaOpen(true);
+  }, [location.state]);
   useBackClose(toolsOpen, () => setToolsOpen(false));
 
   const mediaQuery = useMedia();
@@ -303,9 +312,14 @@ export default function ChatPage() {
 
   // Session workspace: quizzes & flashcards generated in THIS chat, shown in
   // the sidebar's learning-resources section.
-  const { data: allQuizzes = [], isLoading: quizzesLoading } = useQuizzes();
+  // Fetched once a chat is open (or the tools panel is): a fresh chat shell
+  // has no session to filter by, and these two lists were part of the 8–11
+  // parallel requests gating first paint on phones.
+  const resourcesNeeded = !!activeId || toolsOpen;
+  const { data: allQuizzes = [], isLoading: quizzesLoading } =
+    useQuizzes(resourcesNeeded);
   const { data: allFlashcards = [], isLoading: flashcardsLoading } =
-    useFlashcardSets();
+    useFlashcardSets(resourcesNeeded);
   const sessionQuizzes = activeId
     ? allQuizzes.filter((q) => q.session_id === activeId)
     : [];
@@ -740,6 +754,7 @@ export default function ChatPage() {
           quiz_options: opts?.quizOptions,
           flashcard_options: opts?.flashcardOptions,
           source_content: opts?.sourceContent,
+          source: opts?.source ?? "composer",
         },
         {
           onChunk: (delta) => {
@@ -810,6 +825,15 @@ export default function ChatPage() {
             setThinkingHint(TOOL_TO_HINT[tool] ?? "thinking");
           },
           onComplete: (full, meta) => {
+            // Files the server dropped as stale leave the selection, so the
+            // "no longer available" note appears once, not on every turn.
+            if (meta.dropped_media_ids?.length) {
+              const gone = new Set(meta.dropped_media_ids);
+              setSelected((prev) => {
+                const next = new Set([...prev].filter((id) => !gone.has(id)));
+                return next.size === prev.size ? prev : next;
+              });
+            }
             const content = (meta.content ?? {}) as Record<string, unknown>;
             const toolUsed = meta.tool_used as Message["meta"]["tool_used"];
             const mapped = mapAssistantContent(content, toolUsed);
@@ -1020,6 +1044,9 @@ export default function ChatPage() {
                     chat_session_id: sid,
                     elapsed_ms: Math.round(performance.now() - droppedAt),
                     attempts,
+                    stage: info.stage,
+                    reason: info.reason,
+                    dropped_after_ms: info.elapsed_ms,
                   });
                   setMessages((prev) =>
                     prev.map((m) =>
@@ -1124,6 +1151,7 @@ export default function ChatPage() {
     options: QuizOptions,
     sourceContent?: string,
   ) => {
+    quizGeneratedRef.current = true;
     setPendingQuiz(null);
     setQuizSetupOpen(false);
     quizDraftRef.current = null;
@@ -1635,7 +1663,16 @@ export default function ChatPage() {
     setQuizSetupOpen(true);
   };
 
+  const trackQuizSetupDismissed = (via: "close" | "card") => {
+    analytics.track(AnalyticsEvent.QUIZ_SETUP_DISMISSED, {
+      chat_session_id: activeId,
+      via,
+      had_draft: quizDraftRef.current !== null,
+    });
+  };
+
   const dismissQuizSetup = () => {
+    trackQuizSetupDismissed("card");
     setPendingQuiz(null);
     setQuizSetupOpen(false);
     quizDraftRef.current = null;
@@ -1922,7 +1959,20 @@ export default function ChatPage() {
             {pendingQuiz && (
               <QuizSetup
                 open={quizSetupOpen}
-                onOpenChange={setQuizSetupOpen}
+                onOpenChange={(open) => {
+                  setQuizSetupOpen(open);
+                  if (open || !quizSetupOpen) return;
+                  // Generate closes the sheet and then calls
+                  // handleGenerateQuiz synchronously; check after that ran
+                  // so only a close WITHOUT a quiz counts as a dismiss.
+                  window.setTimeout(() => {
+                    if (quizGeneratedRef.current) {
+                      quizGeneratedRef.current = false;
+                      return;
+                    }
+                    trackQuizSetupDismissed("close");
+                  }, 0);
+                }}
                 initialTopic={pendingQuiz.topic}
                 initialCount={pendingQuiz.questionCount}
                 initialTypes={pendingQuiz.questionTypes}

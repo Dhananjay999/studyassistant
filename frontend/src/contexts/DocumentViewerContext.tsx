@@ -151,12 +151,43 @@ export function useDocumentViewerController(): DocumentViewerController {
 
 export { DocumentViewerContext };
 
+// Used when a citation or source card renders outside any provider (a page
+// that forgot `DocumentViewerHost`). Opening in a new tab keeps the chip
+// useful instead of crashing the page — this exact crash took the Exam Prep
+// topic chat down for every grounded answer (Sentry CLIENT-6, 2026-10-10).
+const FALLBACK_VIEWER: DocumentViewerContextValue = {
+  openDocument: ({ url }) => {
+    window.open(url, "_blank", "noopener");
+  },
+  openDocumentByMediaId: async (mediaId) => {
+    let item: MediaItem | undefined;
+    try {
+      item = await getMediaStatus(mediaId);
+    } catch {
+      item = undefined;
+    }
+    if (item?.signed_url) {
+      window.open(item.signed_url, "_blank", "noopener");
+    } else {
+      toast.error("Couldn't open that document");
+    }
+  },
+};
+
+let warnedNoProvider = false;
+
 export function useDocumentViewer(): DocumentViewerContextValue {
   const ctx = useContext(DocumentViewerContext);
   if (!ctx) {
-    throw new Error(
-      "useDocumentViewer must be used within a DocumentViewerContext provider",
-    );
+    if (!warnedNoProvider) {
+      warnedNoProvider = true;
+      console.warn(
+        "useDocumentViewer: no DocumentViewerContext provider above this " +
+          "component; documents will open in a new tab. Wrap the page in " +
+          "<DocumentViewerHost>.",
+      );
+    }
+    return FALLBACK_VIEWER;
   }
   return ctx;
 }

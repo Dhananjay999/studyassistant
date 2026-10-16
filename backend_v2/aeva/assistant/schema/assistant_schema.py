@@ -32,6 +32,10 @@ class AssistantRequestData:
     quiz_options: QuizOptions | None = None
     flashcard_options: FlashcardOptions | None = None
     source_content: str | None = None
+    # Where the message came from (composer, suggested_prompt, auto_demo,
+    # action, ...). Stored in the user message's metadata so analysis can
+    # tell a student's own message from one the product sent.
+    source: str | None = None
 
 
 class ClarificationResponseSchema(Schema):
@@ -128,6 +132,9 @@ class AssistantRequestSchema(Schema):
         FlashcardOptionsSchema, load_default=None
     )
     source_content = fields.Str(load_default=None)
+    source = fields.Str(
+        load_default=None, validate=validate.Length(max=40)
+    )
 
     @post_load
     def make_data(self, data: dict, **_kwargs: object) -> AssistantRequestData:

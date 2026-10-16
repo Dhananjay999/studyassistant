@@ -25,7 +25,7 @@ import queue
 import time
 from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from flask import Flask
@@ -33,6 +33,7 @@ from flask import Flask
 from aeva.llm.llm_client import LLMClient
 from aeva.mcp.base import PriorResult, ToolContext
 from aeva.mcp.registry import ToolRegistry
+from aeva.orchestration.model_candidates import default_model_for
 from aeva.orchestration.models import (
     STEP_INPUT_ANSWER,
     STEP_KIND_ANSWER,
@@ -49,6 +50,19 @@ STATUS_DONE = "done"
 STATUS_FAILED = "failed"
 
 _DRAIN_WAIT_S = 0.25
+
+
+class EmptyAnswerError(RuntimeError):
+    """The answer model produced no visible text, even after one retry.
+
+    Raised before anything reached the student, so the controller turns it
+    into a terminal ``error`` frame: the client shows its retry card and
+    records the turn as failed instead of saving a blank reply as success.
+    """
+
+    def __init__(self, tool: str) -> None:
+        super().__init__(f"{tool} returned an empty answer")
+        self.tool = tool
 
 # Friendly noun per generator, for the failure note.
 _AGENT_NOUN = {
@@ -232,27 +246,30 @@ class AgentRunner:
         result: dict[str, Any] = {}
         meta: dict[str, Any] = {}
         text = ""
+        # Chunks that reached the client so far (kept when the stream breaks
+        # mid-answer, so the turn can carry on with the partial text).
+        sent: list[str] = []
         try:
             if tool.can_stream():
-                stream = self._stream_answer(
-                    tool.execute_stream(ctx, step.params)
+                text, result, meta = yield from self._stream_once(
+                    tool, ctx, step, sent
                 )
-                raw = ""
-                try:
-                    while True:
-                        chunk = next(stream)
-                        text += chunk
-                        yield LLMClient.format_sse_chunk(chunk)
-                        yield from self._drain_nowait()
-                except StopIteration as stop:
-                    raw, result = stop.value if stop.value else ("", {})
-                if not isinstance(result, dict):
-                    result = {}
-                answer, meta = self._split_meta(raw)
-                result["answer"] = answer
-                text = answer or self._format_display(step.tool, result)
-                if not answer:
-                    yield LLMClient.format_sse_chunk(text)
+                if not text.strip():
+                    # The model emitted only the metadata trailer (seen on
+                    # the small general-answer model): nothing visible was
+                    # streamed, so one silent retry on the tool's default
+                    # model costs the student nothing.
+                    logger.warning(
+                        "Answer agent %s returned no visible text; retrying",
+                        step.tool,
+                    )
+                    retry_step = self._retry_step(step)
+                    retry_ctx = self._build_ctx(retry_step, [])
+                    text, result, meta = yield from self._stream_once(
+                        tool, retry_ctx, retry_step, sent
+                    )
+                if not text.strip():
+                    self._reject_empty(step)
             else:
                 result = self._registry.execute(step.tool, ctx, step.params)
                 text = self._format_display(step.tool, result)
@@ -261,6 +278,7 @@ class AgentRunner:
             outcome.status = STATUS_FAILED
             outcome.ms = int((time.perf_counter() - started) * 1000)
             outcome.error = type(exc).__name__
+            text = text or "".join(sent)
             if not text:
                 # Nothing reached the student yet: let the normal error
                 # path (controller error frame) handle it.
@@ -276,6 +294,61 @@ class AgentRunner:
         outcome.result = result
         yield self._status_frame(outcome)
         return text, result, meta, tool.can_stream()
+
+    def _stream_once(
+        self, tool: Any, ctx: ToolContext, step: Step, sent: list[str]
+    ) -> Generator[str, None, tuple[str, dict[str, Any], dict[str, Any]]]:
+        """Stream one answer attempt; returns ``(text, result, meta)``.
+
+        ``text`` is what reached the client: the visible answer, or the
+        tool's display sentence when the answer was empty but the result
+        carries something to show (empty for a bare trailer). Every chunk
+        is also appended to ``sent`` as it goes out.
+        """
+        stream = self._stream_answer(tool.execute_stream(ctx, step.params))
+        raw = ""
+        text = ""
+        result: dict[str, Any] = {}
+        try:
+            while True:
+                chunk = next(stream)
+                text += chunk
+                sent.append(chunk)
+                yield LLMClient.format_sse_chunk(chunk)
+                yield from self._drain_nowait()
+        except StopIteration as stop:
+            raw, result = stop.value if stop.value else ("", {})
+        if not isinstance(result, dict):
+            result = {}
+        answer, meta = self._split_meta(raw)
+        result["answer"] = answer
+        if not answer:
+            fallback = self._format_display(step.tool, result)
+            if fallback.strip():
+                sent.append(fallback)
+                yield LLMClient.format_sse_chunk(fallback)
+            return fallback, result, meta
+        return answer, result, meta
+
+    @staticmethod
+    def _reject_empty(step: Step) -> None:
+        """Fail the turn: no visible answer after the retry."""
+        raise EmptyAnswerError(step.tool)
+
+    @staticmethod
+    def _retry_step(step: Step) -> Step:
+        """Return the step on the tool's default model.
+
+        The planner's pick may be the small model that skipped the answer;
+        the default is the one the deployment trusts for this tool.
+        """
+        try:
+            fallback = default_model_for(step.tool)
+        except RuntimeError:  # no app context (tests)
+            fallback = None
+        if fallback and fallback != step.model:
+            return replace(step, model=fallback)
+        return step
 
     # ----------------------------------------------------------- generators
 

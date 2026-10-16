@@ -21,9 +21,17 @@
 // CTA clicks, FAQ opens, demo interactions and login outcomes are reported
 // into the visit by their components via `lib/analytics/landing.ts`.
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { beginLandingVisit, endLandingVisit } from "@/lib/analytics/landing";
+import { requestAuthPrompt } from "@/lib/authPrompt";
+
+export interface LandingAnalyticsOptions {
+  /** landing-hero-v2 test: a desktop exit intent also asks for the sign-in
+   * prompt (through the usual gate: once per visit, never after a dismiss).
+   * Read at the moment of the exit intent, so it may change after mount. */
+  exitIntentPrompt?: boolean;
+}
 
 const SCROLL_MILESTONES = [25, 50, 75, 100] as const;
 const SECTION_THRESHOLD = 0.35;
@@ -46,7 +54,12 @@ function bucket(pct: number): 0 | 25 | 50 | 75 | 100 {
   return 0;
 }
 
-export function useLandingAnalytics(page: string): void {
+export function useLandingAnalytics(
+  page: string,
+  options: LandingAnalyticsOptions = {},
+): void {
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
       return undefined;
@@ -155,6 +168,7 @@ export function useLandingAnalytics(page: string): void {
         time_since_entry_s: elapsedS(),
         scroll_pct: visit.maxScrollPct,
       });
+      if (optionsRef.current.exitIntentPrompt) requestAuthPrompt("exit_intent");
     };
     document.addEventListener("mouseout", onMouseOut);
 

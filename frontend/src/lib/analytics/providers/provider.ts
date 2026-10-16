@@ -29,4 +29,9 @@ export interface AnalyticsProvider {
   track(payload: TrackPayload, hint?: DeliveryHint): void;
   flush?(): void;
   isReady(): boolean;
+  /** Current value of a feature flag / experiment variant, if the provider
+   * serves flags and they have loaded. */
+  getFeatureFlag?(key: string): string | boolean | undefined;
+  /** Run `cb` once flags are loaded (and again whenever they change). */
+  onFeatureFlags?(cb: () => void): void;
 }

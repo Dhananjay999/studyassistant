@@ -5,11 +5,12 @@ import threading
 import time
 from typing import Any
 
+import pytest
 from flask import Flask
 
 from aeva.mcp.base import BaseTool, PriorResult, ToolContext, ToolDefinition
 from aeva.mcp.registry import ToolRegistry
-from aeva.orchestration.agent_runner import AgentRunner
+from aeva.orchestration.agent_runner import AgentRunner, EmptyAnswerError
 from aeva.orchestration.models import (
     STEP_INPUT_ANSWER,
     STEP_INPUT_MESSAGE,
@@ -249,3 +250,58 @@ class TestAppContextInWorkers:
         with app.app_context():
             _frames, outcome = _run(app, registry, [_gen("gen1", "flashcard_generator")])
         assert outcome.result["answer"] == "1"
+
+
+class _BlankThenText(BaseTool):
+    """Streams nothing on the first call (a bare metadata trailer in
+    production), then a real answer; ``blank_calls`` keeps it blank."""
+
+    def __init__(self, blank_calls: int = 1) -> None:
+        self._blank_calls = blank_calls
+        self.calls: list[ToolContext] = []
+
+    @property
+    def definition(self) -> ToolDefinition:
+        return ToolDefinition("general", "", {"type": "object"})
+
+    def can_stream(self) -> bool:
+        return True
+
+    def execute(self, ctx: ToolContext, params: dict[str, Any]) -> dict:
+        return {"answer": ""}
+
+    def execute_stream(self, ctx: ToolContext, params: dict[str, Any]):
+        self.calls.append(ctx)
+        if len(self.calls) <= self._blank_calls:
+            return {"answer": ""}
+        yield "Osmosis "
+        yield "moves water."
+        return {"answer": "Osmosis moves water."}
+
+
+class TestEmptyAnswer:
+    """R3: a blank reply is retried once, then fails instead of saving."""
+
+    def test_blank_first_stream_is_retried_silently(self):
+        tool = _BlankThenText(blank_calls=1)
+        registry = ToolRegistry()
+        registry.register(tool)
+        steps = [Step(id="a", tool="general", kind=STEP_KIND_ANSWER)]
+        with _app().app_context():
+            frames, outcome = _run(_app(), registry, steps)
+        assert len(tool.calls) == 2
+        assert outcome.display_text == "Osmosis moves water."
+        assert outcome.result["answer"] == "Osmosis moves water."
+        # Nothing blank reached the client before the retry.
+        contents = [f["content"] for f in frames if f.get("content")]
+        assert contents == ["Osmosis ", "moves water."]
+        assert outcome.agents[0].status == "done"
+
+    def test_blank_twice_fails_the_turn(self):
+        tool = _BlankThenText(blank_calls=2)
+        registry = ToolRegistry()
+        registry.register(tool)
+        steps = [Step(id="a", tool="general", kind=STEP_KIND_ANSWER)]
+        with _app().app_context(), pytest.raises(EmptyAnswerError):
+            _run(_app(), registry, steps)
+        assert len(tool.calls) == 2

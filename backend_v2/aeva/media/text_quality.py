@@ -33,6 +33,15 @@ MIN_LETTER_SHARE = 0.35
 UNREADABLE_PAGE_SHARE = 0.2
 BLANK_PAGE_SHARE = 0.6
 
+# "Glued" text: a text layer whose words run together without spaces
+# ("thecellisthebasicunitoflife"). Letters-only runs this long are not words
+# in any language the product serves; a page where this share of its words
+# are such runs is unreadable to search and to the model alike. One large
+# scanned compilation passed the old check with 84 glued tokens per 1,000
+# (2026-10-16); the OCR tier never fired for it.
+GLUED_WORD_CHARS = 25
+GLUED_WORD_SHARE = 0.05
+
 # Code-point ranges a text-layer parse of a symbol-font PDF produces. These
 # never appear in meaningful quantity in real prose.
 _JUNK_RANGES = (
@@ -55,6 +64,8 @@ class PageQuality:
     chars: int
     letter_share: float
     junk_share: float
+    # Share of the page's words that are over-long letter runs (glued text).
+    glued_share: float = 0.0
 
     @property
     def blank(self) -> bool:
@@ -69,6 +80,7 @@ class PageQuality:
         return (
             self.junk_share >= JUNK_CHAR_SHARE
             or self.letter_share < MIN_LETTER_SHARE
+            or self.glued_share >= GLUED_WORD_SHARE
         )
 
 
@@ -119,7 +131,20 @@ def score_text(text: str, page_number: int = 0) -> PageQuality:
         return PageQuality(page_number, 0, 0.0, 0.0)
     letters = sum(1 for c in visible if unicodedata.category(c).startswith("L"))
     junk = sum(1 for c in visible if _is_junk(c))
-    return PageQuality(page_number, chars, letters / chars, junk / chars)
+    words = text.split()
+    glued = sum(1 for w in words if _is_glued(w))
+    glued_share = glued / len(words) if words else 0.0
+    return PageQuality(
+        page_number, chars, letters / chars, junk / chars, glued_share
+    )
+
+
+def _is_glued(word: str) -> bool:
+    """Return True for a long letter run with no separator (glued words)."""
+    if len(word) < GLUED_WORD_CHARS:
+        return False
+    # URLs, identifiers and hyphenated compounds are long for other reasons.
+    return all(unicodedata.category(c).startswith("L") for c in word)
 
 
 def score_document(doc: ParsedDocument) -> DocumentQuality:

@@ -47,6 +47,12 @@ def available() -> bool:
     return time.monotonic() >= _unavailable_until
 
 
+def _is_fk_violation(exc: Exception) -> bool:
+    """Postgres 23503: a referenced row (the chat session) no longer exists."""
+    text = str(exc).lower()
+    return "23503" in text or "foreign key" in text
+
+
 def _is_missing_table(exc: Exception) -> bool:
     """Whether ``exc`` says the trace tables have not been created."""
     code = str(getattr(exc, "code", "") or "")
@@ -90,9 +96,23 @@ def persist(
 
         client = SupabaseService().client
         # ``minimal``: do not have the rows echoed back in the response.
-        client.table(TRACES_TABLE).insert(
-            trace_row, returning=ReturnMethod.minimal
-        ).execute()
+        try:
+            client.table(TRACES_TABLE).insert(
+                trace_row, returning=ReturnMethod.minimal
+            ).execute()
+        except Exception as exc:
+            # The session was deleted while the turn ran: keep the trace
+            # (it is the only record of the failure) without the link.
+            if not (_is_fk_violation(exc) and trace_row.get("session_id")):
+                raise
+            logger.warning(
+                "AI trace %s: session row gone, saving without session_id",
+                trace_row.get("id"),
+            )
+            trace_row = {**trace_row, "session_id": None}
+            client.table(TRACES_TABLE).insert(
+                trace_row, returning=ReturnMethod.minimal
+            ).execute()
     except Exception as exc:  # noqa: BLE001 — best-effort by design.
         if _is_missing_table(exc):
             _unavailable_until = time.monotonic() + _BACKOFF_S

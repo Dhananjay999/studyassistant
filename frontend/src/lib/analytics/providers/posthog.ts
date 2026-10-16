@@ -71,6 +71,14 @@ export class PostHogProvider implements AnalyticsProvider {
     return this.ready && !!this.ph;
   }
 
+  getFeatureFlag(key: string): string | boolean | undefined {
+    return this.ph?.getFeatureFlag(key);
+  }
+
+  onFeatureFlags(cb: () => void): void {
+    this.ph?.onFeatureFlags(() => cb());
+  }
+
   identify(userId: string, traits: UserTraits): void {
     // identify() with the same id and new props just updates the person —
     // no need to special-case setPersonProperties.

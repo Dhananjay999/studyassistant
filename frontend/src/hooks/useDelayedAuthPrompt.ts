@@ -36,7 +36,10 @@ const ACTIVITY_EVENTS = [
 // Module-level so the accumulated engagement survives route changes.
 let activeMs = 0;
 
-export function useDelayedAuthPrompt(enabled: boolean): void {
+export function useDelayedAuthPrompt(
+  enabled: boolean,
+  activeMsNeeded: number = AUTH_PROMPT_DELAY_ACTIVE_MS,
+): void {
   useEffect(() => {
     if (!enabled || typeof window === "undefined") return undefined;
 
@@ -64,7 +67,7 @@ export function useDelayedAuthPrompt(enabled: boolean): void {
       const active =
         document.visibilityState === "visible" && sinceInput < ACTIVE_WINDOW_MS;
       if (active) activeMs += TICK_MS;
-      if (activeMs < AUTH_PROMPT_DELAY_ACTIVE_MS) return;
+      if (activeMs < activeMsNeeded) return;
 
       // Engaged enough. Fire only in a pause: still around (input in the
       // last 10 s) but not in the middle of a scroll or tap.
@@ -96,5 +99,5 @@ export function useDelayedAuthPrompt(enabled: boolean): void {
     }
 
     return stop;
-  }, [enabled]);
+  }, [enabled, activeMsNeeded]);
 }

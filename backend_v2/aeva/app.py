@@ -423,8 +423,35 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
 _QUIET_PATHS = ("/health", "/docs", "/openapi", "/favicon")
 
 
+# When this process started: the first request of a fresh (cold) instance
+# reports how old the process was, so a slow first response can be told apart
+# from a slow handler in the browser's resource timing (``Server-Timing``).
+_PROCESS_STARTED_AT = time.perf_counter()
+_served_requests = 0
+
+
+def _add_server_timing(response: Any, start: float | None) -> None:
+    """Stamp ``Server-Timing`` (handler time; process age on the first hit)."""
+    global _served_requests  # noqa: PLW0603 - per-process counter
+    if start is not None:
+        app_ms = (time.perf_counter() - start) * 1000
+        timing = f"app;dur={app_ms:.0f}"
+        if _served_requests == 0:
+            cold_ms = (time.perf_counter() - _PROCESS_STARTED_AT) * 1000
+            timing += f", cold;dur={cold_ms:.0f}"
+        response.headers["Server-Timing"] = timing
+        response.headers.setdefault("Timing-Allow-Origin", "*")
+    _served_requests += 1
+
+
 def _register_request_logging(app: Flask) -> None:
-    """Log every request in/out with status + duration (bodies at DEBUG)."""
+    """Log every request in/out with status + duration (bodies at DEBUG).
+
+    Every response also carries a ``Server-Timing`` header: ``app`` is the
+    handler time, and the first response of a process adds ``cold`` with the
+    process age at that moment (a cold start on Vercel). Readable from the
+    client's PerformanceResourceTiming because of ``Timing-Allow-Origin``.
+    """
 
     @app.before_request
     def _log_start() -> None:
@@ -447,9 +474,10 @@ def _register_request_logging(app: Flask) -> None:
 
     @app.after_request
     def _log_end(response: Any) -> Any:
+        start = getattr(g, "req_started_at", None)
+        _add_server_timing(response, start)
         if request.path.startswith(_QUIET_PATHS):
             return response
-        start = getattr(g, "_req_start", None)
         took = f"{(time.perf_counter() - start) * 1000:.0f}ms" if start else "?"
         logger.info(
             "← %s %s → %s (%s)",

@@ -40,7 +40,7 @@ Rules:
 - Files listed as attached in full are complete documents: read them directly and cite them by their name.
 - If part of the question is NOT covered by the excerpts, say in one line exactly what the materials do not cover, and only then add general knowledge under a short "Beyond your materials" line, without citations.
 - Prefer the material's own terminology, numbers, and definitions over general knowledge.
-- Be concise, accurate, and specific to the uploaded material.
+- Be concise, accurate, and specific to the uploaded material. Match length to the ask: a question gets a focused answer (roughly 150-400 words); only notes or a full summary earns a long one, and even then stop near 1,000 words at a natural break and offer to continue.
 {ANSWER_META}""",
     defaults={
         "SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK,

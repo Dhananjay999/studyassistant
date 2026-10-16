@@ -327,8 +327,12 @@ export function useGenerateQuiz() {
   });
 }
 
-export function useQuizzes() {
-  return useQuery({ queryKey: qk.quizzes, queryFn: api.listQuizzes });
+export function useQuizzes(enabled = true) {
+  return useQuery({
+    queryKey: qk.quizzes,
+    queryFn: api.listQuizzes,
+    enabled,
+  });
 }
 
 export function useExamPatterns() {
@@ -371,10 +375,11 @@ export function useQuizAttempt(
 
 /* ------------------------------- flashcards ------------------------------- */
 
-export function useFlashcardSets() {
+export function useFlashcardSets(enabled = true) {
   return useQuery({
     queryKey: qk.flashcards,
     queryFn: api.listFlashcardSets,
+    enabled,
   });
 }
 

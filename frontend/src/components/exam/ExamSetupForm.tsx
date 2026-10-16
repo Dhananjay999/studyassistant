@@ -168,6 +168,9 @@ export function ExamSetupForm() {
   const [answers, setAnswers] = useState<SetupAnswers>(EMPTY_ANSWERS);
   const [examName, setExamName] = useState("");
   const [examDate, setExamDate] = useState("");
+  // "I don't know the date yet": 16 of 21 blocked step-1 attempts were
+  // missing the date (2026-10-16). The backend then plans two weeks ahead.
+  const [dateUnknown, setDateUnknown] = useState(false);
   const [research, setResearch] = useState(true);
   const [subjects, setSubjects] = useState<string[]>([]);
   const [customSubject, setCustomSubject] = useState("");
@@ -266,9 +269,7 @@ export function ExamSetupForm() {
     kindAnswersComplete(answers) &&
     !unsupported &&
     examName.trim().length > 0 &&
-    !!examDate &&
-    daysUntil !== null &&
-    daysUntil >= 0;
+    (dateUnknown || (!!examDate && daysUntil !== null && daysUntil >= 0));
   const step2Valid = subjects.length > 0 && minutesValid;
 
   // What Continue is still waiting for on this step, in form order. After a
@@ -298,7 +299,9 @@ export function ExamSetupForm() {
       } else if (answers.kind && !examName.trim()) {
         out.push({ id: "exam_name", label: "the exam name" });
       }
-      if (!examDate) {
+      if (dateUnknown) {
+        // No date needed: the plan runs two weeks from today.
+      } else if (!examDate) {
         out.push({ id: "exam_date", label: "the exam date" });
       } else if (daysUntil !== null && daysUntil < 0) {
         out.push({ id: "exam_date_past", label: "a date from today onwards" });
@@ -312,7 +315,7 @@ export function ExamSetupForm() {
       }
     }
     return out;
-  }, [step, answers, unsupported, examName, examDate, daysUntil, subjects.length, minutesValid]);
+  }, [step, answers, unsupported, examName, examDate, dateUnknown, daysUntil, subjects.length, minutesValid]);
   const showMissing = touched && missing.length > 0;
 
   const toggleSubject = (s: string) => {
@@ -495,7 +498,7 @@ export function ExamSetupForm() {
     }
     const body: CreateExamPlanRequest = {
       exam_name: examName.trim().slice(0, EXAM_NAME_LEN),
-      exam_date: examDate,
+      exam_date: dateUnknown ? undefined : examDate,
       exam_kind: answers.kind ?? "other",
       board: boardFor(answers) || undefined,
       class_level: classLevelFor(answers) || undefined,
@@ -516,6 +519,7 @@ export function ExamSetupForm() {
       analytics.track(AnalyticsEvent.EXAM_PREP_SETUP_COMPLETED, {
         exam_kind: answers.kind ?? "other",
         research,
+        date_unknown: dateUnknown,
         days_remaining: dashboard.days_remaining,
         subject_count: subjects.length,
         daily_minutes: minutes,
@@ -969,22 +973,39 @@ export function ExamSetupForm() {
                 </Field>
               )}
 
-              <Field label="Exam date" required>
+              <Field label="Exam date" required={!dateUnknown}>
                 <Input
                   type="date"
                   min={today}
                   value={examDate}
+                  disabled={dateUnknown}
                   onChange={(e) => setExamDate(e.target.value)}
                   className="h-11 max-w-xs"
                 />
-                {daysUntil !== null && daysUntil >= 0 && (
+                <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={dateUnknown}
+                    onChange={(e) => setDateUnknown(e.target.checked)}
+                    data-analytics-name="Exam date unknown"
+                    className="h-5 w-5 rounded border-border accent-[hsl(var(--primary))]"
+                  />
+                  <span>I don't know the date yet</span>
+                </label>
+                {dateUnknown && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Aeva plans the next two weeks. You can set the real date
+                    from the plan whenever you know it.
+                  </p>
+                )}
+                {!dateUnknown && daysUntil !== null && daysUntil >= 0 && (
                   <p className="mt-1.5 text-xs text-muted-foreground tabular-nums">
                     {daysUntil === 0
                       ? "That's today — Aeva will plan a focused last-day revision."
                       : `${daysUntil} day${daysUntil === 1 ? "" : "s"} from today${daysUntil > 60 ? " — the plan covers the next 60 days first" : ""}.`}
                   </p>
                 )}
-                {touched && (!examDate || (daysUntil !== null && daysUntil < 0)) && (
+                {touched && !dateUnknown && (!examDate || (daysUntil !== null && daysUntil < 0)) && (
                   <FieldError>Pick a date from today onwards.</FieldError>
                 )}
               </Field>
@@ -1013,7 +1034,14 @@ export function ExamSetupForm() {
                 required
                 hint={`${subjects.length}/${SUBJECT_MAX}`}
               >
-                <ChipRow data-analytics-private data-analytics-section="exam_setup_subjects">
+                <ChipRow
+                  data-analytics-private
+                  data-analytics-section="exam_setup_subjects"
+                  // Subject names are the student's own words; page
+                  // translation mutating these list nodes crashed the form
+                  // for non-English browsers (Sentry CLIENT-3).
+                  translate="no"
+                >
                   {suggestedSubjects.map((s) => (
                     <Chip
                       key={s}
@@ -1163,6 +1191,7 @@ export function ExamSetupForm() {
                     className="mt-3 divide-y divide-border/50 overflow-hidden rounded-xl border border-border/50"
                     data-analytics-private
                     data-analytics-section="exam_setup_material"
+                    translate="no"
                   >
                     {uploads.map((u) => (
                       <li key={u.id} className="flex items-center gap-3 px-3 py-2.5">

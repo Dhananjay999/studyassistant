@@ -113,6 +113,9 @@ class AssistantContext:
     # present, the turn is grounded ONLY on this — conversation history is
     # dropped so an action always operates on its own card.
     source_content: str | None = None
+    # Client-reported origin of the message (``composer``, ``auto_demo``,
+    # ``suggested_prompt``, ``action`` ...); persisted on the user message.
+    source: str | None = None
 
 
 # Tools that produce the streamed text answer (at most one per turn) versus
