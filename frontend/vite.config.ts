@@ -173,7 +173,7 @@ export default defineConfig(({ mode, isSsrBuild }) => {
     "local";
   // Canonical site origin used for sitemap/robots/llms.txt. Keep in sync with
   // SITE_URL in src/lib/seo.ts (both default to the same origin).
-  const siteUrl = (env.VITE_SITE_URL ?? "https://studyassistant.app").replace(
+  const siteUrl = (env.VITE_SITE_URL ?? "https://www.studyassistant.in").replace(
     /\/$/,
     "",
   );

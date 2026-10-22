@@ -29,6 +29,7 @@ class AssistantRepository:
             flashcard_options=request_data.flashcard_options,
             source_content=request_data.source_content,
             source=request_data.source,
+            language=request_data.language,
         )
 
     @staticmethod

@@ -116,6 +116,9 @@ class AssistantContext:
     # Client-reported origin of the message (``composer``, ``auto_demo``,
     # ``suggested_prompt``, ``action`` ...); persisted on the user message.
     source: str | None = None
+    # Language chosen for this turn in the composer (overrides the profile's
+    # response language for the reply and generated quizzes / cards / notes).
+    language: str | None = None
 
 
 # Tools that produce the streamed text answer (at most one per turn) versus

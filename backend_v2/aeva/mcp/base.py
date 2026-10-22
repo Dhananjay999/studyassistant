@@ -16,6 +16,9 @@ ACTION_DETAIL = "DETAIL"
 ACTION_SUMMARY = "SUMMARY"
 ACTION_STUDY_PLAN = "STUDY_PLAN"
 ACTION_ANALYZE = "ANALYZE"
+# "Teach me this": a sectioned lesson with a worked example and a short
+# check at the end (34 of 93 chatting users asked to be taught a chapter).
+ACTION_TEACH = "TEACH"
 # Open the dedicated card a generator just produced.
 ACTION_OPEN_QUIZ = "OPEN_QUIZ"
 ACTION_OPEN_FLASHCARDS = "OPEN_FLASHCARDS"
@@ -30,6 +33,7 @@ LEARNING_ACTIONS = [
     ACTION_SUMMARY,
     ACTION_STUDY_PLAN,
     ACTION_ANALYZE,
+    ACTION_TEACH,
 ]
 
 # Coarse response categories the client can branch rendering on. They are part

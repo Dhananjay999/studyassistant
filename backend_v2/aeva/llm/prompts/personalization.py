@@ -9,6 +9,7 @@ user actually asked for. The current request always wins if it explicitly asks
 for a different language.
 """
 
+import re
 from typing import Any
 
 from aeva.learning_profile import profile_document
@@ -218,6 +219,28 @@ def _document_lines(doc: dict[str, Any]) -> list[str]:
     if doc["custom_instructions"]:
         lines.append(f'- Custom Instructions: "{doc["custom_instructions"]}"')
     return lines
+
+
+_LANGUAGE_LABEL_RE = re.compile(r"[^A-Za-z \-()]")
+
+
+def build_turn_language_block(language: str | None) -> str:
+    """Prompt lines for a language the student picked for this one turn.
+
+    Placed BEFORE the profile block so it wins over the saved response
+    language: a Hinglish learner who taps "English" for an exam answer gets
+    English for that reply, and for any quiz, flashcards or notes built
+    from it. Anything that is not a plain language label is ignored.
+    """
+    label = _LANGUAGE_LABEL_RE.sub("", (language or "")).strip()[:40]
+    if not label:
+        return ""
+    return (
+        f"Language for THIS message: {label}. Reply in {label}, and write "
+        f"any quiz, flashcards or notes you produce from it in {label} too. "
+        "This overrides the profile's response language for this turn "
+        "only.\n\n"
+    )
 
 
 def build_personalization_block(profile: dict[str, Any] | None) -> str:

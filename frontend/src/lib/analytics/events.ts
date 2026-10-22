@@ -87,6 +87,7 @@ export enum AnalyticsEvent {
 
   // ---- Media -------------------------------------------------------------
   MEDIA_UPLOAD_STARTED = "MEDIA_UPLOAD_STARTED",
+  MEDIA_SCAN_REQUESTED = "MEDIA_SCAN_REQUESTED",
   MEDIA_UPLOAD_COMPLETED = "MEDIA_UPLOAD_COMPLETED",
   MEDIA_UPLOAD_FAILED = "MEDIA_UPLOAD_FAILED",
   MEDIA_PROCESSING_COMPLETED = "MEDIA_PROCESSING_COMPLETED",
@@ -101,6 +102,9 @@ export enum AnalyticsEvent {
   // ---- Quiz --------------------------------------------------------------
   QUIZ_SETUP_REQUESTED = "QUIZ_SETUP_REQUESTED",
   QUIZ_SETUP_DISMISSED = "QUIZ_SETUP_DISMISSED",
+  CHAT_LANGUAGE_SELECTED = "CHAT_LANGUAGE_SELECTED",
+  CHAT_PASTE_SAVE_OFFERED = "CHAT_PASTE_SAVE_OFFERED",
+  CHAT_PASTE_SAVED = "CHAT_PASTE_SAVED",
   QUIZ_GENERATION_REQUESTED = "QUIZ_GENERATION_REQUESTED",
   QUIZ_CREATE_FAILED = "QUIZ_CREATE_FAILED",
   QUIZ_CARD_VIEWED = "QUIZ_CARD_VIEWED",
@@ -473,6 +477,8 @@ export interface ChatMessageSentProps {
   is_first_message?: boolean;
   /** "Regenerate" re-sent the previous user message. */
   regenerate?: boolean;
+  /** Language picked in the composer chip for this turn (label only). */
+  language?: string;
 }
 export interface ChatResponseCompletedProps {
   chat_session_id: string | null;
@@ -812,6 +818,7 @@ export interface EventPropsMap {
       | "save_note"
       | "quiz"
       | "regenerate"
+      | "teach"
       /** "Save as revision sheet" / "Important questions" (`action_id`). */
       | "make_notes";
     action_id?: string;
@@ -849,6 +856,12 @@ export interface EventPropsMap {
   };
 
   [AnalyticsEvent.MEDIA_UPLOAD_STARTED]: MediaUploadStartedProps;
+  /** "Combine N photos into one document" pressed in the media panel; the
+   *  usual `MEDIA_PROCESSING_*` events follow for the new document. */
+  [AnalyticsEvent.MEDIA_SCAN_REQUESTED]: {
+    chat_session_id: string | null;
+    image_count: number;
+  };
   [AnalyticsEvent.MEDIA_UPLOAD_COMPLETED]: {
     upload_id: string;
     media_id: string;
@@ -915,6 +928,22 @@ export interface EventPropsMap {
     /** Which Quizzes-page control opened the panel. */
     entry?: CreateEntry;
   };
+  /** The composer's language chip changed (`null` = back to the profile). */
+  [AnalyticsEvent.CHAT_LANGUAGE_SELECTED]: {
+    chat_session_id: string | null;
+    language: string | null;
+  };
+  /** A long paste or a bare link got a "save as study material" chip. */
+  [AnalyticsEvent.CHAT_PASTE_SAVE_OFFERED]: {
+    kind: "text" | "url";
+    chars: number;
+    lines: number;
+  };
+  /** The chip was accepted: the paste became a .txt upload or a link import. */
+  [AnalyticsEvent.CHAT_PASTE_SAVED]: {
+    kind: "text" | "url";
+    chars: number;
+  };
   /** The quiz setup popover closed without a quiz being generated. */
   [AnalyticsEvent.QUIZ_SETUP_DISMISSED]: {
     chat_session_id: string | null;
@@ -937,6 +966,8 @@ export interface EventPropsMap {
     source: string;
     /** What a Quizzes-page quiz is built from (absent for Chat). */
     material?: CreateMaterial;
+    /** Composer language chip active when the quiz was requested. */
+    language?: string;
   };
   [AnalyticsEvent.QUIZ_CREATE_FAILED]: ErrorKindProps & {
     material: CreateMaterial;

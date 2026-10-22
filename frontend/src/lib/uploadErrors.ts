@@ -13,9 +13,12 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 /** Build-time mirror of the backend's ALLOWED_TYPES
  *  (`aeva/media/media_repository.py`); `getAcceptedUploadTypes()` prefers
  *  the list served by /config once it has loaded. */
+/** Pasted notes and imported web pages travel as plain text. */
+export const TEXT_TYPE = "text/plain";
 export const ACCEPTED_UPLOAD_TYPES: readonly string[] = [
   ...IMAGE_TYPES,
   PDF_TYPE,
+  TEXT_TYPE,
 ];
 /** `accept` value for the file inputs, so pickers grey out other formats. */
 export const UPLOAD_ACCEPT = ACCEPTED_UPLOAD_TYPES.join(",");
@@ -199,6 +202,7 @@ export async function preflightUpload(
   if (!getAcceptedUploadTypes().includes(file.type)) return "unsupported_type";
   if (file.size === 0) return "empty_file";
   if (file.type === PDF_TYPE) return pdfProblem(file);
+  if (file.type === TEXT_TYPE) return null;
   return (await imageDecodes(file)) ? null : "corrupt_file";
 }
 

@@ -118,7 +118,7 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 
 | Event | When | Properties |
 |---|---|---|
-| ★ `CHAT_MESSAGE_SENT` | `send()` passed its guards | `chat_session_id`, `is_new_session`, `message_length`, `media_count`, `intent: text\|clarification\|quiz\|flashcards\|source_seed\|followup`, `source: composer\|suggested_prompt\|followup\|slash\|seed\|revision\|action\|auto_demo`, `voice_used`, `has_seed_context`, `is_first_message?` (no chat session existed yet), `regenerate?` ("Regenerate" re-sent the previous user message) |
+| ★ `CHAT_MESSAGE_SENT` | `send()` passed its guards | `chat_session_id`, `is_new_session`, `message_length`, `media_count`, `intent: text\|clarification\|quiz\|flashcards\|source_seed\|followup`, `source: composer\|suggested_prompt\|followup\|slash\|seed\|revision\|action\|auto_demo`, `voice_used`, `has_seed_context`, `is_first_message?` (no chat session existed yet), `regenerate?` ("Regenerate" re-sent the previous user message), `language?` (composer language chip, a label such as `Hinglish`; added 2026-10-16) |
 | `CHAT_SESSION_CREATED` | A chat session row was created | `chat_session_id`, `space_id`, `trigger: first_message\|revision\|space\|note\|flashcard_resume\|bookmark_resume\|quiz_report_flashcards` (also `useRevisionActions`, `SpaceWorkspacePage`, `NoteEditorPage`, `FlashcardViewer`, `BookmarkDetailPage`, `QuizAttemptReport`) |
 | `CHAT_SESSION_CREATE_FAILED` | Lazy create threw | `error_kind` |
 | `CHAT_TOOL_SELECTED` | `tool_selected` SSE frame | `chat_session_id`, `tool`, `agent_total?` (agents planned for the turn) |
@@ -135,7 +135,7 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 | `CHAT_SLASH_COMMAND_SELECTED` | Slash menu pick | `command_id` (`components/chat/ChatComposer.tsx`) |
 | `CHAT_VOICE_STARTED` / `CHAT_VOICE_ENDED` / `CHAT_VOICE_FAILED` | Dictation lifecycle | `lang` / `transcript_length`, `canceled`, `duration_ms` / `code`, `transcript_length?` (dictated characters when it failed) (`ChatComposer.tsx`) |
 | `CHAT_SUGGESTED_PROMPT_CLICKED` | Starter prompt on the empty chat or the welcome home, or a recommendation. The prompt buttons' click event is the fixed `SUGGESTED_PROMPT_CLICK` (never the prompt text) | `kind: empty_state\|recommendation\|first_conversation\|first_conversation_demo` (`first_conversation` = a chip on Aeva's opening message after onboarding; `first_conversation_demo` = the idle demo auto-sent the "explain" chip, not a tap; since 2026-10-16 desktop only, after 15 s idle, and only when the prompts come from a completed profile — never on touch devices), `action?` (`components/chat/WelcomeHome.tsx`, `components/chat/EmptyState.tsx`, `components/chat/FirstConversation.tsx`) |
-| `CHAT_ACTION_CLICKED` | Action bar under a reply | `action: primary_prompt\|flashcards\|copy\|followup\|save_note\|quiz\|regenerate\|make_notes` (`make_notes` = "Save as revision sheet" / "Important questions", with `action_id: revision_sheet\|important_questions`), `action_id?`, `followup_index?` (`components/chat/SuggestedActions.tsx`) |
+| `CHAT_ACTION_CLICKED` | Action bar under a reply | `action: primary_prompt\|teach\|flashcards\|copy\|followup\|save_note\|quiz\|regenerate\|make_notes` (`make_notes` = "Save as revision sheet" / "Important questions", with `action_id: revision_sheet\|important_questions`), `action_id?`, `followup_index?` (`components/chat/SuggestedActions.tsx`) |
 | `CHAT_NOTE_SAVED` / `CHAT_NOTE_SAVE_FAILED` | Save reply as note | `note_id`, `chat_session_id`, `content_length` / `error_kind` |
 | `CHAT_SOURCE_CLICKED` | Web source card, document chip or inline citation | `kind: web\|document`, `media_id?`, `page?`, `position?` (`SourceCards.tsx`, `MarkdownContent.tsx`) |
 | `CHAT_SESSION_OPENED` | Session chosen in sidebar / palette | `chat_session_id`, `source: sidebar\|palette` (`layout/AppLayout.tsx`) |
@@ -148,6 +148,7 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 
 | Event | When | Properties |
 |---|---|---|
+| `MEDIA_SCAN_REQUESTED` | "Combine N photos into one document" pressed in the media panel (added 2026-10-22, `COMBINE_PHOTOS_CLICK` is the raw click). The server OCRs the ticked photos in order into one plain-text document; the usual `MEDIA_PROCESSING_*` events follow for it | `chat_session_id`, `image_count` | `ChatPage.handleCombinePhotos`, `chat/MediaSidebar.tsx` |
 | `MEDIA_UPLOAD_STARTED` | Per file, after the browser checks and compression pass | `upload_id`, `file_extension`, `mime_type`, `size_bytes` (sent), `original_size_bytes` (picked; equal when nothing was saved), `batch_size`, `chat_session_id`, `is_retry` |
 | `MEDIA_UPLOAD_COMPLETED` | Upload HTTP done | `upload_id`, `media_id`, `mime_type`, `size_bytes`, `upload_ms` |
 | `MEDIA_UPLOAD_FAILED` | A picked file could not be uploaded. `stage: preflight` failures are caught in the browser and have no `MEDIA_UPLOAD_STARTED` | `upload_id`, `reason: unsupported_type\|too_large\|empty_file\|corrupt_file\|password_protected\|network\|unauthorized\|server_error\|unknown`, `stage: preflight\|upload`, `http_status` (0 = no response), `retryable`, `error_kind`, `file_extension`, `mime_type`, `size_bytes` |
@@ -164,6 +165,9 @@ After `LOGIN_ABANDONED` or `LOGIN_FAILED` the sign-in issue dialog (`auth/Signin
 | Event | When | Properties | Hook |
 |---|---|---|---|
 | `QUIZ_SETUP_REQUESTED` | Setup UI opened by the assistant, `/quiz`, or "Create quiz" on the Quizzes page | `chat_session_id`, `media_available`, `source: assistant\|slash\|quizzes_page`, `entry?: header\|empty_state` | `ChatPage.tsx`, `quiz/CreateQuizPanel.tsx` |
+| `CHAT_LANGUAGE_SELECTED` | The composer's language chip changed (added 2026-10-16); `null` = back to the profile language. The pick rides every later send as `language` on `CHAT_MESSAGE_SENT` and `QUIZ_GENERATION_REQUESTED`, and as the request's `language` field | `chat_session_id`, `language` | `ChatPage.tsx`, `chat/ChatComposer.tsx` |
+| `CHAT_PASTE_SAVE_OFFERED` | A paste of 700+ characters over 3+ lines, or a bare http(s) link, got a "save as study material" chip above the composer (added 2026-10-16) | `kind: text\|url`, `chars`, `lines` | `chat/ChatComposer.tsx` |
+| `CHAT_PASTE_SAVED` | The chip was accepted: a `.txt` upload (`SAVE_PASTE_AS_MATERIAL_CLICK`) or a server-side link import; the normal `MEDIA_UPLOAD_*` / `MEDIA_PROCESSING_*` events follow | `kind: text\|url`, `chars` | same |
 | `QUIZ_SETUP_DISMISSED` | The quiz setup popover closed without Generate (`via: close`), or the "set up later" card under the composer was dismissed (`via: card`) (added 2026-10-16) | `chat_session_id`, `via: close\|card`, `had_draft` | `ChatPage.tsx` |
 | `QUIZ_GENERATION_REQUESTED` | Setup submitted | `question_count`, `difficulty` (`exam` for exam level), `target_exam?`, `question_types`, `use_media`, `is_exam`, `has_topic`, `has_instructions`, `source: setup\|action\|quizzes_page`, `material?: topic\|files\|note` | `ChatPage.handleGenerateQuiz`, `CreateQuizPanel` |
 | `QUIZ_CREATE_FAILED` | Quizzes-page generation failed | `error_kind`, `material` | `CreateQuizPanel` |

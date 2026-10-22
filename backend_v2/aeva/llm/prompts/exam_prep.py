@@ -45,7 +45,7 @@ Study material uploaded by the student: {MATERIAL_NOTES}
 Researched syllabus and exam pattern (from official sources; trust it over
 general knowledge, but never over the student's own syllabus above):
 {RESEARCH_BRIEF}
-
+{CRAM_NOTE}
 Rules:
 - Produce exactly {TOTAL_DAYS} days, numbered 1..{TOTAL_DAYS} in order, each with a short title and a one-line focus.
 - EVERY day mixes 2-3 subjects (never one subject per day) unless only one subject exists.
@@ -59,7 +59,7 @@ Rules:
 - Respond in the student's response language if one is set in their profile; otherwise English.
 """,
     defaults={"SYSTEM_PROMPT": SYSTEM_PROMPT_BLOCK},
-    optional=("USER_PROFILE",),
+    optional=("USER_PROFILE", "CRAM_NOTE"),
 )
 
 # Structured output of the roadmap call.

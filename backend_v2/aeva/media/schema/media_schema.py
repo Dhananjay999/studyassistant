@@ -36,6 +36,60 @@ class UploadUrlData:
     space_id: str | None = None
 
 
+@dataclass
+class ScanData:
+    """POST /media/scan payload: photos to combine into one document."""
+
+    media_ids: list[str]
+    title: str | None = None
+    session_id: str | None = None
+    space_id: str | None = None
+
+
+class ScanSchema(Schema):
+    """POST /media/scan request."""
+
+    media_ids = fields.List(
+        fields.Str(), required=True, validate=validate.Length(min=2, max=40)
+    )
+    title = fields.Str(
+        load_default=None, allow_none=True, validate=validate.Length(max=80)
+    )
+    session_id = fields.Str(load_default=None, allow_none=True)
+    space_id = fields.Str(load_default=None, allow_none=True)
+
+    @post_load
+    def make_data(self, data: dict, **_kwargs: object) -> ScanData:
+        """Convert to dataclass."""
+        return ScanData(**data)
+
+
+@dataclass
+class ImportUrlData:
+    """POST /media/import-url payload."""
+
+    url: str
+    session_id: str | None = None
+    space_id: str | None = None
+
+
+class ImportUrlSchema(Schema):
+    """POST /media/import-url request: a public PDF or web page to save."""
+
+    url = fields.Url(
+        required=True,
+        schemes={"http", "https"},
+        validate=validate.Length(max=2048),
+    )
+    session_id = fields.Str(load_default=None, allow_none=True)
+    space_id = fields.Str(load_default=None, allow_none=True)
+
+    @post_load
+    def make_data(self, data: dict, **_kwargs: object) -> ImportUrlData:
+        """Convert to dataclass."""
+        return ImportUrlData(**data)
+
+
 class UploadUrlSchema(Schema):
     """POST /media/upload-url request."""
 

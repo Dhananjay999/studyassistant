@@ -90,6 +90,8 @@ export const ENDPOINTS = {
   MEDIA_PROCESS: (id: string) => `/media/${id}/process`,
   MEDIA_ATTACH: "/media/attach",
   MEDIA_UPLOAD_URL: "/media/upload-url",
+  MEDIA_IMPORT_URL: "/media/import-url",
+  MEDIA_SCAN: "/media/scan",
   MEDIA_COMPLETE: "/media/complete",
   ASSISTANT_STREAM: "/assistant/stream",
   QUIZZES: "/quiz/",
@@ -551,6 +553,31 @@ export async function uploadFileWithProgress(
 }
 
 /** Upload several files (no progress); each goes straight to storage. */
+/** Combine a batch of the student's photos into one OCR-ed, searchable
+ *  document. The returned record is processed like any upload. */
+export function createMediaScan(
+  mediaIds: string[],
+  sessionId?: string,
+  title?: string,
+): Promise<MediaItem> {
+  return postForUpload<MediaItem>(ENDPOINTS.MEDIA_SCAN, {
+    media_ids: mediaIds,
+    session_id: sessionId ?? null,
+    title: title ?? null,
+  });
+}
+
+/** Save a public PDF or web page as study material (server-side fetch). */
+export function importMediaUrl(
+  url: string,
+  sessionId?: string,
+): Promise<MediaItem> {
+  return postForUpload<MediaItem>(ENDPOINTS.MEDIA_IMPORT_URL, {
+    url,
+    session_id: sessionId ?? null,
+  });
+}
+
 export function uploadMedia(
   files: File[],
   sessionId?: string,

@@ -15,12 +15,16 @@ from aeva.common.schema import UserData, success_response
 from aeva.media.compression import (
     ALLOWED_IMAGE_TYPES,
     ALLOWED_PDF_TYPE,
+    ALLOWED_TEXT_TYPE,
     compress_media,
 )
+from aeva.media import url_import
 from aeva.media.schema.media_schema import (
     AttachMediaData,
     CompleteUploadData,
     UploadUrlData,
+    ImportUrlData,
+    ScanData,
 )
 from aeva.supabase.supabase_service import SupabaseService
 
@@ -29,7 +33,7 @@ logger = logging.getLogger(__name__)
 # Storage-path columns whose files must be removed alongside the original.
 _PARSED_PATH_KEYS = ("parsed_json_path", "parsed_md_path", "parsed_text_path")
 
-ALLOWED_TYPES = ALLOWED_IMAGE_TYPES | {ALLOWED_PDF_TYPE}
+ALLOWED_TYPES = ALLOWED_IMAGE_TYPES | {ALLOWED_PDF_TYPE, ALLOWED_TEXT_TYPE}
 
 # Extension used in the storage path when the file name has none we trust.
 _EXT_FOR_MIME = {
@@ -38,6 +42,7 @@ _EXT_FOR_MIME = {
     "image/webp": "webp",
     "image/gif": "gif",
     ALLOWED_PDF_TYPE: "pdf",
+    ALLOWED_TEXT_TYPE: "txt",
 }
 _EXT_RE = re.compile(r"^[a-z0-9]{1,8}$")
 # Shape of every path this server mints: <user id>/<32 hex>.<ext>.
@@ -105,6 +110,100 @@ def _object_mime(info: dict[str, Any]) -> str:
 
 class MediaRepository:
     """Media upload and management."""
+
+    @staticmethod
+    def create_scan(current_user: UserData, data: ScanData) -> dict[str, Any]:
+        """Create the document a batch of photos will be OCR-ed into.
+
+        The row is a plain-text upload whose content is written by the
+        processing stream (``MediaProcessor._run_scan``), which reads the
+        photos listed in ``scan_source_ids`` in the order given. Only ready
+        images the student owns qualify.
+        """
+        supabase = SupabaseService()
+        owned = {
+            str(m["id"]): m for m in supabase.list_media(current_user.id)
+        }
+        ordered: list[dict[str, Any]] = []
+        for media_id in data.media_ids:
+            item = owned.get(str(media_id))
+            if not item or not str(item.get("mime_type", "")).startswith(
+                "image/"
+            ):
+                raise CustomError(
+                    ERROR_CODES["VALIDATION_ERROR"],
+                    details="Only your own photos can be combined.",
+                )
+            ordered.append(item)
+        resolved_space = supabase.resolve_space(
+            current_user.id, data.space_id, data.session_id
+        )
+        title = (data.title or "").strip() or (
+            f"Scanned notes ({len(ordered)} pages)"
+        )
+        file_name = f"{title[:80]}.txt"
+        storage_path = _storage_path(
+            current_user.id, file_name, ALLOWED_TEXT_TYPE
+        )
+        # A placeholder object: the OCR text replaces it during processing.
+        supabase.upload_file(storage_path, b"\n", ALLOWED_TEXT_TYPE)
+        record = supabase.create_media_record(
+            user_id=current_user.id,
+            file_name=file_name,
+            mime_type=ALLOWED_TEXT_TYPE,
+            storage_path=storage_path,
+            size_bytes=1,
+            session_id=data.session_id,
+            space_id=resolved_space,
+            scan_source_ids=[str(m["id"]) for m in ordered],
+        )
+        record["signed_url"] = supabase.get_signed_url(storage_path)
+        logger.info(
+            "Scan created | media=%s | %d photos", record["id"], len(ordered)
+        )
+        return success_response("Scan created", record)
+
+    @staticmethod
+    def import_url(
+        current_user: UserData, data: ImportUrlData
+    ) -> dict[str, Any]:
+        """Fetch a public PDF or web page and store it as study material.
+
+        Students paste syllabus links, NCERT pages and Drive-exported PDFs
+        into chat, where the planner could only refuse them. The fetch
+        itself (size cap, private-network guard, HTML to text) lives in
+        ``aeva.media.url_import``; the record is created exactly like an
+        upload, so the normal processing stream indexes it.
+        """
+        fetched = url_import.fetch(data.url)
+        supabase = SupabaseService()
+        resolved_space = supabase.resolve_space(
+            current_user.id, data.space_id, data.session_id
+        )
+        try:
+            compressed, final_mime = compress_media(
+                fetched.content, fetched.mime_type
+            )
+        except ValueError as exc:
+            raise CustomError(
+                ERROR_CODES["VALIDATION_ERROR"], details=str(exc)
+            ) from exc
+        storage_path = _storage_path(
+            current_user.id, fetched.file_name, final_mime
+        )
+        supabase.upload_file(storage_path, compressed, final_mime)
+        record = supabase.create_media_record(
+            user_id=current_user.id,
+            file_name=fetched.file_name[:255],
+            mime_type=final_mime,
+            storage_path=storage_path,
+            size_bytes=len(compressed),
+            session_id=data.session_id,
+            space_id=resolved_space,
+        )
+        record["signed_url"] = supabase.get_signed_url(storage_path)
+        logger.info("Imported link as media | %s", record["id"])
+        return success_response("Link imported", record)
 
     @staticmethod
     def upload_media(

@@ -15,6 +15,10 @@ from aeva.media.schema.media_schema import (
     AttachMediaSchema,
     CompleteUploadData,
     CompleteUploadSchema,
+    ImportUrlData,
+    ImportUrlSchema,
+    ScanData,
+    ScanSchema,
     UploadUrlData,
     UploadUrlSchema,
 )
@@ -80,6 +84,36 @@ class MediaComplete(MethodView):
     ) -> dict[str, Any]:
         """Check the stored object and create its media record."""
         return MediaRepository.complete_upload(current_user, request_data)
+
+
+class MediaScan(MethodView):
+    """Combine a batch of photos into one searchable document."""
+
+    @staticmethod
+    @blueprint.arguments(ScanSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def post(
+        current_user: UserData,
+        request_data: ScanData,
+    ) -> dict[str, Any]:
+        """Create the scan record; the processing stream OCRs the photos."""
+        return MediaRepository.create_scan(current_user, request_data)
+
+
+class MediaImportUrl(MethodView):
+    """Save a public PDF or web page as study material."""
+
+    @staticmethod
+    @blueprint.arguments(ImportUrlSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def post(
+        current_user: UserData,
+        request_data: ImportUrlData,
+    ) -> dict[str, Any]:
+        """Fetch the link and create its media record (then process it)."""
+        return MediaRepository.import_url(current_user, request_data)
 
 
 class MediaAttach(MethodView):
@@ -166,6 +200,10 @@ blueprint.add_url_rule(
 blueprint.add_url_rule(
     "/attach", view_func=MediaAttach, endpoint="media_attach"
 )
+blueprint.add_url_rule(
+    "/import-url", view_func=MediaImportUrl, endpoint="media_import_url"
+)
+blueprint.add_url_rule("/scan", view_func=MediaScan, endpoint="media_scan")
 blueprint.add_url_rule(
     "/<media_id>",
     view_func=MediaDetail,

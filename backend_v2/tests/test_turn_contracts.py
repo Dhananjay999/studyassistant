@@ -25,6 +25,7 @@ from aeva.mcp.registry import ToolRegistry
 from aeva.orchestration.assistant_orchestrator import (
     _STALE_MEDIA_NOTE,
     _text_practice_intent,
+    _written_paper_intent,
     _STALE_MEDIA_NOTE_SOME,
     AssistantOrchestrator,
     _is_image_file,
@@ -559,13 +560,30 @@ class TestTextPracticeNotQuiz:
             "GIMME 100 practice questions in text, no quiz to be made",
             "pls do not make quiz here",
             "Ask me a few questions not a quiz which are imp",
-            "give me 4 and 8 marks question from unit 2",
-            "Make a question paper of 60m Q1) Case study Q2) a,b,c,d",
             "important questions for the board exam on light",
         ],
     )
     def test_detects_text_practice(self, message):
         assert _text_practice_intent(message)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "give me 4 and 8 marks question from unit 2",
+            "Make a question paper of 60m Q1) Case study Q2) a,b,c,d",
+            "long answer questions on photosynthesis",
+            "a written test on chapter 3",
+        ],
+    )
+    def test_detects_written_paper(self, message):
+        assert _written_paper_intent(message)
+        assert not _text_practice_intent(message)
+
+    def test_refusal_beats_paper_shape(self):
+        # "no quiz" wins even when marks are mentioned: text, not a paper.
+        msg = "give me 5 marks questions in text, no quiz"
+        assert _text_practice_intent(msg)
+        assert not _written_paper_intent(msg)
 
     @pytest.mark.parametrize(
         "message",
@@ -590,15 +608,21 @@ class TestTextPracticeNotQuiz:
         assert tools["general"].calls
         assert not tools["quiz_generator"].calls
 
-    def test_marks_question_with_files_runs_media_llm(self, app):
+    def test_marks_question_becomes_a_written_paper_quiz(self, app):
+        # R12 phase 2: a marks-weighted ask is a quiz of written answers
+        # under the "Written exam paper" preset, run without the popover.
         sb = _Supabase(media=PDFS)
         orch, tools = _orch(sb, _plan("quiz_generator"))
         result = orch.run(
             _ctx("give me 4 and 8 marks questions", media_ids=["m1"])
         )
         assert result.status == RunStatus.COMPLETED
-        assert result.tool_used == "media_llm"
-        assert not tools["quiz_generator"].calls
+        assert result.tool_used == "quiz_generator"
+        params = tools["quiz_generator"].calls[0]
+        assert params["question_types"] == ["short_answer"]
+        assert params["exam_config"] == {"pattern": "board_paper"}
+        assert "2-mark" in params["additional_instructions"]
+        assert not tools["media_llm"].calls
 
     def test_plain_quiz_ask_still_opens_the_popover(self, app):
         sb = _Supabase()
@@ -646,4 +670,35 @@ class TestQuizSetupTopic:
         assert (
             orch._quiz_topic("Photosynthesis", _ctx("quiz on photosynthesis"))  # noqa: SLF001
             == "Photosynthesis"
+        )
+
+
+class TestTurnLanguage:
+    """R21 (2026-10-16): the composer's language chip overrides the profile
+    language for this turn, for the answer and anything generated from it."""
+
+    def test_language_reaches_the_tool_before_the_profile(self, app):
+        sb = _Supabase()
+        orch, tools = _orch(sb, _plan("general"))
+        orch.run(_ctx("Explain osmosis", language="Hinglish"))
+        ctx = tools["general"].calls[0][0]
+        assert ctx.personalization.startswith(
+            "Language for THIS message: Hinglish."
+        )
+        assert "quiz, flashcards or notes" in ctx.personalization
+
+    def test_no_language_leaves_the_block_unchanged(self, app):
+        sb = _Supabase()
+        orch, tools = _orch(sb, _plan("general"))
+        orch.run(_ctx("Explain osmosis"))
+        ctx = tools["general"].calls[0][0]
+        assert "Language for THIS message" not in ctx.personalization
+
+    def test_odd_characters_are_stripped(self, app):
+        sb = _Supabase()
+        orch, tools = _orch(sb, _plan("general"))
+        orch.run(_ctx("Explain osmosis", language="Hindi; DROP TABLE x"))
+        ctx = tools["general"].calls[0][0]
+        assert ctx.personalization.startswith(
+            "Language for THIS message: Hindi DROP TABLE x."
         )

@@ -118,7 +118,7 @@ def test_upload_url_uses_mime_for_an_untrusted_extension(app):
 @pytest.mark.parametrize(
     ("mime", "size", "detail"),
     [
-        ("text/plain", 10, "Unsupported file type"),
+        ("application/zip", 10, "Unsupported file type"),
         ("application/pdf", 0, "File is empty"),
         ("application/pdf", 25 * MB + 1, "exceeds max size of 25MB"),
     ],

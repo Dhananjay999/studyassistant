@@ -446,8 +446,12 @@ export function useBookmarks() {
   return useQuery({ queryKey: qk.bookmarks, queryFn: api.listBookmarks });
 }
 
-export function useCollections() {
-  return useQuery({ queryKey: qk.collections, queryFn: api.listCollections });
+export function useCollections(enabled = true) {
+  return useQuery({
+    queryKey: qk.collections,
+    queryFn: api.listCollections,
+    enabled,
+  });
 }
 
 export function useCreateBookmark() {

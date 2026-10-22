@@ -11,6 +11,7 @@ import {
   Upload,
   X,
   AlertTriangle,
+  ScanText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -55,6 +56,7 @@ export function MediaSidebar({
   onDismissUpload,
   onOpenQuiz,
   onOpenFlashcards,
+  onCombinePhotos,
   section = "both",
 }: {
   items: MediaItem[];
@@ -77,12 +79,25 @@ export function MediaSidebar({
   onDismissUpload: (id: string) => void;
   onOpenQuiz: (quizId: string) => void;
   onOpenFlashcards: (setId: string) => void;
+  /** Combine the selected photos (in list order) into one searchable
+   *  document. Shown when two or more ready images are selected. */
+  onCombinePhotos?: (mediaIds: string[]) => void;
   /** Which panel(s) to render. Desktop uses "both"; mobile splits them into two
    *  separate bottom sheets ("media" and "resources"). */
   section?: "media" | "resources" | "both";
 }) {
   const viewer = useDocumentViewer();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  // Photos the student has ticked, in list order: a batch of notebook pages
+  // reads as one book, so it can be OCR-ed into one searchable document.
+  const selectedPhotoIds = items
+    .filter(
+      (m) =>
+        selected.has(m.id) &&
+        m.mime_type.startsWith("image/") &&
+        isMediaReady(m),
+    )
+    .map((m) => m.id);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
@@ -168,6 +183,23 @@ export function MediaSidebar({
               </motion.div>
             ))}
           </AnimatePresence>
+
+          {onCombinePhotos && selectedPhotoIds.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => onCombinePhotos(selectedPhotoIds)}
+              data-analytics-name="Combine photos"
+              className={cn(
+                "flex min-h-11 w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold",
+                "border-brand-1/40 bg-brand-1/10 text-brand-1 transition-colors hover:bg-brand-1/20 active:scale-[0.99]",
+              )}
+            >
+              <ScanText className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1">
+                Combine {selectedPhotoIds.length} photos into one document
+              </span>
+            </button>
+          )}
 
           {mediaLoading && items.length === 0 && uploads.length === 0 && (
             <>

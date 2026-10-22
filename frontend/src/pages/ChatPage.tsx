@@ -92,10 +92,13 @@ import {
   getQuiz,
   submitMessageFeedback,
   uploadFileWithProgress,
+  importMediaUrl,
+  createMediaScan,
 } from "@/lib/api";
 import { normalizeAgents } from "@/lib/agents";
 import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
 import { detectExamIntent } from "@/lib/examIntent";
+import { readTurnLanguage, writeTurnLanguage } from "@/lib/languages";
 import { isTeamTurn, mapAssistantContent } from "@/lib/messageMeta";
 import { mapChatArtifacts, NOTES_TOOL } from "@/lib/chatArtifacts";
 import {
@@ -247,6 +250,21 @@ export default function ChatPage() {
   // The setup popup is dismissible without losing the pending request: closing
   // it keeps `pendingQuiz` + the typed draft and surfaces a resume banner.
   const [quizSetupOpen, setQuizSetupOpen] = useState(false);
+  // Composer language chip: applies to every send from this tab until
+  // changed (profile language when null). Mirrored in a ref for `send`.
+  const [turnLanguage, setTurnLanguageState] = useState<string | null>(() =>
+    readTurnLanguage(),
+  );
+  const turnLanguageRef = useRef<string | null>(turnLanguage);
+  const setTurnLanguage = (next: string | null) => {
+    turnLanguageRef.current = next;
+    setTurnLanguageState(next);
+    writeTurnLanguage(next);
+    analytics.track(AnalyticsEvent.CHAT_LANGUAGE_SELECTED, {
+      chat_session_id: activeIdRef.current,
+      language: next,
+    });
+  };
   // Set by handleGenerateQuiz so the popover's close is not logged as a
   // dismiss when it closes because Generate was pressed.
   const quizGeneratedRef = useRef(false);
@@ -570,6 +588,7 @@ export default function ChatPage() {
         has_seed_context: !!seedContextRef.current,
         is_first_message: !activeId && sessionCountRef.current === 0,
         regenerate: !!opts?.regenerate,
+        language: turnLanguageRef.current ?? undefined,
       });
       // The first conversation has started (by tap, typing or the demo):
       // a later "New chat" must not arm the idle demo again.
@@ -755,6 +774,7 @@ export default function ChatPage() {
           flashcard_options: opts?.flashcardOptions,
           source_content: opts?.sourceContent,
           source: opts?.source ?? "composer",
+          language: turnLanguageRef.current ?? undefined,
         },
         {
           onChunk: (delta) => {
@@ -1175,6 +1195,7 @@ export default function ChatPage() {
       has_topic: !!resolved.topic,
       has_instructions: !!resolved.additional_instructions,
       source: sourceContent ? "action" : "setup",
+      language: turnLanguageRef.current ?? undefined,
     });
     // Show a short action label instead of echoing a near-duplicate of the
     // user's own request as a second bubble. The canonical text still goes to
@@ -1541,6 +1562,85 @@ export default function ChatPage() {
     );
   };
 
+  // "Add this link as study material": the server fetches a public PDF or
+  // page, stores it like an upload, and the normal processing stream runs.
+  const handleImportUrl = async (url: string) => {
+    const rowId = uid();
+    const name = url.replace(/^https?:\/\//i, "").slice(0, 60);
+    uploadWatchRef.current = true;
+    if (!window.matchMedia("(min-width: 1280px)").matches) setMediaOpen(true);
+    setUploads((prev) => [
+      { id: rowId, name, progress: 0, status: "uploading" },
+      ...prev,
+    ]);
+    let item: MediaItem;
+    try {
+      item = await importMediaUrl(url, activeId ?? undefined);
+    } catch (e) {
+      const err = toUploadError(e);
+      failUpload(
+        new File([], `${name}.txt`, { type: "text/plain" }),
+        rowId,
+        err.reason,
+        "upload",
+        err.status,
+      );
+      return;
+    }
+    upsertMediaCache({ ...item, processing_status: "pending" });
+    patchUpload(rowId, {
+      mediaId: item.id,
+      status: "processing",
+      stage: "pending",
+      progress: PROCESSING_STAGES.pending.pct,
+    });
+    await runProcessing(rowId, item.id);
+  };
+
+  // Media panel "Combine N photos into one document": the server creates a
+  // text document linked to the photos and the processing stream OCRs them.
+  const handleCombinePhotos = async (mediaIds: string[]) => {
+    analytics.track(AnalyticsEvent.MEDIA_SCAN_REQUESTED, {
+      chat_session_id: activeId,
+      image_count: mediaIds.length,
+    });
+    const rowId = uid();
+    const name = `Scanned notes (${mediaIds.length} pages)`;
+    uploadWatchRef.current = true;
+    setUploads((prev) => [
+      { id: rowId, name, progress: 0, status: "uploading" },
+      ...prev,
+    ]);
+    let item: MediaItem;
+    try {
+      item = await createMediaScan(mediaIds, activeId ?? undefined);
+    } catch (e) {
+      const err = toUploadError(e);
+      failUpload(
+        new File([], `${name}.txt`, { type: "text/plain" }),
+        rowId,
+        err.reason,
+        "upload",
+        err.status,
+      );
+      return;
+    }
+    upsertMediaCache({ ...item, processing_status: "pending" });
+    patchUpload(rowId, {
+      mediaId: item.id,
+      status: "processing",
+      stage: "pending",
+      progress: PROCESSING_STAGES.pending.pct,
+    });
+    // The photos stay in the library; the document is what gets searched.
+    setSelected((prev) => {
+      const next = new Set(prev);
+      mediaIds.forEach((id) => next.delete(id));
+      return next;
+    });
+    await runProcessing(rowId, item.id);
+  };
+
   const handleRetryUpload = (rowId: string) => {
     const row = uploads.find((u) => u.id === rowId);
     if (!row) return;
@@ -1811,6 +1911,7 @@ export default function ChatPage() {
       onUpload={handleUpload}
       onRetryUpload={handleRetryUpload}
       onReprocess={handleReprocess}
+      onCombinePhotos={handleCombinePhotos}
       onDismissUpload={handleDismissUpload}
       onOpenQuiz={(id) => {
         setToolsOpen(false);
@@ -2087,6 +2188,9 @@ export default function ChatPage() {
                   : send(t, { source: "composer", voiceUsed: meta?.voiceUsed })
               }
               onUpload={handleUpload}
+              onImportUrl={handleImportUrl}
+              language={turnLanguage}
+              onLanguageChange={setTurnLanguage}
               onQuizCommand={openQuizSetup}
               disabled={streaming}
               locked={!!pendingClar}

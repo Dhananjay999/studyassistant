@@ -483,12 +483,16 @@ class SupabaseService:
         session_id: str | None = None,
         space_id: str | None = None,
         processing_status: str | None = None,
+        scan_source_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Insert media metadata row.
 
         ``processing_status`` overrides the DB default ('pending') for rows
         that never enter the parse pipeline — Aeva-generated images are born
         'ready', otherwise they'd show a processing spinner forever.
+        ``scan_source_ids`` marks a document OCR-ed from a photo batch
+        (migration 039); on a database without that column the row is still
+        created, without the link, and a warning is logged.
         """
         row: dict[str, Any] = {
             "user_id": user_id,
@@ -502,7 +506,18 @@ class SupabaseService:
             row["space_id"] = space_id
         if processing_status:
             row["processing_status"] = processing_status
-        result = self.client.table("media").insert(row).execute()
+        if scan_source_ids:
+            row["scan_source_ids"] = list(scan_source_ids)
+        try:
+            result = self.client.table("media").insert(row).execute()
+        except Exception as exc:
+            if "scan_source_ids" not in row or "scan_source_ids" not in str(
+                exc
+            ):
+                raise
+            logger.warning("media.scan_source_ids missing (migration 039)")
+            row.pop("scan_source_ids")
+            result = self.client.table("media").insert(row).execute()
         return result.data[0]
 
     # Columns the media list actually ships to the client. Never "*": the row

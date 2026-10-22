@@ -858,6 +858,9 @@ export interface AssistantRequest {
   /** Where the message came from (same values as the `CHAT_MESSAGE_SENT`
    * `source` prop); stored on the user message's metadata. */
   source?: string;
+  /** Language picked in the composer chip for this turn (a label such as
+   * "Hinglish"); overrides the profile language for the reply. */
+  language?: string;
 }
 
 export interface APIEnvelope<T> {

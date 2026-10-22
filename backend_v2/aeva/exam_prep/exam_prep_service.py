@@ -45,6 +45,10 @@ logger = logging.getLogger(__name__)
 FLAG_KEY = "exam_prep"
 SESSION_KIND = "exam_prep"
 MAX_PLAN_DAYS = 60
+# An exam this close gets a cram plan: no syllabus research call (it costs a
+# minute the student does not have) and a roadmap that only covers what can
+# be finished, ending in a mock test. 17 of 52 plans were one-day crams.
+CRAM_DAYS = 2
 MAX_TOPICS_PER_DAY = 8
 MIN_TOPIC_MINUTES = 10
 MAX_TOPIC_MINUTES = 180
@@ -133,6 +137,24 @@ def _as_date(value: Any) -> date:
 def _is_unique_violation(exc: BaseException) -> bool:
     """Tell a PostgREST unique_violation apart (duck-typed, no import)."""
     return str(getattr(exc, "code", "") or "") == _UNIQUE_VIOLATION
+
+
+def is_cram(days_remaining: int) -> bool:
+    """Whether the exam is close enough for a cram plan (see ``CRAM_DAYS``)."""
+    return days_remaining <= CRAM_DAYS
+
+
+def cram_note(days_remaining: int, daily_minutes: int) -> str:
+    """Roadmap instruction for an exam today, tomorrow or the day after."""
+    when = {0: "TODAY", 1: "TOMORROW"}.get(days_remaining, "in 2 days")
+    return (
+        f"\nCRAM MODE: the exam is {when}. Plan only what can realistically be "
+        f"finished in {daily_minutes} minutes a day. Day 1 covers the "
+        "highest-weightage units and the most-asked question types first; "
+        "skip optional and background topics entirely. The final day is a "
+        "'Mock test: ...' topic plus 'Revise: ...' topics for the weakest "
+        "areas, with no new topics. Keep titles short and actionable.\n"
+    )
 
 
 def topic_label(topic: dict[str, Any]) -> str:
@@ -659,8 +681,12 @@ class ExamPrepService:
         days_remaining = max(0, (data.exam_date - today).days)
         total_days = min(max(days_remaining, 1), MAX_PLAN_DAYS)
         material = self.repo.owned_media(user_id, data.material_media_ids)
+        cram = is_cram(days_remaining)
         # Exact syllabus / pattern for this exam, class and board (web).
-        brief, sources = self.research_syllabus(data, days_remaining)
+        # Skipped for a cram: the student needs the plan now, not in a minute.
+        brief, sources = (
+            ("", []) if cram else self.research_syllabus(data, days_remaining)
+        )
         rendered = prompts.PromptBuilder.build(
             prompts.EXAM_PLAN_TEMPLATE,
             EXAM_NAME=data.exam_name,
@@ -678,6 +704,9 @@ class ExamPrepService:
             SYLLABUS=_text(data.syllabus_text) or "(none provided)",
             MATERIAL_NOTES=_material_notes(material),
             RESEARCH_BRIEF=brief or "(no research available)",
+            CRAM_NOTE=cram_note(days_remaining, data.daily_minutes)
+            if cram
+            else "",
             USER_PROFILE=prompts.user_profile_segment(
                 self._personalization(user_id)
             ),
@@ -715,6 +744,7 @@ class ExamPrepService:
                 "model": self.llm.model,
                 "generated_at": _now_iso(),
                 "days_remaining_at_setup": days_remaining,
+                "cram": cram,
                 "exam_kind": data.exam_kind,
                 "board": _text(data.board),
                 "exam_details": _text(data.exam_details),

@@ -16,6 +16,8 @@ ALLOWED_IMAGE_TYPES = {
     "image/gif",
 }
 ALLOWED_PDF_TYPE = "application/pdf"
+# Pasted notes and imported web pages are stored as plain text.
+ALLOWED_TEXT_TYPE = "text/plain"
 MAX_IMAGE_DIMENSION = 2048
 JPEG_QUALITY = 85
 WEBP_QUALITY = 80
@@ -81,6 +83,8 @@ def compress_media(
         return compress_image(file_bytes, mime_type)
     if mime_type == ALLOWED_PDF_TYPE:
         return compress_pdf(file_bytes), mime_type
+    if mime_type == ALLOWED_TEXT_TYPE:
+        return file_bytes, mime_type
 
     msg = f"Unsupported media type: {mime_type}"
     raise ValueError(msg)

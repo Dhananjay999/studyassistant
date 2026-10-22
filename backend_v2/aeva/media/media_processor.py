@@ -34,6 +34,7 @@ from aeva.media.chunking import (
     chunk_parsed_document,
 )
 from aeva.media.llamaparse_service import (
+    ParsedPage,
     STATUS_COMPLETED,
     TERMINAL_STATUSES,
     LlamaParseService,
@@ -56,6 +57,31 @@ _OCR_HINTS = ("Reading page images…", "Recognising text on each page…")
 
 Event = dict[str, Any]
 
+
+# A pasted text has no real pages. Cut it into pseudo-pages of about this
+# many characters, at paragraph breaks, so citations and the viewer have
+# something to point at.
+TEXT_PAGE_CHARS = 2500
+
+
+def split_text_pages(text: str, max_chars: int = TEXT_PAGE_CHARS) -> list[str]:
+    """Split plain text into pseudo-pages at paragraph boundaries."""
+    paragraphs = text.split("\n\n")
+    pages: list[str] = []
+    current = ""
+    for para in paragraphs:
+        candidate = f"{current}\n\n{para}" if current else para
+        if current and len(candidate) > max_chars:
+            pages.append(current)
+            current = para
+        else:
+            current = candidate
+        while len(current) > max_chars * 2:
+            pages.append(current[:max_chars])
+            current = current[max_chars:]
+    if current.strip():
+        pages.append(current)
+    return pages or [text]
 
 class MediaProcessingError(Exception):
     """A processing stage failed; carries a user-facing message.
@@ -181,7 +207,11 @@ class MediaProcessor:
             return
 
         try:
-            yield from self._run(user_id, record)
+            sources = [str(x) for x in (record.get("scan_source_ids") or [])]
+            if sources:
+                yield from self._run_scan(user_id, record, sources)
+            else:
+                yield from self._run(user_id, record)
         except MediaProcessingError as exc:
             logger.exception("Media processing failed for %s", media_id)
             sentry.capture_exception(exc)
@@ -260,6 +290,19 @@ class MediaProcessor:
         """Happy-path stages; exceptions bubble to ``process`` for cleanup."""
         media_id = record["id"]
 
+        # Pasted notes and imported web pages are already text: no parser,
+        # straight to chunking (and no LlamaParse cost).
+        if str(record.get("mime_type", "")) == "text/plain":
+            yield self._event("extracting", 30, "Reading your text…")
+            doc = self._text_document(record)
+            if not doc.text.strip():
+                yield from self._mark_unindexed(
+                    user_id, record, "The text was empty."
+                )
+                return
+            yield from self._finish_document(user_id, record, doc)
+            return
+
         if not self.llamaparse.enabled:
             # No parser configured: keep the file usable via attachments
             # (the pre-RAG behaviour) rather than failing the upload.
@@ -296,6 +339,134 @@ class MediaProcessor:
                 job_id,
                 score_document(doc).summary(),
             )
+        yield from self._finish_document(user_id, record, doc)
+
+    def _run_scan(
+        self, user_id: str, record: dict[str, Any], sources: list[str]
+    ) -> Generator[Event, None, None]:
+        """OCR a batch of the student's photos into one indexed document.
+
+        Each photo becomes one page, in the order the student gave; the text
+        replaces the record's placeholder object so the file viewer and
+        re-indexing read the same content.
+        """
+        media_id = record["id"]
+        if not self.llamaparse.enabled:
+            yield from self._mark_unindexed(
+                user_id,
+                record,
+                "Document parsing is not configured on this server.",
+            )
+            return
+        pages: list[ParsedPage] = []
+        total = len(sources)
+        for index, source_id in enumerate(sources, start=1):
+            source = self.supabase.get_media(source_id, user_id)
+            if not source:
+                logger.warning(
+                    "Scan %s: photo %s missing, skipped", media_id, source_id
+                )
+                continue
+            pct = 8 + int(52 * (index - 1) / max(total, 1))
+            yield self._event(
+                "parsing", pct, f"Reading photo {index} of {total}…"
+            )
+            image = self.supabase.download_file(source["storage_path"])
+            doc = yield from self._ocr_photo(
+                image, source["file_name"], source["mime_type"], index, total
+            )
+            text = (doc.text or doc.markdown or "").strip()
+            pages.append(
+                ParsedPage(
+                    page_number=len(pages) + 1,
+                    text=text,
+                    markdown=(doc.markdown or text).strip(),
+                    items=[],
+                )
+            )
+        if not any(p.text for p in pages):
+            yield from self._mark_unindexed(
+                user_id, record, "No readable text was found in the photos."
+            )
+            return
+        full = "\n\n".join(
+            f"## Page {p.page_number}\n\n{p.text}" for p in pages
+        )
+        encoded = full.encode("utf-8")
+        self.supabase.upload_file(record["storage_path"], encoded, "text/plain")
+        self.supabase.update_media_processing(
+            media_id, user_id, size_bytes=len(encoded)
+        )
+        doc = ParsedDocument(
+            pages=pages,
+            markdown=full,
+            text=full,
+            page_count=len(pages),
+            raw={
+                "source": "photo_scan",
+                "sources": sources,
+                "pages": [
+                    {"page": p.page_number, "text": p.text, "md": p.markdown}
+                    for p in pages
+                ],
+            },
+        )
+        yield from self._finish_document(user_id, record, doc)
+
+    def _ocr_photo(
+        self,
+        image: bytes,
+        file_name: str,
+        mime_type: str,
+        index: int,
+        total: int,
+    ) -> Generator[Event, None, ParsedDocument]:
+        """OCR one photo at the OCR tier and return its parsed result."""
+        job_id = self.llamaparse.submit(
+            image, file_name, mime_type, tier=self.llamaparse.ocr_tier
+        )
+        waited = 0
+        while waited < _MAX_POLL_SECONDS:
+            status = self.llamaparse.poll(job_id)
+            if status == STATUS_COMPLETED:
+                return self.llamaparse.fetch_result(job_id)
+            if status in TERMINAL_STATUSES:
+                msg = f"Could not read photo {index} of {total}."
+                raise MediaProcessingError(msg)
+            ticks = waited // _POLL_INTERVAL_SECONDS
+            pct = 8 + int(52 * (index - 1) / max(total, 1)) + min(ticks, 10)
+            yield self._event(
+                "parsing", pct, _OCR_HINTS[ticks % len(_OCR_HINTS)]
+            )
+            time.sleep(_POLL_INTERVAL_SECONDS)
+            waited += _POLL_INTERVAL_SECONDS
+        msg = "Reading the photos is taking longer than expected; please retry."
+        raise MediaProcessingError(msg, recoverable=True)
+
+    def _text_document(self, record: dict[str, Any]) -> ParsedDocument:
+        """Build a parsed document from a plain-text upload."""
+        raw = self.supabase.download_file(record["storage_path"])
+        text = raw.decode("utf-8", errors="replace").replace("\r\n", "\n")
+        pages = [
+            ParsedPage(page_number=i, text=part, markdown=part, items=[])
+            for i, part in enumerate(split_text_pages(text), start=1)
+        ]
+        return ParsedDocument(
+            pages=pages,
+            markdown=text,
+            text=text,
+            page_count=len(pages),
+            raw={"source": "text_upload", "pages": [
+                {"page": p.page_number, "text": p.text, "md": p.markdown}
+                for p in pages
+            ]},
+        )
+
+    def _finish_document(
+        self, user_id: str, record: dict[str, Any], doc: ParsedDocument
+    ) -> Generator[Event, None, None]:
+        """Persist, chunk, embed and index a parsed document."""
+        media_id = record["id"]
         self._persist_artifacts(user_id, record, doc)
 
         yield self._event("chunking", 65, "Creating semantic chunks…")

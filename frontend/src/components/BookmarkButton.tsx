@@ -40,11 +40,6 @@ export function BookmarkButton({
   className?: string;
 }) {
   const { data: bookmarks = [] } = useBookmarks();
-  const { data: collections = [] } = useCollections();
-  const create = useCreateBookmark();
-  const remove = useDeleteBookmark();
-  const createCollection = useCreateCollection();
-
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newFolder, setNewFolder] = useState("");
@@ -54,6 +49,13 @@ export function BookmarkButton({
     (b) => b.item_type === item.item_type && b.item_ref === ref,
   );
   const saved = Boolean(existing);
+  // Collections (and the server-side "Favorites" row they create) are only
+  // needed once the menu opens or a saved folder name must be shown; this
+  // button mounts on every message, so it must not fetch them on boot.
+  const { data: collections = [] } = useCollections(open || saved);
+  const create = useCreateBookmark();
+  const remove = useDeleteBookmark();
+  const createCollection = useCreateCollection();
   const folderName =
     collections.find((c) => c.id === existing?.collection_id)?.name ??
     "Favorites";

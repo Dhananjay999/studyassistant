@@ -36,6 +36,10 @@ class AssistantRequestData:
     # action, ...). Stored in the user message's metadata so analysis can
     # tell a student's own message from one the product sent.
     source: str | None = None
+    # Language the student picked for this turn in the composer chip (a
+    # label such as "Hinglish"); overrides the profile language for the
+    # reply and anything generated from it.
+    language: str | None = None
 
 
 class ClarificationResponseSchema(Schema):
@@ -133,6 +137,9 @@ class AssistantRequestSchema(Schema):
     )
     source_content = fields.Str(load_default=None)
     source = fields.Str(
+        load_default=None, validate=validate.Length(max=40)
+    )
+    language = fields.Str(
         load_default=None, validate=validate.Length(max=40)
     )
 

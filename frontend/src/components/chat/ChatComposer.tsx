@@ -5,12 +5,17 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ClipboardEvent,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUp,
+  Check,
   CircleAlert,
+  FileText,
   FolderOpen,
+  Languages,
+  Link2,
   Loader2,
   Mic,
   Paperclip,
@@ -18,6 +23,15 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { TURN_LANGUAGES, languageBadge } from "@/lib/languages";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
@@ -39,6 +53,9 @@ import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { isModifier } from "@/lib/platform";
 import { UPLOAD_ACCEPT } from "@/lib/uploadErrors";
 import { cn } from "@/lib/utils";
+
+/** A paste at least this long with several lines reads as notes, not a question. */
+const PASTE_SAVE_MIN_CHARS = 700;
 
 export interface ChatComposerHandle {
   focus: () => void;
@@ -117,6 +134,12 @@ export const ChatComposer = forwardRef<
     notice?: ComposerNotice | null;
     /** Called when the notice times out or is dismissed. */
     onNoticeDismiss?: () => void;
+    /** Language picked for the next turns (null = the profile's language).
+     *  Providing `onLanguageChange` shows the language chip. */
+    language?: string | null;
+    onLanguageChange?: (language: string | null) => void;
+    /** Save a pasted public link as study material (shows the link chip). */
+    onImportUrl?: (url: string) => void;
   }
 >(function ChatComposer(
   {
@@ -132,10 +155,19 @@ export const ChatComposer = forwardRef<
     hasMedia = false,
     notice = null,
     onNoticeDismiss,
+    language = null,
+    onLanguageChange,
+    onImportUrl,
   },
   ref,
 ) {
   const [value, setValue] = useState("");
+  // A long paste (notes) or a bare link gets a one-tap "save as study
+  // material" chip: 12 users pasted 700+ characters and 2 pasted links that
+  // the planner could only refuse (2026-10-16).
+  const [pasteOffer, setPasteOffer] = useState<
+    { kind: "text" | "url"; text: string } | null
+  >(null);
   const [showMenu, setShowMenu] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -320,6 +352,58 @@ export const ChatComposer = forwardRef<
     else openPicker();
   };
 
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData("text").trim();
+    if (!text) return;
+    const isUrl = /^https?:\/\/\S+$/i.test(text);
+    const lines = text.split("\n").length;
+    if (isUrl && onImportUrl) {
+      setPasteOffer({ kind: "url", text });
+      analytics.track(AnalyticsEvent.CHAT_PASTE_SAVE_OFFERED, {
+        kind: "url",
+        chars: text.length,
+        lines,
+      });
+    } else if (text.length >= PASTE_SAVE_MIN_CHARS && lines >= 3) {
+      setPasteOffer({ kind: "text", text });
+      analytics.track(AnalyticsEvent.CHAT_PASTE_SAVE_OFFERED, {
+        kind: "text",
+        chars: text.length,
+        lines,
+      });
+    }
+  };
+
+  const savePaste = () => {
+    if (!pasteOffer) return;
+    analytics.track(AnalyticsEvent.CHAT_PASTE_SAVED, {
+      kind: pasteOffer.kind,
+      chars: pasteOffer.text.length,
+    });
+    if (pasteOffer.kind === "url") {
+      onImportUrl?.(pasteOffer.text);
+    } else {
+      const stamp = new Date().toTimeString().slice(0, 5);
+      const file = new File([pasteOffer.text], `Pasted notes · ${stamp}.txt`, {
+        type: "text/plain",
+      });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      onUpload(dt.files);
+    }
+    // The pasted text was the material, not a question: clear it unless the
+    // student has typed something more around it.
+    if (value.trim() === pasteOffer.text) {
+      setValue("");
+      resetHeight();
+    }
+    setPasteOffer(null);
+  };
+
+  const pickLanguage = (next: string | null) => {
+    onLanguageChange?.(next);
+  };
+
   const send = () => {
     const text = value.trim();
     if (!text || disabled || locked) return;
@@ -327,6 +411,7 @@ export const ChatComposer = forwardRef<
     onSend(text, { voiceUsed: voiceContributedRef.current });
     voiceContributedRef.current = false;
     setValue("");
+    setPasteOffer(null);
     setShowMenu(false);
     resetHeight();
   };
@@ -392,6 +477,46 @@ export const ChatComposer = forwardRef<
           />
         )}
         <AnimatePresence initial={false}>
+          {pasteOffer && !locked && (
+            <motion.div
+              key="paste-offer"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.18 }}
+              className="mb-2 flex flex-wrap items-center gap-2"
+            >
+              <button
+                type="button"
+                onClick={savePaste}
+                disabled={uploading}
+                data-analytics-name="Save paste as material"
+                className={cn(
+                  "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 py-1.5",
+                  "border-brand-1/40 bg-brand-1/10 text-xs font-semibold text-brand-1",
+                  "transition-colors hover:bg-brand-1/20 active:scale-[0.98] disabled:opacity-60",
+                )}
+              >
+                {pasteOffer.kind === "url" ? (
+                  <Link2 className="h-3.5 w-3.5" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5" />
+                )}
+                {pasteOffer.kind === "url"
+                  ? "Add this link as study material"
+                  : "Looks like notes — save as study material"}
+              </button>
+              <button
+                type="button"
+                aria-label="Dismiss"
+                data-analytics-name="Dismiss paste offer"
+                onClick={() => setPasteOffer(null)}
+                className="grid h-11 w-11 place-items-center rounded-full text-muted-foreground hover:bg-accent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          )}
           {selectedCount > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 6 }}
@@ -595,6 +720,66 @@ export const ChatComposer = forwardRef<
               "supports-[backdrop-filter]:bg-card/80",
             )}
           >
+          {onLanguageChange && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-9 shrink-0 rounded-xl",
+                    language ? "w-auto gap-1 px-2 text-brand-1" : "w-9",
+                  )}
+                  disabled={locked}
+                  aria-label={
+                    language
+                      ? `Replying in ${language}; change language`
+                      : "Choose reply language"
+                  }
+                  data-analytics-name="Language chip"
+                >
+                  <Languages className="h-4 w-4" />
+                  {language && (
+                    <span className="text-[11px] font-semibold">
+                      {languageBadge(language)}
+                    </span>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="max-h-[60dvh] w-56 overflow-y-auto"
+              >
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  Reply in…
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  className="min-h-11 gap-2"
+                  onSelect={() => pickLanguage(null)}
+                >
+                  {language === null && <Check className="h-4 w-4" />}
+                  <span className={language === null ? "font-semibold" : ""}>
+                    My profile language
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {TURN_LANGUAGES.map((l) => (
+                  <DropdownMenuItem
+                    key={l}
+                    className="min-h-11 gap-2"
+                    onSelect={() => pickLanguage(l)}
+                  >
+                    {language === l && <Check className="h-4 w-4" />}
+                    <span className={language === l ? "font-semibold" : ""}>
+                      {l}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           <Button
             type="button"
             variant="ghost"
@@ -622,6 +807,7 @@ export const ChatComposer = forwardRef<
               grow();
             }}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             disabled={locked}
             placeholder={placeholder}
             className="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"

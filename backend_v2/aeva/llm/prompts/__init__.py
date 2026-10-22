@@ -79,6 +79,7 @@ from aeva.llm.prompts.personalization import (
     build_identity_block,
     build_personalization_block,
     build_space_block,
+    build_turn_language_block,
 )
 from aeva.llm.prompts.product_info import (
     PRODUCT_INFO_PARAMS,
@@ -177,6 +178,7 @@ __all__ = [
     "build_identity_block",
     "build_personalization_block",
     "build_space_block",
+    "build_turn_language_block",
     "current_date",
     "exam_pattern_segment",
     "format_quiz_instructions",

@@ -242,29 +242,70 @@ _NOT_QUIZ_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Exam-paper practice: marks-weighted questions, question papers, important
-# or written questions. 19 of 93 chatting users asked for these in the
-# 2026-10-16 analysis; the product only offered the objective quiz form.
-_PAPER_STYLE_RE = re.compile(
-    r"\b\d+\s*-?\s*marks?\b"
+# "Important questions": a list with model answers, answered as text (the
+# notes action covers the saved form). 19 of 93 chatting users asked for
+# exam-style practice in the 2026-10-16 analysis.
+_IMPORTANT_QUESTIONS_RE = re.compile(
+    r"\bimportant\s+questions?\b|\bexpected\s+questions?\b",
+    re.IGNORECASE,
+)
+
+# A written exam paper: marks-weighted, long / short answer, question paper,
+# previous-year style. Built as a quiz of ``short_answer`` questions graded
+# against a rubric under the "Written exam paper" marking preset.
+_WRITTEN_PAPER_RE = re.compile(
+    r"\b\d+\s*-?\s*(?:marks?|markers?)\b"
     r"|\b(?:question|model|sample|previous[- ]year|board|exam)\s+papers?\b"
     r"|\bpyqs?\b"
-    r"|\bimportant\s+questions?\b"
     r"|\b(?:long|short)[- ]answer\b"
-    r"|\bwritten\s+(?:answers?|practice|questions?)\b"
+    r"|\bwritten\s+(?:answers?|practice|questions?|test|exam)\b"
     r"|\b(?:descriptive|essay|subjective)(?:[- ]type)?\s+questions?\b",
     re.IGNORECASE,
+)
+
+# Default shape of a generated written paper (see ``_written_paper_params``).
+WRITTEN_PAPER_PATTERN = "board_paper"
+WRITTEN_PAPER_INSTRUCTIONS = (
+    "Write this as an exam paper: a mix of 2-mark questions (define, state, "
+    "name) and 5-mark questions (explain with an example or steps), in the "
+    "order a real paper would use. Put the marks in each question stem, "
+    "like '(2 marks)'. Every question is answered in writing: no options."
 )
 
 
 def _text_practice_intent(text: str) -> bool:
     """Return True when the student wants practice as text, not a quiz.
 
-    Covers both an explicit refusal ("do not make a quiz", "in text") and
-    exam-paper style asks ("4 and 8 marks questions", "question paper",
-    "important questions") that the quiz tool cannot produce.
+    An explicit refusal ("do not make a quiz", "in text") or a request for
+    important / expected questions, which reads best as a list with model
+    answers rather than a quiz card.
     """
-    return bool(_NOT_QUIZ_RE.search(text) or _PAPER_STYLE_RE.search(text))
+    return bool(
+        _NOT_QUIZ_RE.search(text) or _IMPORTANT_QUESTIONS_RE.search(text)
+    )
+
+
+def _written_paper_intent(text: str) -> bool:
+    """Return True for a marks-weighted or written-answer paper request."""
+    return not _NOT_QUIZ_RE.search(text) and bool(
+        _WRITTEN_PAPER_RE.search(text)
+    )
+
+
+def _written_paper_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Quiz params for a written paper: short answers under the paper preset.
+
+    Keeps whatever the planner extracted (topic, count, use_media) and only
+    fills the shape the student cannot get from the ordinary quiz form.
+    """
+    out = dict(params)
+    out["question_types"] = ["short_answer"]
+    out["exam_config"] = {"pattern": WRITTEN_PAPER_PATTERN}
+    extra = str(out.get("additional_instructions") or "").strip()
+    out["additional_instructions"] = (
+        f"{WRITTEN_PAPER_INSTRUCTIONS} {extra}".strip()
+    )
+    return out
 
 
 # One-line note prepended to an answer when a selected file id could not be
@@ -848,7 +889,8 @@ class AssistantOrchestrator:
         # query). General/legacy sessions contribute nothing, so
         # non-adopters get byte-identical prompts.
         personalization = (
-            prompts.build_identity_block(profile)
+            prompts.build_turn_language_block(ctx.language)
+            + prompts.build_identity_block(profile)
             + prompts.build_personalization_block(profile)
             + prompts.build_space_block(session.get("study_spaces"))
         )
@@ -987,10 +1029,26 @@ class AssistantOrchestrator:
         the answer step becomes ``media_llm`` (files selected) or ``general``
         and the quiz step is dropped.
         """
-        if ctx.quiz_options is not None or not _text_practice_intent(message):
+        if ctx.quiz_options is not None:
             return plan
         steps = AssistantOrchestrator._plan_steps(plan)
         if not steps or steps[0].get("tool") != "quiz_generator":
+            return plan
+        if _written_paper_intent(message) and not _text_practice_intent(
+            message
+        ):
+            # A marks-weighted / written paper IS a quiz, of written answers
+            # graded against a rubric: keep the quiz, fix its shape.
+            steps[0] = {
+                **steps[0],
+                "params": _written_paper_params(steps[0].get("params") or {}),
+            }
+            plan["steps"] = steps
+            plan.pop("tool", None)
+            source = plan.get("_source", "planner")
+            plan["_source"] = f"{source}+written_paper"
+            return plan
+        if not _text_practice_intent(message):
             return plan
         tool = "media_llm" if ctx.media_ids else "general"
         logger.info("Turn → %s: practice asked as text, not a quiz", tool)
@@ -1706,7 +1764,7 @@ class AssistantOrchestrator:
         """
         if ctx.quiz_options is not None or ctx.flashcard_options is not None:
             return False
-        if _text_practice_intent(message):
+        if _text_practice_intent(message) or _written_paper_intent(message):
             return False
         if (
             history

@@ -119,12 +119,26 @@ EXAM_PATTERNS: dict[str, dict[str, Any]] = {
         "timer_seconds": 7200,
         "default_type": "single_select",
     },
+    # A written board / university style paper: every question is answered
+    # in the student's own words and graded against a rubric. 19 of 93
+    # chatting users asked for marks-weighted written practice (2026-10-16).
+    "board_paper": {
+        "label": "Written exam paper",
+        "correct": 5,
+        "negative": 0,
+        "skip": 0,
+        "timer_seconds": 3600,
+        "default_type": "short_answer",
+    },
 }
+
+# A marking scheme, not an exam the student can be pitched at.
+_NOT_TARGET_EXAMS = frozenset({"custom", "board_paper"})
 
 # Exams a quiz can be pitched at instead of a difficulty band ("Exam level"):
 # every real exam preset — "custom" is a marking scheme, not an exam.
 TARGET_EXAMS: tuple[str, ...] = tuple(
-    key for key in EXAM_PATTERNS if key != "custom"
+    key for key in EXAM_PATTERNS if key not in _NOT_TARGET_EXAMS
 )
 
 # Stored as the quiz's ``difficulty`` when it targets an exam's own level.

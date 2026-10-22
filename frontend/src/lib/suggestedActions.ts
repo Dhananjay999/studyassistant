@@ -12,6 +12,7 @@ import {
   ScrollText,
   Sparkles,
   type LucideIcon,
+  GraduationCap,
 } from "lucide-react";
 
 export type ActionKind = "prompt" | "quiz" | "flashcards";
@@ -80,6 +81,18 @@ export const PRIMARY_ACTIONS: PrimaryAction[] = [
     instruction:
       "Create a structured study plan to master this, with steps and " +
       "rough time estimates.",
+  },
+  {
+    id: "teach",
+    key: "TEACH",
+    label: "Teach me this",
+    icon: GraduationCap,
+    kind: "prompt",
+    instruction:
+      "Teach me this like a lesson: start with what I need to know first, " +
+      "explain each part in order with one worked example each, then end " +
+      "with three short check questions written out in text (no quiz card) " +
+      "and tell me what to study next.",
   },
   {
     id: "analyze",
