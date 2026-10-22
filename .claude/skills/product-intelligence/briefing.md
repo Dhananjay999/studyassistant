@@ -75,6 +75,11 @@ say so as a data gap and continue with the other sources.
    excerpt of a message when it is needed as evidence.
 9. **Stay in scope.** If you notice something outside your scope, add one line
    under "Cross-scope notes" instead of investigating it.
+10. **Fresh baseline.** Every issue found before the latest date in
+    `history/` is closed (see `history/closed-<date>.md`). Treat everything
+    you find as a new issue: do not mark findings as "carried over", do not
+    compare with earlier reports, and do not read the history files unless
+    the user asks for a comparison.
 
 ## Report format for Agents 1–7
 
