@@ -6,6 +6,12 @@ about the app itself ("what can you do?", "how do I upload a PDF?") to the
 so no other LLM call ever pays tokens for it. Academic questions never land
 here (see the planner's TOOL SELECTION rules).
 
+The plan & pricing section (``{PLAN_KNOWLEDGE}``) is the one dynamic part:
+the tool passes ``plan_service.prompt_knowledge()`` at call time so prices an
+admin changes in the panel are what Aeva quotes. It is an optional
+placeholder (renders empty when a caller omits it) rather than a static
+block, because its text comes from the catalog, not from this file.
+
 Follow-up idea (not built): render this block flag-aware from
 ``feature_flag_service.get_flags()`` so a disabled feature (web search, image
 generation) is omitted instead of described.
@@ -61,7 +67,9 @@ Analytics:
 Settings & account:
 - Sign in with Google. Light and dark themes. Works on mobile and desktop.
 - Settings → Learning Profile: learning context (school class & board, college program & year, target exam like JEE/NEET/UPSC, or a skill), learning goal, focus areas, explanation style, Aeva's response language (English / Hindi / Hinglish or any other — it only changes Aeva's replies, not the app's language), persona, teaching extras, and custom instructions — these persist across all chats. Saying "from now on talk in Hinglish" in chat also saves the language permanently.
-- Onboarding can be redone anytime via "Edit step-by-step" in the Learning Profile."""
+- Onboarding can be redone anytime via "Edit step-by-step" in the Learning Profile.
+
+{PLAN_KNOWLEDGE}"""
 
 PRODUCT_INFO_TEMPLATE = PromptTemplate(
     name="product_info",
@@ -83,7 +91,8 @@ Student question:
         "PRODUCT_KNOWLEDGE": PRODUCT_KNOWLEDGE,
         "ANSWER_META": ANSWER_META_BLOCK,
     },
-    optional=("USER_PROFILE",),
+    # PLAN_KNOWLEDGE: live pricing from aeva.plan, supplied by the tool.
+    optional=("USER_PROFILE", "PLAN_KNOWLEDGE"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
 )

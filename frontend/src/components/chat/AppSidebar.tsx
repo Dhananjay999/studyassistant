@@ -27,6 +27,8 @@ import {
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { analytics, AnalyticsEvent, analyticsAttrs } from "@/lib/analytics";
+import { ProBadge } from "@/components/pro/ProBadge";
+import { ProAvatarFrame } from "@/components/pro/ProAvatarBadge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -62,6 +64,8 @@ interface NavItem {
   to: string;
   feature?: FeatureKey;
   defaultOff?: boolean;
+  /** Advanced feature: shows a small PRO marker (still usable by everyone). */
+  pro?: boolean;
 }
 
 // Library: ALL navigation tabs, grouped under one collapsible dropdown on
@@ -72,10 +76,10 @@ interface NavItem {
 // button pair.
 const LIBRARY_NAV: NavItem[] = [
   { label: "Chats", icon: MessageSquare, to: "/chat" },
-  { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
+  { label: "Quizzes", icon: ListChecks, to: "/quizzes", pro: true },
   { label: "Flashcards", icon: Layers, to: "/flashcards" },
   // Exam Prep sits with the two study tools (hidden until the flag is on).
-  { label: "Exam Prep", icon: Target, to: "/exam", feature: "exam_prep", defaultOff: true },
+  { label: "Exam Prep", icon: Target, to: "/exam", feature: "exam_prep", defaultOff: true, pro: true },
   { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
   { label: "Analytics", icon: BarChart3, to: "/analytics", feature: "analytics" },
   { label: "Study Material", icon: FolderOpen, to: "/files" },
@@ -598,6 +602,7 @@ export function AppSidebar({
                         )}
                         <Icon className="h-4 w-4 shrink-0" />
                         {item.label}
+                        {item.pro && <ProBadge className="ml-auto" />}
                       </button>
                     );
                   })}
@@ -628,6 +633,9 @@ export function AppSidebar({
                     >
                       <Icon className="h-4 w-4 shrink-0" />
                       <span className="truncate">{item.label}</span>
+                      {item.pro && (
+                        <ProBadge className="px-1 text-[8px] leading-3" />
+                      )}
                     </button>
                   );
                 })}
@@ -727,12 +735,14 @@ export function AppSidebar({
                 aria-label="Account & settings"
                 className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl transition-colors hover:bg-accent/60"
               >
-                <Avatar className="h-7 w-7">
-                  <AvatarImage src={user?.avatar_url || undefined} />
-                  <AvatarFallback className="text-[10px]">
-                    {accountInitial}
-                  </AvatarFallback>
-                </Avatar>
+                <ProAvatarFrame size="sm">
+                  <Avatar className="h-7 w-7">
+                    <AvatarImage src={user?.avatar_url || undefined} />
+                    <AvatarFallback className="text-[10px]">
+                      {accountInitial}
+                    </AvatarFallback>
+                  </Avatar>
+                </ProAvatarFrame>
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">Account &amp; settings</TooltipContent>
@@ -746,12 +756,14 @@ export function AppSidebar({
             data-analytics-name="Account & settings"
             className="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition-colors hover:bg-accent/60"
           >
-            <Avatar className="h-8 w-8 shrink-0">
-              <AvatarImage src={user?.avatar_url || undefined} />
-              <AvatarFallback className="text-xs">
-                {accountInitial}
-              </AvatarFallback>
-            </Avatar>
+            <ProAvatarFrame size="sm">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={user?.avatar_url || undefined} />
+                <AvatarFallback className="text-xs">
+                  {accountInitial}
+                </AvatarFallback>
+              </Avatar>
+            </ProAvatarFrame>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{accountName}</p>
               <p className="truncate text-xs text-muted-foreground">

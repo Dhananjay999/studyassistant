@@ -6,6 +6,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useConfirmLogout } from "@/hooks/useConfirmLogout";
 import { useSettings } from "@/contexts/SettingsContext";
 import { SettingsGroup } from "@/components/settings/primitives";
+import { ProStatusChip } from "@/components/pro/ProStatusChip";
+import { ProAvatarFrame } from "@/components/pro/ProAvatarBadge";
+import { ProPlanCard } from "@/components/pro/ProPlanCard";
 
 /** Account identity + session controls. */
 export function AccountSection() {
@@ -21,23 +24,26 @@ export function AccountSection() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/60 bg-card/40 p-6 text-center sm:flex-row sm:items-center sm:text-left">
-        <Avatar className="h-20 w-20 text-xl">
-          <AvatarImage src={user?.avatar_url || undefined} alt={name} />
-          <AvatarFallback className="text-xl font-semibold">
-            {initial}
-          </AvatarFallback>
-        </Avatar>
+        <ProAvatarFrame badgeClassName="bottom-0.5 right-0.5 h-5 w-5">
+          <Avatar className="h-20 w-20 text-xl">
+            <AvatarImage src={user?.avatar_url || undefined} alt={name} />
+            <AvatarFallback className="text-xl font-semibold">
+              {initial}
+            </AvatarFallback>
+          </Avatar>
+        </ProAvatarFrame>
         <div className="w-full min-w-0 flex-1 sm:w-auto">
           <h3 className="truncate text-lg font-semibold">{name}</h3>
           <p className="mt-0.5 flex items-center justify-center gap-1.5 text-sm text-muted-foreground sm:justify-start">
             <Mail className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{user?.email}</span>
           </p>
-          <div className="mt-2 flex justify-center sm:justify-start">
+          <div className="mt-2 flex flex-wrap justify-center gap-1.5 sm:justify-start">
             <Badge variant="secondary" className="gap-1">
               <ShieldCheck className="h-3.5 w-3.5" />
               Google Account
             </Badge>
+            <ProStatusChip />
           </div>
         </div>
       </div>
@@ -55,6 +61,10 @@ export function AccountSection() {
             Change
           </Button>
         </div>
+      </SettingsGroup>
+
+      <SettingsGroup title="Plan">
+        <ProPlanCard />
       </SettingsGroup>
 
       <SettingsGroup title="Session">

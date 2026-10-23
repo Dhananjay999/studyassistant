@@ -156,6 +156,7 @@ Worked examples (message → tool, params):
 - "What is dictatorship?" → general
 - "How should I revise for boards in 30 days?" → general (study advice)
 - "How do I upload a PDF here?" → product_info
+- "Is Aeva free?" / "How much does Pro cost?" / "What is Early Access?" → product_info
 - A pasted list of exam questions ("1. Define ATC. 2. In which year was ICAO established? …") → general
 
 ================ MODEL SELECTION ================

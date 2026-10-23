@@ -27,6 +27,13 @@ class ProfileResponseSchema(Schema):
     # Developer Mode: admin-managed flag that unlocks debug diagnostics in the
     # client. The frontend renders debug UI only when this is true.
     is_debug_user = fields.Bool(dump_default=False)
+    # Plan (migration 040, aeva/plan): the tier, its lifecycle, when Pro was
+    # first activated and whether the Pro introduction popup was shown.
+    plan = fields.Str(dump_default="free")
+    plan_status = fields.Str(dump_default="none")
+    pro_activated_at = fields.Str(allow_none=True)
+    pro_prompt_shown = fields.Bool(dump_default=False)
+    currency = fields.Str(allow_none=True)
 
 
 class UpsertProfileSchema(Schema):

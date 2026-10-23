@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { noteProValueMoment } from "@/lib/plan";
 import { errorKind } from "@/lib/errorMessage";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -253,6 +254,7 @@ export function QuizRunner({
             timeTakenSeconds,
           });
       const ev = res.evaluation;
+      noteProValueMoment("quiz_completed");
       analytics.track(AnalyticsEvent.QUIZ_COMPLETED, {
         quiz_id: quiz.quiz_id,
         attempt_id: res.attempt_id || undefined,

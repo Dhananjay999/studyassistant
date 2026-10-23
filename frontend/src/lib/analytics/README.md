@@ -53,7 +53,7 @@ adapter + one line in the registry + its env var in `config.ts`.
   anonymous id (and PostHog `reset()`), so nothing after logout is attributed
   to the previous user.
 - **Person traits** sent on identify: `email`, `name`, `personalization_status`,
-  `is_debug_user`, `is_app_mode`, `app_env`. They never ride on events. Use
+  `is_debug_user`, `plan`, `plan_status`, `is_app_mode`, `app_env`. They never ride on events. Use
   `is_debug_user` in PostHog's test-account filter.
 - **Analytics session** (`aeva_analytics_session`, `sess_<uuid>`): new when
   none is stored, after 30 min of inactivity, or after 24 h. `session_number`

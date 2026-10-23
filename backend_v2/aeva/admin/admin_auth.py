@@ -42,6 +42,7 @@ KNOWN_PERMISSIONS = (
     "DELETE_DATA",
     "DELETE_USERS",
     "MANAGE_DEBUG_USERS",
+    "MANAGE_PLANS",
 )
 
 
@@ -53,9 +54,7 @@ def _config(key: str) -> str:
 def _token_ttl() -> timedelta:
     """Admin JWT lifetime from config (env-driven, never hardcoded)."""
     days = int(
-        current_app.config.get(
-            "ADMIN_TOKEN_EXPIRE_DAYS", _DEFAULT_TTL_DAYS
-        )
+        current_app.config.get("ADMIN_TOKEN_EXPIRE_DAYS", _DEFAULT_TTL_DAYS)
     )
     return timedelta(days=days)
 

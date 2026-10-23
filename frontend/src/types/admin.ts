@@ -378,6 +378,31 @@ export interface AdminSearchResults {
   results: Partial<Record<"users" | ResourceKey, AdminSearchHit[]>>;
 }
 
+/** One price point of a plan (major units: 4.99 is $4.99). */
+export interface AdminPlanPrice {
+  interval: "month" | "year";
+  currency: "INR" | "USD";
+  amount: number;
+}
+
+/** The editable part of a plan's pricing (the admin override document). */
+export interface AdminPlanOverride {
+  prices: AdminPlanPrice[];
+  /** What users pay today, in any currency (0 during Early Access). */
+  current_amount: number;
+  early_access: boolean;
+}
+
+/** One plan: effective values, the code default, and the last admin edit
+ * (`updated_at` / `updated_by` are null while on the code default). */
+export interface AdminPlan extends AdminPlanOverride {
+  key: "free" | "pro";
+  label: string;
+  default: AdminPlanOverride & { key: string; label: string };
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
 /** One global feature flag: registry metadata + current state.
  * `updated_at` is null while the flag is still on its code default. */
 export interface AdminFeatureFlag {

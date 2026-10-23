@@ -325,6 +325,38 @@ Guest quiz attempts on share pages emit `QUIZ_STARTED` / `QUIZ_COMPLETED` with
 | `PREFERENCES_RESET` | — | `PreferencesContext.tsx` |
 | `LEARNING_PROFILE_EDIT_STARTED` / `LEARNING_PROFILE_SAVED` / `LEARNING_PROFILE_RESET` | — / `fields_set` / — | `settings/sections/LearningProfileSection.tsx`, `OnboardingFlow.tsx` (edit mode) |
 
+## Plan / Pro Early Access — `components/pro/*`, `lib/plan.ts`
+
+Aeva is free; the introduction tells users the experience is Pro-level and
+lets them activate Pro at ₹0. It opens once per account, after enough value
+moments (`value_points` ≥ 3: a chat answer is 1, a finished quiz, studied
+deck, indexed upload or exam plan is 3), only after a value moment in the
+current page load (never on app boot or right after login), and never over
+another popup. The person traits `plan` / `plan_status` are updated on
+the next identify.
+
+| Event | When | Properties | Hook |
+|---|---|---|---|
+| `PRO_INTRO_SHOWN` ★ | The Pro introduction opened | `value_points`, `last_moment: chat_response\|quiz_completed\|flashcards_studied\|upload_indexed\|exam_plan_created`, `layout: modal\|sheet`, `page`, `currency: INR\|USD` | `components/pro/ProAccessHost.tsx` |
+| `PRO_INTRO_DISMISSED` | Closed without activating ("Not now", X, Escape, outside tap, or dragging the sheet down) | `via: not_now\|close\|escape\|outside\|drag`, `duration_ms` | same |
+| `PRO_ACTIVATED` ★ | "Activate Pro — ₹0" succeeded; the profile is now `plan: pro`, `plan_status: early_access` | `source: intro\|profile`, `plan_status`, `currency: INR\|USD`, `duration_ms` (introduction open time; 0 from the Account card), `latency_ms` | same; `components/pro/ProPlanCard.tsx` (Account settings / mobile Profile → Account) |
+| `PRO_ACTIVATION_FAILED` | The activation request failed (the user can retry) | `source: intro\|profile`, `error_kind`, `latency_ms` | same |
+
+A user who dismissed the introduction can still activate from the Plan card
+in Account settings (`source: profile`); the card shows the ✨ Pro · Early
+Access status once activated, the avatar gets a brand ring and a small ✨
+badge in the header, sidebar and mobile Profile tab. Quizzes and Exam Prep carry a PRO chip
+in the navigation (informative only; both stay usable on every plan).
+
+Prices are regional: ₹99 / ₹799 on devices in India (browser locale region
+or timezone), $4.99 / $39 elsewhere; today's price is ₹0 / $0. The currency
+quoted at activation is stored on the profile (`profiles.currency`,
+migration 041) and quoted from then on, whatever device the user is on.
+
+The introduction is a `ResponsiveModal`, so it also emits
+`PRO_EARLY_ACCESS_MODAL_OPENED` / `_CLOSED`. The CTA and "Not now" are plain
+clicks (`ACTIVATE_PRO_CLICK`, `NOT_NOW_CLICK`).
+
 ## Errors
 
 | Event | When | Properties | Hook |

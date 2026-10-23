@@ -5,9 +5,11 @@ payload (the admin UI is internal and evolves quickly, so responses are not
 strictly typed field-by-field).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from marshmallow import Schema, fields, post_load, validate
+from marshmallow import Schema, ValidationError, fields, post_load, validate
+
+from aeva.plan.plan_service import CURRENCIES, INTERVALS
 
 _SORT_FIELDS = ["created_at", "email", "full_name"]
 _STATUSES = ["all", "completed", "pending", "skipped"]
@@ -148,6 +150,87 @@ class FeatureFlagToggleSchema(Schema):
     ) -> FeatureFlagToggleData:
         """Convert to dataclass."""
         return FeatureFlagToggleData(**data)
+
+
+@dataclass(frozen=True)
+class PlanPriceData:
+    """One price point in an admin plan override."""
+
+    interval: str
+    currency: str
+    amount: float
+
+
+@dataclass(frozen=True)
+class PlanOverrideData:
+    """Validated body for ``PUT /admin/plans/<key>``."""
+
+    prices: list[PlanPriceData] = field(default_factory=list)
+    current_amount: float = 0
+    early_access: bool = True
+
+    def as_document(self) -> dict:
+        """Return the JSON document stored in ``plan_overrides.value``."""
+        return {
+            "prices": [
+                {
+                    "interval": p.interval,
+                    "currency": p.currency,
+                    "amount": p.amount,
+                }
+                for p in self.prices
+            ],
+            "current_amount": self.current_amount,
+            "early_access": self.early_access,
+        }
+
+
+class PlanPriceSchema(Schema):
+    """One price: interval, currency and amount in major units."""
+
+    interval = fields.Str(
+        required=True, validate=validate.OneOf(sorted(INTERVALS))
+    )
+    currency = fields.Str(
+        required=True, validate=validate.OneOf(sorted(CURRENCIES))
+    )
+    amount = fields.Float(
+        required=True, validate=validate.Range(min=0, max=1_000_000)
+    )
+
+
+class PlanOverrideSchema(Schema):
+    """Body for ``PUT /admin/plans/<key>``: the full override document."""
+
+    prices = fields.List(
+        fields.Nested(PlanPriceSchema),
+        required=True,
+        validate=validate.Length(min=1, max=20),
+    )
+    current_amount = fields.Float(
+        required=True, validate=validate.Range(min=0, max=1_000_000)
+    )
+    early_access = fields.Bool(required=True)
+
+    @post_load
+    def make_data(self, data: dict, **_kwargs: object) -> PlanOverrideData:
+        """Reject duplicate (currency, interval) pairs; convert to dataclass."""
+        seen: set[tuple[str, str]] = set()
+        prices = []
+        for p in data["prices"]:
+            key = (p["currency"], p["interval"])
+            if key in seen:
+                raise ValidationError(
+                    f"Duplicate price for {p['currency']} {p['interval']}",
+                    field_name="prices",
+                )
+            seen.add(key)
+            prices.append(PlanPriceData(**p))
+        return PlanOverrideData(
+            prices=prices,
+            current_amount=data["current_amount"],
+            early_access=data["early_access"],
+        )
 
 
 @dataclass(frozen=True)

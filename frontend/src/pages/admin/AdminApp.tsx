@@ -14,6 +14,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   BookMarked,
   Bug,
+  CreditCard,
   FileText,
   Flag,
   Layers,
@@ -44,6 +45,7 @@ import { AdminDangerZone } from "@/pages/admin/AdminDangerZone";
 import { AdminDebugUsers } from "@/pages/admin/AdminDebugUsers";
 import { AdminDevTools } from "@/pages/admin/AdminDevTools";
 import { AdminFeatureFlags } from "@/pages/admin/AdminFeatureFlags";
+import { AdminPlans } from "@/pages/admin/AdminPlans";
 import { AdminTraceViews } from "@/pages/admin/AdminTraceViews";
 import type { ResourceKey } from "@/types/admin";
 
@@ -53,6 +55,7 @@ const SIMPLE_VIEWS = [
   "search",
   "debug",
   "flags",
+  "plans",
   "audit",
   "devtools",
   "danger",
@@ -119,6 +122,7 @@ const NAV: AdminNavItem[] = [
   ...TRACE_NAV,
   { key: "debug", label: "Debug Users", icon: Bug },
   { key: "flags", label: "Feature Flags", icon: Flag },
+  { key: "plans", label: "Plans & Pricing", icon: CreditCard },
   { key: "audit", label: "Audit Log", icon: ScrollText },
   { key: "devtools", label: "Dev Tools", icon: Smartphone },
   { key: "danger", label: "Danger Zone", icon: ShieldAlert },
@@ -194,6 +198,7 @@ function AdminInner() {
       )}
       <AdminTraceViews />
       {view.name === "flags" && <AdminFeatureFlags />}
+      {view.name === "plans" && <AdminPlans />}
       {view.name === "devtools" && <AdminDevTools />}
       {view.name === "danger" && <AdminDangerZone />}
       </AdminShell>

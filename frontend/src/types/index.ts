@@ -27,6 +27,31 @@ export type Difficulty =
 
 export type PersonalizationStatus = "pending" | "completed" | "skipped";
 
+/** Plan tier (`profiles.plan`). Pro is free during Early Access. */
+export type Plan = "free" | "pro";
+/** Plan lifecycle (`profiles.plan_status`). Only `none` and `early_access`
+ *  are produced today; the rest are reserved for billing. */
+export type PlanStatus =
+  | "none"
+  | "early_access"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "expired";
+
+/** Currencies the plan catalog is priced in (regional pricing). */
+export type PlanCurrency = "INR" | "USD";
+
+/** The user's plan view (`/plan/*`, also present on `/auth/me`). */
+export interface PlanInfo {
+  plan: Plan;
+  plan_status: PlanStatus;
+  pro_activated_at: string | null;
+  pro_prompt_shown: boolean;
+  /** The currency the user was quoted when activating; null until then. */
+  currency: PlanCurrency | null;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -40,6 +65,13 @@ export interface User {
   /** Profile creation time (ISO); /auth/me returns the profile row. Used to
    *  tell "new" accounts apart for feature flags marked hidden for new users. */
   created_at?: string;
+  /** Plan fields (migration 040). Optional because older payloads omit them;
+   *  `lib/plan.ts` treats a missing value as free / never prompted. */
+  plan?: Plan;
+  plan_status?: PlanStatus;
+  pro_activated_at?: string | null;
+  pro_prompt_shown?: boolean;
+  currency?: PlanCurrency | null;
 }
 
 /**
@@ -928,6 +960,26 @@ export interface AppConfig {
   accepted_mime_types?: string[];
   /** Flags kept off for accounts created on/after `since` (ISO date). */
   features_new_users?: { since: string; hidden: FeatureKey[] };
+  /** Plan catalog (backend `aeva/plan`): the one source of the Pro prices.
+   *  Optional so a frontend deployed ahead of the backend still works. */
+  plans?: PlanCatalogEntry[];
+}
+
+export interface PlanPrice {
+  interval: "month" | "year";
+  /** Major units: 4.99 is $4.99. */
+  amount: number;
+  currency: PlanCurrency;
+}
+
+export interface PlanCatalogEntry {
+  key: Plan;
+  label: string;
+  /** Every currency together; filter with `pricesFor()` in `lib/plan.ts`. */
+  prices: PlanPrice[];
+  /** What the user pays today (0 during Early Access). */
+  current_amount: number;
+  early_access: boolean;
 }
 
 /* ------------------------------- flashcards ------------------------------- */

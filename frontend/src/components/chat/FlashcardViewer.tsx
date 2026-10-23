@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { analytics as tracker, AnalyticsEvent } from "@/lib/analytics";
+import { noteProValueMoment } from "@/lib/plan";
 import { Badge } from "@/components/ui/badge";
 import { BookmarkButton } from "@/components/BookmarkButton";
 import { MathText } from "@/components/common/MathText";
@@ -223,6 +224,7 @@ export function FlashcardViewer({
     for (const r of ratingsRef.current.values()) {
       if (r in counts) counts[r as keyof typeof counts] += 1;
     }
+    noteProValueMoment("flashcards_studied");
     tracker.track(AnalyticsEvent.FLASHCARDS_STUDY_COMPLETED, {
       set_id: setId ?? "",
       card_count: totalRef.current,

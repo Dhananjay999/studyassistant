@@ -216,6 +216,12 @@ export enum AnalyticsEvent {
   LEARNING_PROFILE_SAVED = "LEARNING_PROFILE_SAVED",
   LEARNING_PROFILE_RESET = "LEARNING_PROFILE_RESET",
 
+  // ---- Plan / Pro Early Access -------------------------------------------
+  PRO_INTRO_SHOWN = "PRO_INTRO_SHOWN",
+  PRO_INTRO_DISMISSED = "PRO_INTRO_DISMISSED",
+  PRO_ACTIVATED = "PRO_ACTIVATED",
+  PRO_ACTIVATION_FAILED = "PRO_ACTIVATION_FAILED",
+
   // ---- Errors ------------------------------------------------------------
   API_ERROR = "API_ERROR",
 }
@@ -422,6 +428,22 @@ export type PopupKind =
   | "dropdown"
   | "modal";
 export type PopupCloseVia = "escape" | "outside" | "dismiss" | "unmount";
+/** How the Pro introduction was closed without activating. */
+export type ProIntroDismissVia =
+  | "not_now"
+  | "close"
+  | "escape"
+  | "outside"
+  | "drag";
+/** Where Pro was activated: the introduction popup or Account settings. */
+export type ProActivationSource = "intro" | "profile";
+/** Which value moment pushed the Pro introduction over its threshold. */
+export type ProValueMoment =
+  | "chat_response"
+  | "quiz_completed"
+  | "flashcards_studied"
+  | "upload_indexed"
+  | "exam_plan_created";
 /** Props of a `<POPUP>_<KIND>_OPENED` event. */
 export interface PopupOpenedProps {
   popup: string;
@@ -1353,6 +1375,36 @@ export interface EventPropsMap {
   [AnalyticsEvent.LEARNING_PROFILE_EDIT_STARTED]: Empty;
   [AnalyticsEvent.LEARNING_PROFILE_SAVED]: { fields_set: number };
   [AnalyticsEvent.LEARNING_PROFILE_RESET]: Empty;
+
+  [AnalyticsEvent.PRO_INTRO_SHOWN]: {
+    /** Value points accumulated when it opened (see `lib/plan.ts`). */
+    value_points: number;
+    /** The value moment that pushed it over the threshold. */
+    last_moment?: ProValueMoment;
+    /** Centered dialog (desktop) or bottom sheet (mobile). */
+    layout: "modal" | "sheet";
+    page: string;
+    /** Regional currency quoted: INR in India, USD elsewhere. */
+    currency: string;
+  };
+  [AnalyticsEvent.PRO_INTRO_DISMISSED]: {
+    via: ProIntroDismissVia;
+    duration_ms: number;
+  };
+  [AnalyticsEvent.PRO_ACTIVATED]: {
+    /** The introduction popup, or the Plan card in Account settings. */
+    source: ProActivationSource;
+    plan_status: string;
+    /** Currency the user was quoted and the profile now remembers. */
+    currency: string;
+    /** Time the introduction was open; 0 from the Account card. */
+    duration_ms: number;
+    latency_ms: number;
+  };
+  [AnalyticsEvent.PRO_ACTIVATION_FAILED]: ErrorKindProps & {
+    source: ProActivationSource;
+    latency_ms: number;
+  };
 
   [AnalyticsEvent.API_ERROR]: ApiErrorProps;
 }

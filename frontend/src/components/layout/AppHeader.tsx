@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Bell, Bookmark, LogOut, Menu, MoreHorizontal, Search } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ProAvatarFrame } from "@/components/pro/ProAvatarBadge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -94,10 +95,12 @@ export function AppHeader({
         className="hidden rounded-full transition-opacity hover:opacity-80 lg:inline-flex"
         aria-label="Account & settings"
       >
-        <Avatar className="h-8 w-8">
-          <AvatarImage src={user?.avatar_url || undefined} />
-          <AvatarFallback>{initial}</AvatarFallback>
-        </Avatar>
+        <ProAvatarFrame size="sm">
+          <Avatar className="h-8 w-8">
+            <AvatarImage src={user?.avatar_url || undefined} />
+            <AvatarFallback>{initial}</AvatarFallback>
+          </Avatar>
+        </ProAvatarFrame>
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

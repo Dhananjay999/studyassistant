@@ -34,6 +34,8 @@ from aeva.media.media_repository import ALLOWED_TYPES as ALLOWED_UPLOAD_TYPES
 from aeva.notifications.notification_controller import (
     blueprint as notifications_bp,
 )
+from aeva.plan import plan_service
+from aeva.plan.plan_controller import blueprint as plan_bp
 from aeva.quiz.quiz_controller import blueprint as quiz_bp
 from aeva.revision.revision_controller import blueprint as revision_bp
 from aeva.search.search_controller import blueprint as search_bp
@@ -545,6 +547,7 @@ def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
     api.register_blueprint(flashcard_bp)
     api.register_blueprint(revision_bp)
     api.register_blueprint(learning_profile_bp)
+    api.register_blueprint(plan_bp)
     api.register_blueprint(analytics_bp)
     api.register_blueprint(admin_bp)
     api.register_blueprint(admin_trace_bp)
@@ -608,6 +611,9 @@ def create_app() -> Flask:  # noqa: PLR0915 - flat app wiring
                 "since": app.config["FEATURE_NEW_USER_SINCE"],
                 "hidden": feature_flag_service.hidden_for_new_users(),
             },
+            # Plan catalog (aeva/plan): the one source of the Pro prices
+            # the Pro introduction popup shows.
+            "plans": plan_service.catalog(),
         }
 
     return app

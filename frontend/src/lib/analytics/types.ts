@@ -14,6 +14,8 @@ export interface AnalyticsUser {
   full_name?: string | null;
   personalization_status?: string;
   is_debug_user?: boolean;
+  plan?: string;
+  plan_status?: string;
 }
 
 /** Person-level traits sent to providers on identify (never on events). */
@@ -23,6 +25,9 @@ export interface UserTraits {
   device_id?: string;
   personalization_status?: string;
   is_debug_user?: boolean;
+  /** Plan tier and lifecycle (`free`/`pro`, `none`/`early_access`/…). */
+  plan?: string;
+  plan_status?: string;
   is_app_mode?: boolean;
   app_env?: string;
 }

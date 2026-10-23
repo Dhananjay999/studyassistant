@@ -77,6 +77,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { qk, useCreateExamPlan, useLearningProfile, useMedia } from "@/hooks/api";
 import { useMediaProcessing } from "@/hooks/useMediaProcessing";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { noteProValueMoment } from "@/lib/plan";
 import { uploadMedia } from "@/lib/api";
 import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
 import { setExamPlanHint } from "@/lib/examPrepHome";
@@ -516,6 +517,7 @@ export function ExamSetupForm() {
     const t0 = performance.now();
     try {
       const dashboard = await create.mutateAsync(body);
+      noteProValueMoment("exam_plan_created");
       analytics.track(AnalyticsEvent.EXAM_PREP_SETUP_COMPLETED, {
         exam_kind: answers.kind ?? "other",
         research,

@@ -20,10 +20,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import current_app
 
+from aeva.admin.schema.admin_schema import PlanOverrideData
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.common.schema import success_response
 from aeva.feature_flag import feature_flag_service
 from aeva.learning_profile import profile_document
+from aeva.plan import plan_service
 from aeva.supabase.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
@@ -605,6 +607,48 @@ class AdminRepository:
         return success_response(
             "Feature flag updated", {"key": key, "enabled": enabled}
         )
+
+    # ------------------------------------------------------------------
+    # Plans & pricing
+    # ------------------------------------------------------------------
+
+    def list_plans(self) -> dict[str, Any]:
+        """Code catalog merged with admin overrides, in registry order."""
+        return success_response(
+            "Plans", {"plans": plan_service.list_plans_with_meta()}
+        )
+
+    def set_plan(
+        self, admin: str, key: str, body: PlanOverrideData
+    ) -> dict[str, Any]:
+        """Upsert one plan's override document; 404 on an unknown key."""
+        if key not in plan_service.PLAN_KEYS:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        document = body.as_document()
+        self.client.table("plan_overrides").upsert(
+            {
+                "plan_key": key,
+                "value": document,
+                "updated_by": admin,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        ).execute()
+        plan_service.invalidate_cache()
+        logger.info("Admin %s updated plan %s pricing", admin, key)
+        self._audit(admin, "plan.update", resource=key, detail=document)
+        return success_response("Plan updated", {"key": key, **document})
+
+    def reset_plan(self, admin: str, key: str) -> dict[str, Any]:
+        """Delete one plan's override so it returns to the code default."""
+        if key not in plan_service.PLAN_KEYS:
+            raise CustomError(ERROR_CODES["NOT_FOUND"])
+        self.client.table("plan_overrides").delete().eq(
+            "plan_key", key
+        ).execute()
+        plan_service.invalidate_cache()
+        logger.info("Admin %s reset plan %s to code default", admin, key)
+        self._audit(admin, "plan.reset", resource=key)
+        return success_response("Plan reset", {"key": key})
 
     # ------------------------------------------------------------------
     # Audit log

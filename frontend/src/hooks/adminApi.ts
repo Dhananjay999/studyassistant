@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-query";
 import { adminApi } from "@/lib/adminApi";
 import type {
+  AdminPlanOverride,
   AdminEditProfileInput,
   AdminEngagementUserKind,
   AdminResourcesParams,
@@ -41,6 +42,7 @@ export const adminQk = {
   mediaDetail: (id: string) => ["admin", "media-detail", id] as const,
   auditLog: (userId?: string) => ["admin", "audit-log", userId ?? ""] as const,
   featureFlags: ["admin", "feature-flags"] as const,
+  plans: ["admin", "plans"] as const,
 };
 
 export function useAdminOverview() {
@@ -202,6 +204,35 @@ export function useAdminFeatureFlags() {
   return useQuery({
     queryKey: adminQk.featureFlags,
     queryFn: adminApi.listFeatureFlags,
+  });
+}
+
+export function useAdminPlans() {
+  return useQuery({ queryKey: adminQk.plans, queryFn: adminApi.listPlans });
+}
+
+export function useSetPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { key: string; body: AdminPlanOverride }) =>
+      adminApi.setPlan(v.key, v.body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminQk.plans });
+      // The user app reads prices from GET /config; refresh it so the new
+      // prices show in this browser without a reload.
+      qc.invalidateQueries({ queryKey: ["config"] });
+    },
+  });
+}
+
+export function useResetPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) => adminApi.resetPlan(key),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminQk.plans });
+      qc.invalidateQueries({ queryKey: ["config"] });
+    },
   });
 }
 

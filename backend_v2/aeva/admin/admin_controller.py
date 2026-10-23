@@ -29,6 +29,8 @@ from aeva.admin.schema.admin_schema import (
     EngagementUsersQuerySchema,
     FeatureFlagToggleData,
     FeatureFlagToggleSchema,
+    PlanOverrideData,
+    PlanOverrideSchema,
     ResourceListQuery,
     ResourceListQuerySchema,
     SearchQuery,
@@ -327,6 +329,38 @@ class AdminFeatureFlag(MethodView):
         return repo.set_feature_flag(key, body.enabled)
 
 
+class AdminPlans(MethodView):
+    """Plan catalog: code registry merged with admin pricing overrides."""
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def get(_admin: str) -> dict[str, Any]:
+        """List every plan with effective prices, defaults and last edit."""
+        return repo.list_plans()
+
+
+class AdminPlan(MethodView):
+    """Edit or reset one plan's pricing."""
+
+    @staticmethod
+    @blueprint.arguments(PlanOverrideSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def put(admin: str, body: PlanOverrideData, key: str) -> dict[str, Any]:
+        """Save the plan's prices, today's price and Early Access flag."""
+        check_permission("MANAGE_PLANS")
+        return repo.set_plan(admin, key, body)
+
+    @staticmethod
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @admin_required
+    def delete(admin: str, key: str) -> dict[str, Any]:
+        """Drop the override so the plan returns to its code default."""
+        check_permission("MANAGE_PLANS")
+        return repo.reset_plan(admin, key)
+
+
 class AdminSession(MethodView):
     """A single session's full conversation history."""
 
@@ -500,4 +534,8 @@ blueprint.add_url_rule(
     "/feature-flags/<key>",
     view_func=AdminFeatureFlag,
     endpoint="admin_feature_flag",
+)
+blueprint.add_url_rule("/plans", view_func=AdminPlans, endpoint="admin_plans")
+blueprint.add_url_rule(
+    "/plans/<key>", view_func=AdminPlan, endpoint="admin_plan"
 )

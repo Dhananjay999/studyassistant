@@ -107,6 +107,7 @@ import {
   type ChatIntent,
   type ChatSource,
 } from "@/lib/analytics";
+import { noteProValueMoment } from "@/lib/plan";
 import { compressFile, ensureFileName } from "@/utils/compress";
 import {
   UPLOAD_FAILURES,
@@ -866,6 +867,7 @@ export default function ChatPage() {
             }
             const { quiz, flashcards } = mapped;
             const teamTurn = isTeamTurn(mapped);
+            noteProValueMoment("chat_response");
             analytics.track(AnalyticsEvent.CHAT_RESPONSE_COMPLETED, {
               chat_session_id: sid,
               tool_used: toolUsed,
@@ -1372,6 +1374,7 @@ export default function ChatPage() {
         setMediaStatus(mediaId, f.stage);
       },
       onReady: (via) => {
+        noteProValueMoment("upload_indexed");
         analytics.track(AnalyticsEvent.MEDIA_PROCESSING_COMPLETED, {
           media_id: mediaId,
           processing_ms: elapsed(),

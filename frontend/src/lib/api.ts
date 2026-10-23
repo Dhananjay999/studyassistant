@@ -48,6 +48,8 @@ import type {
   Note,
   NoteListItem,
   NoteSourceType,
+  PlanCurrency,
+  PlanInfo,
   RevisionDashboard,
   RevisionHome,
   SearchResults,
@@ -122,6 +124,9 @@ export const ENDPOINTS = {
   FLASHCARD_STUDY_BATCH: (id: string) => `/flashcards/${id}/study/batch`,
   LEARNING_PROFILE: "/learning-profile/",
   LEARNING_PROFILE_SKIP: "/learning-profile/skip",
+  PLAN: "/plan/",
+  PLAN_ACTIVATE_EARLY_ACCESS: "/plan/activate-early-access",
+  PLAN_PROMPT_SHOWN: "/plan/prompt-shown",
   ANALYTICS_OVERVIEW: "/analytics/overview",
   REVISION_DASHBOARD: "/revision/dashboard",
   REVISION_HOME: "/revision/home",
@@ -853,6 +858,22 @@ export const skipPersonalization = () =>
   unwrap<LearningProfile>(ENDPOINTS.LEARNING_PROFILE_SKIP, {
     method: "POST",
   });
+
+/* ---------------------------------- plan ---------------------------------- */
+
+export const getPlan = () => unwrap<PlanInfo>(ENDPOINTS.PLAN);
+
+/** Put the user on Pro at ₹0 / $0 (Early Access). No payment; idempotent.
+ *  `currency` is what the user was quoted; the profile remembers it. */
+export const activateProEarlyAccess = (currency: PlanCurrency) =>
+  unwrap<PlanInfo>(ENDPOINTS.PLAN_ACTIVATE_EARLY_ACCESS, {
+    method: "POST",
+    body: JSON.stringify({ currency }),
+  });
+
+/** Record that the Pro introduction was shown, so it is never repeated. */
+export const markProPromptShown = () =>
+  unwrap<PlanInfo>(ENDPOINTS.PLAN_PROMPT_SHOWN, { method: "POST" });
 
 /* -------------------------------- analytics ------------------------------- */
 

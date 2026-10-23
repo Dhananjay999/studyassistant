@@ -18,6 +18,7 @@ from aeva.mcp.base import (
     ToolContext,
     ToolDefinition,
 )
+from aeva.plan import plan_service
 from aeva.tracing.services import tool_trace
 
 
@@ -41,8 +42,10 @@ class ProductInfoTool(BaseTool):
                 "Answer questions about the StudyAssistant app and Aeva's "
                 "features: what Aeva can do, how to upload material, "
                 "quizzes, flashcards, exam mode, Study Spaces, sessions, "
-                "notes, revision, and settings. Only for app/feature "
-                "questions — never for academic content."
+                "notes, revision, settings, and the plan / pricing (is "
+                "Aeva free, what is Aeva Pro, how much does it cost, "
+                "Early Access). Only for app/feature questions — never "
+                "for academic content."
             ),
             parameters_schema=prompts.PRODUCT_INFO_PARAMS,
         )
@@ -60,6 +63,7 @@ class ProductInfoTool(BaseTool):
             prompts.PRODUCT_INFO_TEMPLATE,
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+            PLAN_KNOWLEDGE=plan_service.prompt_knowledge(),
         )
         answer = self.resolve_llm(ctx, "LLM_FAST_MODEL").generate(
             rendered.user_message,
@@ -85,6 +89,7 @@ class ProductInfoTool(BaseTool):
             prompts.PRODUCT_INFO_TEMPLATE,
             USER_MESSAGE=query,
             USER_PROFILE=prompts.user_profile_segment(ctx.personalization),
+            PLAN_KNOWLEDGE=plan_service.prompt_knowledge(),
         )
         answer = ""
         for chunk in llm.generate_stream(

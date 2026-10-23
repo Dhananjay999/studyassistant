@@ -49,6 +49,7 @@ import {
 } from "@/hooks/api";
 import { useFeature } from "@/hooks/useFeature";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
+import { noteProValueMoment } from "@/lib/plan";
 import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
 import {
   daysUntil,
@@ -227,6 +228,7 @@ export function ExamPrepOfferCard({
     const t0 = performance.now();
     try {
       const made = await create.mutateAsync(body);
+      noteProValueMoment("exam_plan_created");
       analytics.track(AnalyticsEvent.EXAM_PREP_OFFER_PLAN_CREATED, {
         plan_id: made.plan.id,
         days_remaining: made.days_remaining,

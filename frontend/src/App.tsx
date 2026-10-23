@@ -30,6 +30,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { SigningInModal } from "@/components/auth/SigningInModal";
 import { AuthPrompt } from "@/components/auth/AuthPrompt";
+import { ProAccessHost } from "@/components/pro/ProAccessHost";
 import { SettingsExperience } from "@/components/settings/SettingsExperience";
 import { queryClient } from "@/lib/queryClient";
 import { useAnalyticsRouteTracker } from "@/hooks/useAnalyticsRouteTracker";
@@ -170,6 +171,9 @@ export default function App() {
                     {/* Sign-in encouragement for anonymous visitors on the
                        public pages (needs the router for page eligibility). */}
                     <AuthPrompt />
+                    {/* Pro Early Access introduction for signed-in users,
+                       after their first value moments (lib/plan.ts). */}
+                    <ProAccessHost />
                     <Suspense fallback={<RouteFallback />}>
                       <Routes>
                     <Route path="/" element={<HomeRoute />} />

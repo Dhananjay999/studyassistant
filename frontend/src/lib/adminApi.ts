@@ -12,6 +12,8 @@ import type {
   AdminDebugUser,
   AdminEditProfileInput,
   AdminFeatureFlag,
+  AdminPlan,
+  AdminPlanOverride,
   AdminFlashcardSetDetail,
   AdminLoginResult,
   AdminMediaFullDetail,
@@ -219,4 +221,12 @@ export const adminApi = {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     }),
+  listPlans: () => unwrap<{ plans: AdminPlan[] }>("/plans"),
+  setPlan: (key: string, body: AdminPlanOverride) =>
+    unwrap<{ key: string } & AdminPlanOverride>(`/plans/${key}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  resetPlan: (key: string) =>
+    unwrap<{ key: string }>(`/plans/${key}`, { method: "DELETE" }),
 };

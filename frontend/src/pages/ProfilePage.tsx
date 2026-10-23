@@ -4,6 +4,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { useAuth } from "@/contexts/AuthContext";
 import { useConfirmLogout } from "@/hooks/useConfirmLogout";
+import { ProStatusChip } from "@/components/pro/ProStatusChip";
+import { ProAvatarFrame } from "@/components/pro/ProAvatarBadge";
 import { getSection } from "@/components/settings/sections";
 import type {
   SettingsSection,
@@ -95,13 +97,16 @@ function ProfileHeader({
       data-analytics-name="Profile account"
       className="flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card/40 p-4 text-left transition-colors hover:bg-accent/40"
     >
-      <Avatar className="h-12 w-12">
-        <AvatarImage src={avatarUrl || undefined} alt={name} />
-        <AvatarFallback>{name[0] || email?.[0] || "?"}</AvatarFallback>
-      </Avatar>
+      <ProAvatarFrame>
+        <Avatar className="h-12 w-12">
+          <AvatarImage src={avatarUrl || undefined} alt={name} />
+          <AvatarFallback>{name[0] || email?.[0] || "?"}</AvatarFallback>
+        </Avatar>
+      </ProAvatarFrame>
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">{name}</p>
         <p className="truncate text-sm text-muted-foreground">{email}</p>
+        <ProStatusChip className="mt-1.5" />
       </div>
       <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
     </button>

@@ -210,6 +210,18 @@ class SupabaseService:
         )
         return result.data[0] if result.data else None
 
+    def update_profile_fields(
+        self, user_id: str, fields: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Patch arbitrary columns on the user's profile row (plan, ...)."""
+        result = (
+            self.client.table("profiles")
+            .update(fields)
+            .eq("id", user_id)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
     # --- Sessions ---
 
     def create_session(

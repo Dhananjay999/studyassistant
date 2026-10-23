@@ -74,6 +74,8 @@ export class IdentityManager {
       name: user.full_name ?? undefined,
       personalization_status: user.personalization_status,
       is_debug_user: !!user.is_debug_user,
+      plan: user.plan ?? "free",
+      plan_status: user.plan_status ?? "none",
       ...extra,
     };
     const key = JSON.stringify([user.id, traits]);

@@ -8,19 +8,22 @@ import {
   Target,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ProAvatarFrame } from "@/components/pro/ProAvatarBadge";
+import { ProBadge } from "@/components/pro/ProBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFeature } from "@/hooks/useFeature";
 import { cn } from "@/lib/utils";
 
+// `pro` marks an advanced feature with a small PRO chip; it stays usable.
 const TABS = [
-  { label: "Chat", icon: MessageSquare, to: "/chat" },
-  { label: "Quizzes", icon: ListChecks, to: "/quizzes" },
-  { label: "Flashcards", icon: Layers, to: "/flashcards" },
-  { label: "Bookmarks", icon: Bookmark, to: "/bookmarks" },
+  { label: "Chat", icon: MessageSquare, to: "/chat", pro: false },
+  { label: "Quizzes", icon: ListChecks, to: "/quizzes", pro: true },
+  { label: "Flashcards", icon: Layers, to: "/flashcards", pro: false },
+  { label: "Bookmarks", icon: Bookmark, to: "/bookmarks", pro: false },
 ];
 // With Exam Prep on, it takes the fourth slot; Bookmarks stays reachable
 // from the sidebar drawer. Flag off = the exact tabs as before.
-const EXAM_TAB = { label: "Exam Prep", icon: Target, to: "/exam" };
+const EXAM_TAB = { label: "Exam Prep", icon: Target, to: "/exam", pro: true };
 
 /**
  * App-style fixed bottom navigation. Mobile/tablet only (hidden on lg+ where
@@ -81,6 +84,11 @@ export function MobileNav() {
               )}
             >
               <Icon className="h-5 w-5" />
+              {/* Pinned to the icon's corner, not inline with the label, so
+                 the tab's width is unchanged and five tabs fit at 320px. */}
+              {tab.pro && (
+                <ProBadge className="absolute -right-3.5 -top-1.5 px-1 text-[7px] leading-3" />
+              )}
             </motion.span>
             <span
               className={cn(
@@ -112,12 +120,14 @@ export function MobileNav() {
           whileTap={{ scale: 0.82 }}
           className={cn("relative z-10", profileActive && "text-brand-1")}
         >
-          <Avatar className="h-5 w-5">
-            <AvatarImage src={user?.avatar_url || undefined} />
-            <AvatarFallback className="text-[9px]">
-              {user?.full_name?.[0] || user?.email?.[0] || "?"}
-            </AvatarFallback>
-          </Avatar>
+          <ProAvatarFrame size="sm" badgeClassName="-bottom-1 -right-1">
+            <Avatar className="h-5 w-5">
+              <AvatarImage src={user?.avatar_url || undefined} />
+              <AvatarFallback className="text-[9px]">
+                {user?.full_name?.[0] || user?.email?.[0] || "?"}
+              </AvatarFallback>
+            </Avatar>
+          </ProAvatarFrame>
         </motion.span>
         <span
           className={cn(
