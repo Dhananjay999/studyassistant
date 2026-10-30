@@ -115,6 +115,7 @@ function usersQuery(params: AdminUsersParams): string {
     sort: params.sort,
     order: params.order,
     status: params.status,
+    plan: params.plan,
   });
   return sp.toString();
 }

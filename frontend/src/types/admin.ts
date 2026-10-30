@@ -1,7 +1,7 @@
 // Types for the hidden Super Admin panel. Kept separate from the public
 // app types since the admin surface evolves independently.
 
-import type { LearningProfileFields } from "@/types";
+import type { LearningProfileFields, Plan, PlanStatus } from "@/types";
 
 export interface AdminOverview {
   total_users: number;
@@ -70,6 +70,11 @@ export interface AdminUserRow {
   storage_used: number;
   /** Developer Mode enabled for this user. */
   is_debug_user?: boolean;
+  /** Plan tier (migration 040). Optional: older backends omit it; treat a
+   *  missing value as free. */
+  plan?: Plan;
+  plan_status?: PlanStatus;
+  pro_activated_at?: string | null;
 }
 
 export interface AdminUserList {
@@ -122,6 +127,10 @@ export interface AdminUserProfile {
   joined_at: string | null;
   personalization_status: PersonalizationStatus;
   is_debug_user?: boolean;
+  /** Plan tier (migration 040). Optional: older backends omit it. */
+  plan?: Plan;
+  plan_status?: PlanStatus;
+  pro_activated_at?: string | null;
   learning_profile: AdminLearningProfile;
 }
 
@@ -317,6 +326,8 @@ export interface AdminUsersParams {
   sort: "created_at" | "email" | "full_name";
   order: "asc" | "desc";
   status: "all" | PersonalizationStatus;
+  /** Plan tier filter; "all" (the default) applies none. */
+  plan: "all" | Plan;
 }
 
 export interface AdminLoginResult {

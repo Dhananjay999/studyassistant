@@ -9,10 +9,12 @@ from dataclasses import dataclass, field
 
 from marshmallow import Schema, ValidationError, fields, post_load, validate
 
-from aeva.plan.plan_service import CURRENCIES, INTERVALS
+from aeva.plan.plan_service import CURRENCIES, INTERVALS, PLAN_FREE, PLAN_PRO
 
 _SORT_FIELDS = ["created_at", "email", "full_name"]
 _STATUSES = ["all", "completed", "pending", "skipped"]
+# Plan tier filter for the user list: "all" or a `profiles.plan` value.
+_PLANS = ["all", PLAN_FREE, PLAN_PRO]
 
 
 @dataclass(frozen=True)
@@ -243,6 +245,7 @@ class UserListQuery:
     sort: str = "created_at"
     order: str = "desc"
     status: str = "all"
+    plan: str = "all"
 
 
 class UserListQuerySchema(Schema):
@@ -262,6 +265,7 @@ class UserListQuerySchema(Schema):
     status = fields.Str(
         load_default="all", validate=validate.OneOf(_STATUSES)
     )
+    plan = fields.Str(load_default="all", validate=validate.OneOf(_PLANS))
 
     @post_load
     def make_data(

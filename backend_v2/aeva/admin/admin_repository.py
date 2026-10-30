@@ -180,6 +180,19 @@ def _rate(numerator: Any, denominator: Any) -> float | None:
     return round(num / den, 4)
 
 
+def _plan_fields(profile: dict[str, Any]) -> dict[str, Any]:
+    """Plan tier fields of a profile row (migration 040) for admin views.
+
+    Defaults match the column defaults so a row read before the migration
+    was applied still reports ``free`` / ``none``.
+    """
+    return {
+        "plan": profile.get("plan") or plan_service.PLAN_FREE,
+        "plan_status": profile.get("plan_status") or "none",
+        "pro_activated_at": profile.get("pro_activated_at"),
+    }
+
+
 def _int(value: Any) -> int:
     try:
         return int(value or 0)
@@ -489,6 +502,8 @@ class AdminRepository:
             )
         if query.status != "all":
             base = base.eq("personalization_status", query.status)
+        if getattr(query, "plan", "all") != "all":
+            base = base.eq("plan", query.plan)
 
         res = (
             base.order(query.sort, desc=(query.order == "desc"))
@@ -571,6 +586,7 @@ class AdminRepository:
             "personalization_status": row.get("personalization_status")
             or "pending",
             "is_debug_user": bool(row.get("is_debug_user")),
+            **_plan_fields(row),
             "last_active": counts.get("last_active"),
             "total_chats": counts.get("sessions", 0),
             "total_quizzes": counts.get("quizzes", 0),
@@ -831,6 +847,7 @@ class AdminRepository:
             "personalization_status": profile.get("personalization_status")
             or "pending",
             "is_debug_user": bool(profile.get("is_debug_user")),
+            **_plan_fields(profile),
             "learning_profile": profile_document.read(profile),
         }
 

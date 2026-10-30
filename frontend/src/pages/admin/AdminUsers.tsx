@@ -21,6 +21,7 @@ import {
   ResponsiveTable,
   type ResponsiveColumn,
 } from "@/components/admin/ResponsiveTable";
+import { PlanBadge } from "@/components/admin/PlanBadge";
 import { UserAvatar } from "@/components/admin/UserAvatar";
 import { useAdminUsers } from "@/hooks/adminApi";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/adminFormat";
@@ -56,6 +57,11 @@ const COLUMNS: ResponsiveColumn<AdminUserRow>[] = [
         {u.login_provider}
       </Badge>
     ),
+  },
+  {
+    key: "plan",
+    header: "Plan",
+    cell: (u) => <PlanBadge plan={u.plan} />,
   },
   {
     key: "joined",
@@ -97,6 +103,7 @@ const DEFAULT_PARAMS: AdminUsersParams = {
   sort: "created_at",
   order: "desc",
   status: "all",
+  plan: "all",
 };
 
 const SORTS: { value: AdminUsersParams["sort"]; label: string }[] = [
@@ -110,6 +117,12 @@ const STATUSES: { value: AdminUsersParams["status"]; label: string }[] = [
   { value: "completed", label: "Onboarded" },
   { value: "pending", label: "Pending" },
   { value: "skipped", label: "Skipped" },
+];
+
+const PLANS: { value: AdminUsersParams["plan"]; label: string }[] = [
+  { value: "all", label: "All plans" },
+  { value: "pro", label: "Pro" },
+  { value: "free", label: "Free" },
 ];
 
 export function AdminUsers({
@@ -177,6 +190,31 @@ export function AdminUsers({
             {STATUSES.map((s) => (
               <SelectItem key={s.value} value={s.value}>
                 {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={params.plan}
+          onValueChange={(v) =>
+            patch({ plan: v as AdminUsersParams["plan"], page: 1 })
+          }
+        >
+          <SelectTrigger
+            className="sm:w-[130px]"
+            aria-label="Filter by plan"
+            data-analytics-name="Plan filter"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PLANS.map((p) => (
+              <SelectItem
+                key={p.value}
+                value={p.value}
+                data-analytics-name={`Plan filter ${p.value}`}
+              >
+                {p.label}
               </SelectItem>
             ))}
           </SelectContent>

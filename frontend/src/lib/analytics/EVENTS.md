@@ -19,7 +19,9 @@ lists are `data-analytics-private`; nav clicks are `ADMIN_NAV_<SECTION>_CLICK`.
 The overview's engagement drill-down reports as
 `ENGAGEMENT_<RETURNING|NEW|ACTIVE>_USERS_CLICK` (the chips),
 `ENGAGEMENT_USERS_SHEET_OPENED` / `_CLOSED` (the sheet) and `OPEN_USER_CLICK`
-in section `admin_engagement_users` (the rows, masked).
+in section `admin_engagement_users` (the rows, masked). The Users page plan
+filter reports as `PLAN_FILTER_CLICK` (the trigger) and
+`PLAN_FILTER_<ALL|PRO|FREE>_CLICK` (the chosen option).
 
 ## Core (emitted by the SDK)
 

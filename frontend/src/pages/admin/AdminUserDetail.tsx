@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PlanBadge } from "@/components/admin/PlanBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
@@ -178,6 +179,7 @@ export function AdminUserDetail({
               <Badge variant="outline" className="capitalize">
                 {profile.personalization_status}
               </Badge>
+              <PlanBadge plan={profile.plan} />
               <span className="text-muted-foreground">
                 Joined {formatDate(profile.joined_at)}
               </span>
