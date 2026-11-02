@@ -542,8 +542,14 @@ class SupabaseService:
     _MEDIA_LIST_COLUMNS = (
         "id,user_id,session_id,space_id,file_name,mime_type,storage_path,"
         "size_bytes,created_at,processing_status,processing_error,page_count,"
-        "chunk_count"
+        "chunk_count,parsed_text_path"
     )
+
+    # Rows per insert for page and chunk bulk writes. A 759-page document
+    # inserted as one statement was one oversized request away from failing
+    # after every page had been parsed.
+    _PAGE_INSERT_BATCH = 100
+    _CHUNK_INSERT_BATCH = 200
 
     def list_media(
         self,
@@ -626,7 +632,9 @@ class SupabaseService:
         if not rows:
             return
         logger.info("DB insert media_pages | %d rows", len(rows))
-        self.client.table("media_pages").insert(rows).execute()
+        for start in range(0, len(rows), self._PAGE_INSERT_BATCH):
+            batch = rows[start : start + self._PAGE_INSERT_BATCH]
+            self.client.table("media_pages").insert(batch).execute()
 
     # Columns added by migration 023; stripped on retry so uploads keep
     # working on a database where the migration has not been applied yet.
@@ -637,6 +645,11 @@ class SupabaseService:
         if not rows:
             return
         logger.info("DB insert media_chunks | %d rows", len(rows))
+        for start in range(0, len(rows), self._CHUNK_INSERT_BATCH):
+            self._insert_chunk_batch(rows[start : start + self._CHUNK_INSERT_BATCH])
+
+    def _insert_chunk_batch(self, rows: list[dict[str, Any]]) -> None:
+        """Insert one batch of chunk rows (see ``insert_media_chunks``)."""
         payload = [
             {**row, "embedding": _vec_to_str(row["embedding"])}
             for row in rows

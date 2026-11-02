@@ -123,6 +123,7 @@ export function ChatMessages({
   mediaAvailable,
   quizBusy,
   thinkingHint,
+  thinkingNote,
   onAction,
   onFollowup,
   onGenerateQuiz,
@@ -142,6 +143,8 @@ export function ChatMessages({
   mediaAvailable: boolean;
   quizBusy: boolean;
   thinkingHint?: ThinkingHint;
+  /** Live backend progress note for the pending answer (single agent). */
+  thinkingNote?: string;
   onAction: (message: string, sourceContent: string) => void;
   onFollowup: (prompt: string, title: string) => void;
   onGenerateQuiz: (
@@ -427,7 +430,7 @@ export function ChatMessages({
                   team ? (
                     <AgentWorkboard agents={team} live onRetry={retryAgent} />
                   ) : (
-                    <ThinkingIndicator hint={thinkingHint} />
+                    <ThinkingIndicator hint={thinkingHint} note={thinkingNote} />
                   )
                 ) : (
                   <div

@@ -14,6 +14,7 @@ its full text is also the chat answer, so nothing is hidden behind a tap.
 """
 
 import re
+from collections.abc import Generator
 from typing import Any
 
 from aeva.common.errors import ERROR_CODES, CustomError
@@ -47,6 +48,10 @@ _SOURCE_TYPE = {
 }
 
 _PREVIEW_CHARS = 240
+# The first line of a note is held back until it is complete, so the chat
+# shows the same "## Title" heading the saved note gets (not the model's
+# raw "# Title" line). A first line longer than this is flushed as is.
+_HEAD_MAX_CHARS = 200
 _MARKUP_RE = re.compile(r"[#*_`>|]+|\$\$?")
 _SPACE_RE = re.compile(r"\s+")
 _PROGRESS = {
@@ -126,10 +131,37 @@ class NotesGeneratorTool(BaseTool):
         """A fresh note is good material for a quiz or flashcards."""
         return [ACTION_QUIZ, ACTION_FLASHCARDS]
 
+    @staticmethod
+    def _head_text(head: str, label: str) -> str:
+        """The streamed opening: ``## Title`` plus whatever followed it."""
+        title, remainder = prompts.split_title(head, fallback=label)
+        remainder = remainder.lstrip("\n")
+        return f"## {title}\n\n{remainder}" if remainder else f"## {title}\n\n"
+
+    def can_stream(self) -> bool:
+        """The note streams into the chat as it is written.
+
+        A revision sheet takes 30-65 s to write; until 2026-11 nothing was
+        on screen for all of it (p50 33 s, p95 65 s), students pressed Stop
+        and sent again, and three identical notes got saved.
+        """
+        return True
+
     def execute(
         self, ctx: ToolContext, params: dict[str, Any]
     ) -> dict[str, Any]:
         """Generate the note, persist it and return the chat card payload."""
+        stream = self.execute_stream(ctx, params)
+        try:
+            while True:
+                next(stream)
+        except StopIteration as stop:
+            return stop.value or {}
+
+    def execute_stream(
+        self, ctx: ToolContext, params: dict[str, Any]
+    ) -> Generator[str, None, dict[str, Any]]:
+        """Stream the note's markdown, then save it and return the card."""
         kind = str(params.get("kind") or "")
         if kind not in prompts.NOTE_KIND_LABELS:
             kind = prompts.DEFAULT_NOTE_KIND
@@ -137,6 +169,7 @@ class NotesGeneratorTool(BaseTool):
         topic = str(params.get("topic") or ctx.message or "")
         from_answer = bool(params.get("from_answer"))
 
+        llm = self.resolve_llm(ctx, "LLM_MEDIA_MODEL")
         grounding = ground_generator(
             ctx,
             topic=topic,
@@ -144,6 +177,7 @@ class NotesGeneratorTool(BaseTool):
             wants_media=bool(params.get("use_media")) and not from_answer,
             supabase=self.supabase,
             retrieval=self.retrieval,
+            llm=llm,
         )
         if grounding.from_media:
             source = SOURCE_FILES
@@ -165,12 +199,26 @@ class NotesGeneratorTool(BaseTool):
             SOURCE_CONTEXT=grounding.source_context,
         )
         ctx.note(_PROGRESS[kind])
-        raw = self.resolve_llm(ctx, "LLM_MEDIA_MODEL").generate(
+        raw = ""
+        head = ""
+        head_done = False
+        for chunk in llm.generate_stream(
             rendered.user_message,
             system_prompt=rendered.system_prompt,
             history=history,
             attachments=grounding.attachments,
-        )
+        ):
+            raw += chunk
+            if head_done:
+                yield chunk
+                continue
+            head += chunk
+            if "\n" not in head and len(head) < _HEAD_MAX_CHARS:
+                continue
+            head_done = True
+            yield self._head_text(head, label)
+        if not head_done and head:
+            yield self._head_text(head, label)
         title, body = prompts.split_title(raw, fallback=label)
         if not body.strip():
             # Nothing to save: the runner reports the step as failed and

@@ -22,6 +22,7 @@ import type {
   ExamTopicLesson,
   ExamTopicQuizRequest,
   ExamTopicStatus,
+  UpdateExamPlanRequest,
   LearningProfile,
   LearningProfileInput,
   MediaItem,
@@ -135,6 +136,7 @@ export const ENDPOINTS = {
   NOTIFICATIONS_PENDING: "/notifications/pending",
   // Exam Prep (feature flag `exam_prep`).
   EXAM_PLAN: "/exam-prep/plan",
+  EXAM_PLAN_ITEM: (planId: string) => `/exam-prep/plan/${planId}`,
   EXAM_PLAN_ARCHIVE: (planId: string) => `/exam-prep/plan/${planId}/archive`,
   EXAM_DAY: (planId: string, dayId: string) =>
     `/exam-prep/plan/${planId}/days/${dayId}`,
@@ -966,6 +968,17 @@ export const createExamPlan = (body: CreateExamPlanRequest) =>
   unwrap<ExamDashboard>(
     ENDPOINTS.EXAM_PLAN,
     { method: "POST", body: JSON.stringify(body) },
+    { timeoutMs: GENERATION_TIMEOUT },
+  );
+
+/** Edits the active plan in place: regenerates the roadmap from the merged
+ * fields and carries progress over (same plan id and session). One LLM
+ * generation, so it uses the generation timeout like `createExamPlan`.
+ * Returns the updated dashboard. */
+export const updateExamPlan = (planId: string, body: UpdateExamPlanRequest) =>
+  unwrap<ExamDashboard>(
+    ENDPOINTS.EXAM_PLAN_ITEM(planId),
+    { method: "PATCH", body: JSON.stringify(body) },
     { timeoutMs: GENERATION_TIMEOUT },
   );
 

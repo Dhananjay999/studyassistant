@@ -58,12 +58,22 @@ export function GoogleButton({
           fullWidth && "w-full justify-center",
         )}
       >
-        {signingIn ? (
-          <Loader2 className="h-5 w-5 animate-spin text-brand-1" />
-        ) : (
-          <GoogleIcon className="h-5 w-5" />
-        )}
-        {signingIn ? "Signing you in…" : label}
+        {/* Both states stay mounted and toggle by class. Swapping the icon
+            and the text node on click crashed the page for visitors using
+            browser page translation (Chrome wraps text nodes in <font>, so
+            React's insertBefore/removeChild could not find them: Sentry
+            CLIENT-4, 4 of 14 non-English landers in one week). */}
+        <span aria-hidden className="relative grid h-5 w-5 place-items-center">
+          <GoogleIcon className={cn("h-5 w-5", signingIn && "invisible")} />
+          <Loader2
+            className={cn(
+              "absolute h-5 w-5 animate-spin text-brand-1",
+              !signingIn && "hidden",
+            )}
+          />
+        </span>
+        <span className={cn(signingIn && "hidden")}>{label}</span>
+        <span className={cn(!signingIn && "hidden")}>Signing you in…</span>
       </span>
     </button>
   );

@@ -62,6 +62,11 @@ def init_sentry() -> bool:
         # uploads are user content. The user is identified by id only.
         send_default_pii=False,
         max_request_body_size="never",
+        # Frame locals are never sent: the media pipeline holds whole files
+        # and page lists in locals, which pushed events over Sentry's size
+        # limit and dropped them ("too_large:event"), so the upload outage
+        # of 2026-10-22 produced no stack trace at all.
+        include_local_variables=False,
     )
     logger.info("Sentry enabled | environment=%s", _environment())
     return True
@@ -72,9 +77,25 @@ def set_user(user_id: str) -> None:
     sentry_sdk.set_user({"id": user_id})
 
 
-def capture_exception(error: BaseException) -> None:
-    """Report an exception and push it out before the request ends."""
-    sentry_sdk.capture_exception(error)
+def capture_exception(
+    error: BaseException,
+    *,
+    tags: dict[str, str] | None = None,
+    extras: dict[str, Any] | None = None,
+) -> None:
+    """Report an exception and push it out before the request ends.
+
+    ``tags`` (searchable: a stage, a reason code) and ``extras`` (ids,
+    sizes, counts) make the event attributable without frame locals. Pass
+    only ids, enums and numbers: never file names, text or anything that
+    identifies the user.
+    """
+    with sentry_sdk.new_scope() as scope:
+        for key, value in (tags or {}).items():
+            scope.set_tag(key, value)
+        for key, value in (extras or {}).items():
+            scope.set_extra(key, value)
+        sentry_sdk.capture_exception(error)
     sentry_sdk.flush(timeout=_FLUSH_TIMEOUT_S)
 
 

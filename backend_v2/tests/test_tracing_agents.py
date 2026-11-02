@@ -1337,11 +1337,13 @@ class TestToolDecisions:
             {"tool": "general", "text_chars": 12, "sources": 0}
         ]
         names = [s["name"] for s in spans if s["parent_id"] == step["id"]]
+        # The model is resolved before grounding since 2026-11: its provider
+        # decides whether un-indexed documents can travel as attachments.
         assert names == [
+            "resolve_model",
             "grounding",
             "quiz_params",
             "quiz_generation",
-            "resolve_model",
             "quiz_normalize",
             "quiz",
         ]
@@ -1640,10 +1642,121 @@ class TestMediaPrepare:
         tool, llm = _media_tool([failed])
         box, spans = self._run(saved, media_app, tool, _ctx(), {})
         row = _one(spans, "media_prepare", "decision")
-        assert row["output"]["early_answer"] == "nothing_usable"
+        assert row["output"]["early_answer"] == "failed_files"
         assert row["output"]["raw_docs"] == ["bad.pdf"]
-        assert box["out"][0] == prompts.NO_MEDIA_MESSAGE
+        assert box["out"][0] == prompts.failed_media_message(["bad.pdf"])
+        assert "bad.pdf" in box["out"][0]
         llm.generate_stream.assert_not_called()
+
+    def test_failed_pdf_is_never_attached_to_a_provider_that_drops_it(
+        self, saved, media_app
+    ):
+        # The pre-fix path: RAG_ATTACHMENT_FALLBACK on, a failed PDF attached
+        # whole, the OpenAI provider silently dropped it and the model
+        # answered from general knowledge.
+        media_app.config["RAG_ATTACHMENT_FALLBACK"] = True
+        failed = {
+            "id": "f",
+            "processing_status": "failed",
+            "chunk_count": 0,
+            "mime_type": "application/pdf",
+            "file_name": "bad.pdf",
+        }
+        tool, llm = _media_tool([failed])
+        llm.provider_name = "openai"
+        with patch.object(media_llm, "download_attachments") as download:
+            box, _spans = self._run(saved, media_app, tool, _ctx(), {})
+        download.assert_not_called()
+        assert box["out"][0] == prompts.failed_media_message(["bad.pdf"])
+        llm.generate_stream.assert_not_called()
+
+    def test_pending_pdf_on_a_non_document_provider_is_still_processing(
+        self, saved, media_app
+    ):
+        media_app.config["RAG_ATTACHMENT_FALLBACK"] = True
+        pending = {
+            "id": "p",
+            "processing_status": "embedding",
+            "chunk_count": 0,
+            "mime_type": "application/pdf",
+            "file_name": "big.pdf",
+        }
+        tool, llm = _media_tool([pending])
+        llm.provider_name = "openai"
+        with patch.object(media_llm, "download_attachments") as download:
+            box, _spans = self._run(saved, media_app, tool, _ctx(), {})
+        download.assert_not_called()
+        assert box["out"][0] == prompts.PROCESSING_MESSAGE
+
+    def test_pending_pdf_still_attaches_on_gemini(self, saved, media_app):
+        media_app.config["RAG_ATTACHMENT_FALLBACK"] = True
+        pending = {
+            "id": "p",
+            "processing_status": "embedding",
+            "chunk_count": 0,
+            "mime_type": "application/pdf",
+            "file_name": "big.pdf",
+        }
+        tool, llm = _media_tool([pending])
+        llm.provider_name = "gemini"
+        with patch.object(
+            media_llm,
+            "download_attachments",
+            return_value=[{"mime_type": "application/pdf", "data": b"%PDF"}],
+        ) as download:
+            box, _spans = self._run(saved, media_app, tool, _ctx(), {})
+        download.assert_called_once()
+        llm.generate_stream.assert_called_once()
+        assert llm.generate_stream.call_args.kwargs["attachments"] == [
+            {"mime_type": "application/pdf", "data": b"%PDF"}
+        ]
+
+    def test_failed_pdf_with_parsed_text_is_inlined_not_attached(
+        self, saved, media_app
+    ):
+        media_app.config["RAG_ATTACHMENT_FALLBACK"] = True
+        media_app.config["RAG_CONTEXT_MAX_CHARS"] = 1000
+        failed = {
+            "id": "f",
+            "processing_status": "failed",
+            "chunk_count": 0,
+            "mime_type": "application/pdf",
+            "file_name": "notes.pdf",
+            "parsed_text_path": "u/notes.parsed.txt",
+        }
+        tool, llm = _media_tool([failed])
+        llm.provider_name = "openai"
+        tool.supabase.download_file.return_value = b"Osmosis moves water."
+        with patch.object(media_llm, "download_attachments") as download:
+            box, _spans = self._run(saved, media_app, tool, _ctx(), {})
+        download.assert_not_called()
+        llm.generate_stream.assert_called_once()
+        prompt = llm.generate_stream.call_args.args[0]
+        assert "Osmosis moves water." in prompt
+        assert "[cite:notes.pdf]" in prompt
+        assert llm.generate_stream.call_args.kwargs["attachments"] is None
+        assert box["out"][1]["sources"] == [
+            {"media_id": "f", "document_name": "notes.pdf", "page_number": None}
+        ]
+        assert box["out"][1]["media_count"] == 1
+
+    def test_mixed_failed_and_indexed_files_answer_with_a_notice(
+        self, saved, media_app
+    ):
+        failed = {
+            "id": "f",
+            "processing_status": "failed",
+            "chunk_count": 0,
+            "mime_type": "application/pdf",
+            "file_name": "bad.pdf",
+        }
+        tool, llm = _media_tool([INDEXED, failed], _retrieved("[1] excerpt"))
+        llm.provider_name = "openai"
+        box, _spans = self._run(saved, media_app, tool, _ctx(), {})
+        text, result = box["out"]
+        assert text.startswith(prompts.failed_media_notice(["bad.pdf"]))
+        assert result["answer"].startswith(prompts.failed_media_notice(["bad.pdf"]))
+        assert "Osmosis" in text
 
     def test_files_attached_whole_beside_the_excerpts(self, saved, media_app):
         tool, llm = _media_tool([INDEXED, IMAGE], _retrieved("[1] excerpt"))

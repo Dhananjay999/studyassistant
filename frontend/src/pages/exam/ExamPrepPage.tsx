@@ -1,19 +1,22 @@
 // /exam — the Exam Prep dashboard ("where am I, what now"): countdown hero,
 // a one-time "how it works" strip, the next topic to study, today's checklist,
-// upcoming days, per-subject progress, the plan summary and "Start over".
+// upcoming days, per-subject progress, the plan summary, "Edit plan" (change
+// the class, date, subjects or time and keep progress) and "Start over".
 // Tapping a topic opens its lesson page (/exam/topic/:id), where Aeva teaches it.
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { ChevronDown, Lightbulb, RotateCcw } from "lucide-react";
+import { ChevronDown, Lightbulb, Pencil, RotateCcw } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { GlassCard } from "@/components/common/GlassCard";
 import { Seo } from "@/components/common/Seo";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EditPlanSheet } from "@/components/exam/EditPlanSheet";
 import { ExamEmptyState } from "@/components/exam/ExamEmptyState";
+import { formatPlanDate } from "@/components/exam/examFormat";
 import { ExamHeroCard } from "@/components/exam/ExamHeroCard";
 import { HowItWorksStrip } from "@/components/exam/HowItWorksStrip";
 import { NextUpCard } from "@/components/exam/NextUpCard";
@@ -90,19 +93,30 @@ function Dashboard({
   const reduce = useReducedMotion();
   const confirm = useConfirm();
   const archive = useArchiveExamPlan();
+  const [editOpen, setEditOpen] = useState(false);
   const { plan } = data;
+  const editCount = plan.plan_meta.edit_count ?? 0;
   // Days not yet started: the plan may begin later than today.
   const upcoming =
     data.upcoming.length > 0
       ? data.upcoming
       : data.days.filter((d) => d.id !== data.today?.id).slice(0, 7);
 
+  const openEdit = () => {
+    analytics.track(AnalyticsEvent.EXAM_PLAN_EDIT_OPENED, {
+      plan_id: plan.id,
+      days_remaining: data.days_remaining,
+      progress_percent: data.progress.percent,
+    });
+    setEditOpen(true);
+  };
+
   const startOver = async () => {
     const ok = await confirm({
-      title: "Start over?",
+      title: "Start over with a new plan?",
       description:
-        "Your current plan and its progress will be archived. You'll set up a new plan next.",
-      confirmText: "Start over",
+        "This archives your current plan and all its progress. To change the class, subjects, exam date or daily time and keep your progress, use Edit plan instead.",
+      confirmText: "Archive and start over",
       destructive: true,
     });
     if (!ok) return;
@@ -144,16 +158,38 @@ function Dashboard({
 
       <div className="flex flex-col items-center gap-2 pb-20 pt-2 text-center lg:pb-4">
         <Button
+          variant="outline"
+          onClick={openEdit}
+          data-analytics-name="Exam edit plan"
+          className="h-11 gap-1.5 rounded-full px-5"
+        >
+          <Pencil className="h-4 w-4" /> Edit plan
+        </Button>
+        <p className="max-w-xs text-xs text-muted-foreground">
+          Change the class, subjects, exam date or daily time, or tick what
+          you've already covered. Your progress stays.
+          {plan.plan_meta.edited_at && (
+            <>
+              {" "}
+              <span className="whitespace-nowrap tabular-nums">
+                Last edited {formatPlanDate(plan.plan_meta.edited_at.slice(0, 10))}
+                {editCount > 1 ? ` (${editCount}×)` : ""}.
+              </span>
+            </>
+          )}
+        </p>
+        <Button
           variant="ghost"
           size="sm"
           onClick={() => void startOver()}
           disabled={archive.isPending}
           data-analytics-name="Exam start over"
-          className="h-11 gap-1.5 text-muted-foreground"
+          className="mt-2 h-11 gap-1.5 text-muted-foreground"
         >
-          <RotateCcw className="h-4 w-4" /> Start over with a new plan
+          <RotateCcw className="h-4 w-4" /> Start over (archives this plan)
         </Button>
       </div>
+      <EditPlanSheet open={editOpen} onOpenChange={setEditOpen} dashboard={data} />
     </>
   );
 }

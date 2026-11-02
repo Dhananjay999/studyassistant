@@ -56,6 +56,11 @@ class LLMClient:
         return self._provider.model
 
     @property
+    def provider_name(self) -> str:
+        """Provider family, lower-case ("openai", "gemini", ...)."""
+        return self._provider_name
+
+    @property
     def _provider_name(self) -> str:
         """Short vendor name for logs (e.g. 'gemini', 'groq')."""
         return type(self._provider).__name__.replace("Provider", "").lower()

@@ -266,6 +266,8 @@ def load_env_vars(app: Flask) -> None:  # noqa: PLR0915 - flat config loader
         ("RAG_HYBRID", True),
         ("RAG_QUERY_REWRITE", True),
         ("RAG_MULTI_QUERY", True),
+        # Skip the LLM rerank when the candidates already fit the final cut.
+        ("RAG_RERANK_ONLY_OVER_TOP_K", True),
     ):
         app.config[flag] = (
             os.environ.get(flag, str(default)).lower() in ("1", "true", "yes")

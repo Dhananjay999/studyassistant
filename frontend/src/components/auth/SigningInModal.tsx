@@ -50,10 +50,15 @@ export function SigningInModal() {
             <BrandLogo withWordmark={false} className="animate-float scale-125" />
             <div>
               <p className="font-display font-semibold">Signing you in…</p>
+              {/* Both lines stay mounted (class toggle): swapping a text
+                  node while the page is browser-translated crashes React. */}
               <p className="mt-1 text-xs text-muted-foreground">
-                {leaving
-                  ? "Taking you to Google to sign in…"
-                  : "Complete the Google sign-in in the popup window."}
+                <span className={leaving ? undefined : "hidden"}>
+                  Taking you to Google to sign in…
+                </span>
+                <span className={leaving ? "hidden" : undefined}>
+                  Complete the Google sign-in in the popup window.
+                </span>
               </p>
             </div>
             <Loader2 className="h-5 w-5 animate-spin text-primary" />

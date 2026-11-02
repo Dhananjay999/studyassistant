@@ -182,11 +182,15 @@ class _FastLLM:
             }
 
 
+# ``rerank_only_over_top_k=False``: these fixtures exercise the reranker
+# itself with two candidates and top_k=2 (production skips that case).
 FULL = RetrievalOptions(
-    top_k=2, multi_query=True, rerank="llm", rerank_timeout_s=2
+    top_k=2, multi_query=True, rerank="llm", rerank_timeout_s=2,
+    rerank_only_over_top_k=False,
 )
 RERANK_ONLY = RetrievalOptions(
-    top_k=2, multi_query=False, rerank="llm", rerank_timeout_s=2
+    top_k=2, multi_query=False, rerank="llm", rerank_timeout_s=2,
+    rerank_only_over_top_k=False,
 )
 HISTORY = [{"role": "user", "content": "explain osmosis"}]
 
@@ -325,7 +329,8 @@ class TestRetrievalSpans:
     def test_rerank_timeout_status_and_late_call(self, app, saved):
         llm = _FastLLM(rerank_delay=0.3)
         opts = RetrievalOptions(
-            top_k=2, multi_query=False, rerank="llm", rerank_timeout_s=0.05
+            top_k=2, multi_query=False, rerank="llm", rerank_timeout_s=0.05,
+            rerank_only_over_top_k=False,
         )
         _start()
         with app.app_context():
@@ -356,7 +361,8 @@ class TestRetrievalSpans:
     def test_rerank_abandoned_past_the_flush_is_unfinished(self, app, saved):
         llm = _FastLLM(rerank_delay=0.4)
         opts = RetrievalOptions(
-            top_k=2, multi_query=False, rerank="llm", rerank_timeout_s=0.05
+            top_k=2, multi_query=False, rerank="llm", rerank_timeout_s=0.05,
+            rerank_only_over_top_k=False,
         )
         _start()
         with app.app_context():

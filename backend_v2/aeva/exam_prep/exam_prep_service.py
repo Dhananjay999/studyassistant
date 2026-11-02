@@ -13,6 +13,7 @@ can be unit-tested without Supabase or an LLM.
 
 import logging
 import re
+import uuid
 from collections.abc import Generator
 from datetime import UTC, date, datetime
 from typing import Any
@@ -20,11 +21,13 @@ from typing import Any
 from aeva.common.errors import ERROR_CODES, CustomError
 from aeva.exam_prep.exam_prep_repository import ExamPrepRepository
 from aeva.exam_prep.schema.exam_prep_schema import (
+    EDITABLE_PLAN_FIELDS,
     CreateExamPlanData,
     ExamChatRequestData,
     LessonStreamData,
     TopicFlashcardsData,
     TopicQuizData,
+    UpdateExamPlanData,
     is_uuid,
 )
 from aeva.feature_flag import feature_flag_service
@@ -76,6 +79,11 @@ _EXAM_KIND_LABELS = {
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_COMPLETED = "completed"
+# Topics named per status in the edit prompt's progress note (bounds it).
+MAX_PROGRESS_NOTE_TOPICS = 40
+# Edited fields that change what the exam IS; the syllabus is re-researched
+# when one of them changes (otherwise the stored brief is reused).
+_IDENTITY_FIELDS = ("exam_name", "class_level", "stream", "board")
 # Postgres unique_violation (postgrest APIError.code); raised by
 # idx_exam_plans_one_active when two creates race.
 _UNIQUE_VIOLATION = "23505"
@@ -522,6 +530,184 @@ def _topic_lines(topics: list[dict[str, Any]]) -> str:
     )
 
 
+# --------------------------------------------------------------- edits
+
+
+def topic_key(subject: Any, title: Any) -> tuple[str, str]:
+    """Case-insensitive identity of a topic across a plan edit."""
+    return (_text(subject).lower(), _text(title).lower())
+
+
+def _effective_status(topic: dict[str, Any], covered: set[str]) -> str:
+    """The topic's status once ``covered_topic_ids`` is applied."""
+    if str(topic.get("id")) in covered:
+        return STATUS_COMPLETED
+    return str(topic.get("status") or STATUS_NOT_STARTED)
+
+
+def progress_note(
+    old_topics: list[dict[str, Any]], covered_ids: list[str]
+) -> str:
+    """Roadmap-prompt block naming what the student has already done.
+
+    Asks the model to keep the exact subject and title for anything it
+    re-lists, which is what ``carry_progress`` matches on. Empty when there
+    is no progress to keep.
+    """
+    covered = {str(c) for c in covered_ids}
+    done: list[str] = []
+    doing: list[str] = []
+    for topic in old_topics:
+        status = _effective_status(topic, covered)
+        if status == STATUS_COMPLETED:
+            done.append(topic_label(topic))
+        elif status == STATUS_IN_PROGRESS:
+            doing.append(topic_label(topic))
+    if not done and not doing:
+        return ""
+
+    def _join(items: list[str]) -> str:
+        shown = "; ".join(items[:MAX_PROGRESS_NOTE_TOPICS])
+        rest = len(items) - MAX_PROGRESS_NOTE_TOPICS
+        return shown + (f" (+{rest} more)" if rest > 0 else "")
+
+    lines = [
+        "\nPROGRESS SO FAR: this plan is being edited and the student keeps "
+        "their progress. When you list one of these topics again, repeat its "
+        "subject and title EXACTLY as written here."
+    ]
+    if done:
+        lines.append(
+            "- Already completed (no fresh study needed; leave them out, or "
+            "re-list a few with the exact same title as a short late "
+            f"revision): {_join(done)}"
+        )
+    if doing:
+        lines.append(
+            "- In progress (schedule these in the first days, exact same "
+            f"title): {_join(doing)}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def carry_progress(
+    old_topics: list[dict[str, Any]],
+    days: list[dict[str, Any]],
+    covered_ids: list[str],
+    now_iso: str,
+) -> dict[str, int]:
+    """Attach kept progress to a regenerated roadmap (pure, in place).
+
+    Every new topic gets a ``carry`` dict of the progress columns, so the
+    topic insert stays one uniform batch. A new topic whose subject + title
+    matches (case-insensitively) an old topic that was completed, in
+    progress, in ``covered_ids`` or had a lesson / quiz / flashcards keeps
+    that topic's id, status, lesson and links; everything else starts fresh
+    with a new id. Each old topic is reused at most once. Returns counts:
+    ``carried``, ``completed``, ``in_progress``.
+    """
+    covered = {str(c) for c in covered_ids}
+    keep: dict[tuple[str, str], dict[str, Any]] = {}
+    for old in old_topics:
+        status = _effective_status(old, covered)
+        has_artefact = bool(
+            old.get("lesson_md")
+            or old.get("lesson_generated_at")
+            or old.get("quiz_id")
+            or old.get("flashcard_set_id")
+        )
+        if status == STATUS_NOT_STARTED and not has_artefact:
+            continue
+        key = topic_key(old.get("subject"), old.get("title"))
+        if key in keep:
+            continue
+        newly_covered = status != str(old.get("status") or STATUS_NOT_STARTED)
+        keep[key] = {
+            "id": str(old["id"]),
+            "status": status,
+            "status_updated_at": (
+                now_iso if newly_covered else old.get("status_updated_at")
+            ),
+            "lesson_md": old.get("lesson_md"),
+            "lesson_generated_at": old.get("lesson_generated_at"),
+            "quiz_id": old.get("quiz_id"),
+            "flashcard_set_id": old.get("flashcard_set_id"),
+        }
+    counts = {"carried": 0, "completed": 0, "in_progress": 0}
+    used: set[tuple[str, str]] = set()
+    for day in days:
+        for topic in day.get("topics") or []:
+            key = topic_key(topic.get("subject"), topic.get("title"))
+            kept = keep.get(key)
+            if kept is not None and key not in used:
+                used.add(key)
+                topic["carry"] = dict(kept)
+                counts["carried"] += 1
+                if kept["status"] == STATUS_COMPLETED:
+                    counts["completed"] += 1
+                elif kept["status"] == STATUS_IN_PROGRESS:
+                    counts["in_progress"] += 1
+                continue
+            topic["carry"] = {
+                "id": str(uuid.uuid4()),
+                "status": STATUS_NOT_STARTED,
+                "status_updated_at": None,
+                "lesson_md": None,
+                "lesson_generated_at": None,
+                "quiz_id": None,
+                "flashcard_set_id": None,
+            }
+    return counts
+
+
+def merge_plan_edit(
+    plan: dict[str, Any], data: UpdateExamPlanData
+) -> tuple[CreateExamPlanData, list[str]]:
+    """Apply an edit to the plan's fields and report which ones changed.
+
+    Returns the merged values in the create-plan shape (so the research and
+    roadmap prompts are shared) and ``fields_changed`` in
+    ``EDITABLE_PLAN_FIELDS`` order.
+    """
+    meta = dict(plan.get("plan_meta") or {})
+    current: dict[str, Any] = {
+        "exam_name": _text(plan.get("exam_name")),
+        "exam_date": _as_date(plan.get("exam_date")),
+        "class_level": _text(plan.get("class_level")),
+        "stream": _text(plan.get("stream")),
+        "board": _text(meta.get("board")),
+        "subjects": [str(x) for x in plan.get("subjects") or []],
+        "daily_minutes": int(plan.get("daily_minutes") or 120),
+        "target_score": _text(plan.get("target_score")) or None,
+        "syllabus_text": _text(plan.get("syllabus_text")) or None,
+        "exam_details": _text(meta.get("exam_details")),
+    }
+    merged = {**current, **data.changes()}
+    changed = [
+        name for name in EDITABLE_PLAN_FIELDS if merged[name] != current[name]
+    ]
+    return (
+        CreateExamPlanData(
+            exam_name=merged["exam_name"],
+            exam_date=merged["exam_date"],
+            subjects=list(merged["subjects"]),
+            class_level=merged["class_level"],
+            stream=merged["stream"],
+            daily_minutes=int(merged["daily_minutes"]),
+            target_score=merged["target_score"],
+            syllabus_text=merged["syllabus_text"],
+            material_media_ids=[
+                str(m) for m in plan.get("material_media_ids") or []
+            ],
+            exam_kind=str(meta.get("exam_kind") or "other"),
+            board=merged["board"],
+            exam_details=merged["exam_details"],
+            research=True,
+        ),
+        changed,
+    )
+
+
 # ------------------------------------------------------------- service
 
 
@@ -606,10 +792,18 @@ class ExamPrepService:
             return {"plan": None}
         return self._dashboard(plan)
 
-    def _dashboard(self, plan: dict[str, Any]) -> dict[str, Any]:
-        """Dashboard in ≤4 queries: plan (loaded), days, topics, attempts."""
+    def _dashboard(
+        self,
+        plan: dict[str, Any],
+        topics: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Dashboard in ≤4 queries: plan (loaded), days, topics, attempts.
+
+        ``topics`` skips the topic read when the caller already holds them.
+        """
         days = self.repo.list_days(plan["id"])
-        topics = self.repo.list_topics(plan["id"])
+        if topics is None:
+            topics = self.repo.list_topics(plan["id"])
         quiz_ids = [str(t["quiz_id"]) for t in topics if t.get("quiz_id")]
         summaries = (
             self.repo.quiz_summaries(plan["user_id"], quiz_ids)
@@ -677,6 +871,14 @@ class ExamPrepService:
         any point before that leaves the current plan untouched; a failure in
         the flip restores it (``_discard_plan``).
         """
+        # Same attempt again (the browser gave up at 50-150 s while the
+        # server finished and stored the plan): hand back that plan. Without
+        # this, 9 of 44 plans in one week were identical duplicates and the
+        # retry archived the plan the student had just started.
+        existing = self._existing_plan_for_request(user_id, data)
+        if existing is not None:
+            return self._dashboard(existing)
+
         today = today_utc()
         days_remaining = max(0, (data.exam_date - today).days)
         total_days = min(max(days_remaining, 1), MAX_PLAN_DAYS)
@@ -687,6 +889,85 @@ class ExamPrepService:
         brief, sources = (
             ("", []) if cram else self.research_syllabus(data, days_remaining)
         )
+        roadmap = self._generate_roadmap(
+            user_id, data, days_remaining, total_days, material, brief, cram=cram
+        )
+
+        row = {
+            "user_id": user_id,
+            # Transient: flipped to "active" by _activate_plan, last.
+            "status": "archived",
+            "exam_name": data.exam_name,
+            "exam_date": data.exam_date.isoformat(),
+            "class_level": data.class_level.strip(),
+            "stream": data.stream.strip(),
+            "subjects": list(data.subjects),
+            "daily_minutes": data.daily_minutes,
+            "target_score": _text(data.target_score) or None,
+            "syllabus_text": _text(data.syllabus_text) or None,
+            "material_media_ids": [str(m["id"]) for m in material],
+            "total_days": total_days,
+            "client_request_id": data.client_request_id,
+            "plan_meta": {
+                "summary": roadmap["summary"],
+                "strategy_tips": roadmap["strategy_tips"],
+                "model": self.llm.model,
+                "generated_at": _now_iso(),
+                "days_remaining_at_setup": days_remaining,
+                "cram": cram,
+                "exam_kind": data.exam_kind,
+                "board": _text(data.board),
+                "exam_details": _text(data.exam_details),
+                "research_brief": brief,
+                "research_sources": sources,
+            },
+        }
+        plan: dict[str, Any] | None = None
+        archived: list[str] = []
+        try:
+            try:
+                plan = self.repo.insert_plan(row)
+            except Exception as exc:
+                # Two requests of the same attempt raced past the lookup:
+                # the unique (user_id, client_request_id) index stopped the
+                # second insert, so return the winner's plan.
+                existing = (
+                    self._existing_plan_for_request(user_id, data)
+                    if _is_unique_violation(exc)
+                    else None
+                )
+                if existing is None:
+                    raise
+                logger.info("Exam plan create replayed from the same attempt")
+                return self._dashboard(existing)
+            self.repo.insert_roadmap(plan["id"], today, roadmap["days"])
+            plan = self.ensure_session(user_id, plan)
+            plan = self._activate_plan(user_id, plan, archived)
+        except Exception as exc:
+            logger.exception("Exam plan persistence failed")
+            if plan is not None:
+                self._discard_plan(user_id, str(plan["id"]), archived)
+            raise CustomError(ERROR_CODES["INTERNAL_ERROR"]) from exc
+        return self._dashboard(plan)
+
+    def _generate_roadmap(
+        self,
+        user_id: str,
+        data: CreateExamPlanData,
+        days_remaining: int,
+        total_days: int,
+        material: list[dict[str, Any]],
+        brief: str,
+        *,
+        cram: bool,
+        progress: str = "",
+    ) -> dict[str, Any]:
+        """Render the roadmap prompt, call the model and normalise the plan.
+
+        Shared by plan creation and the plan edit (``progress`` is the edit's
+        note on topics already covered). Raises ``LLM_ERROR`` on failure;
+        nothing is written here.
+        """
         rendered = prompts.PromptBuilder.build(
             prompts.EXAM_PLAN_TEMPLATE,
             EXAM_NAME=data.exam_name,
@@ -707,6 +988,7 @@ class ExamPrepService:
             CRAM_NOTE=cram_note(days_remaining, data.daily_minutes)
             if cram
             else "",
+            PROGRESS_NOTE=progress,
             USER_PROFILE=prompts.user_profile_segment(
                 self._personalization(user_id)
             ),
@@ -719,52 +1001,148 @@ class ExamPrepService:
                 system_prompt=rendered.system_prompt,
                 log_label="exam_plan",
             )
-            roadmap = normalize_plan(raw, total_days, data.subjects)
+            return normalize_plan(raw, total_days, data.subjects)
         except Exception as exc:
             logger.exception("Exam plan generation failed")
             raise CustomError(ERROR_CODES["LLM_ERROR"]) from exc
 
-        row = {
-            "user_id": user_id,
-            # Transient: flipped to "active" by _activate_plan, last.
-            "status": "archived",
-            "exam_name": data.exam_name,
-            "exam_date": data.exam_date.isoformat(),
-            "class_level": data.class_level.strip(),
-            "stream": data.stream.strip(),
-            "subjects": list(data.subjects),
-            "daily_minutes": data.daily_minutes,
-            "target_score": _text(data.target_score) or None,
-            "syllabus_text": _text(data.syllabus_text) or None,
-            "material_media_ids": [str(m["id"]) for m in material],
+    def update_plan(
+        self, user_id: str, plan_id: str, data: UpdateExamPlanData
+    ) -> dict[str, Any]:
+        """Edit the active plan in place and return its dashboard.
+
+        Same plan id and coach session; the roadmap is regenerated from the
+        merged fields and the student's progress is carried over by subject
+        + title (``carry_progress``), so matched topics keep their id,
+        status, lesson and quiz / flashcard links. Order: read, generate
+        (no writes; a model failure leaves the plan exactly as it was), then
+        swap days and topics and patch the plan row. A write failure after
+        the swap began restores the old roadmap (``_restore_roadmap``).
+
+        Queries: plan, topics, [media], [days for rollback], delete days,
+        insert days, insert topics, update plan, then the dashboard's three.
+        """
+        plan = self.load_plan(user_id, plan_id, active_only=True)
+        merged, fields_changed = merge_plan_edit(plan, data)
+        old_topics = self.repo.list_topics(plan_id)
+        # Ids of this plan's topics that are not completed yet (ticking an
+        # already completed topic changes nothing).
+        open_ids = {
+            str(t.get("id"))
+            for t in old_topics
+            if t.get("status") != STATUS_COMPLETED
+        }
+        covered = [c for c in data.covered_topic_ids if c in open_ids]
+        if not fields_changed and not covered:
+            return self._dashboard(plan, topics=old_topics)
+
+        meta = dict(plan.get("plan_meta") or {})
+        today = today_utc()
+        days_remaining = max(0, (merged.exam_date - today).days)
+        total_days = min(max(days_remaining, 1), MAX_PLAN_DAYS)
+        material = (
+            self.repo.owned_media(user_id, merged.material_media_ids)
+            if merged.material_media_ids
+            else []
+        )
+        cram = is_cram(days_remaining)
+        brief = _text(meta.get("research_brief"))
+        sources = list(meta.get("research_sources") or [])
+        research = (
+            data.research
+            if data.research is not None
+            else any(f in fields_changed for f in _IDENTITY_FIELDS)
+        )
+        if research and not cram:
+            new_brief, new_sources = self.research_syllabus(
+                merged, days_remaining
+            )
+            if new_brief:
+                brief, sources = new_brief, new_sources
+        roadmap = self._generate_roadmap(
+            user_id,
+            merged,
+            days_remaining,
+            total_days,
+            material,
+            brief,
+            cram=cram,
+            progress=progress_note(old_topics, covered),
+        )
+        now = _now_iso()
+        carried = carry_progress(old_topics, roadmap["days"], covered, now)
+        plan_fields = {
+            "exam_name": merged.exam_name,
+            "exam_date": merged.exam_date.isoformat(),
+            "class_level": merged.class_level,
+            "stream": merged.stream,
+            "subjects": list(merged.subjects),
+            "daily_minutes": merged.daily_minutes,
+            "target_score": merged.target_score,
+            "syllabus_text": merged.syllabus_text,
             "total_days": total_days,
             "plan_meta": {
+                **meta,
                 "summary": roadmap["summary"],
                 "strategy_tips": roadmap["strategy_tips"],
                 "model": self.llm.model,
-                "generated_at": _now_iso(),
-                "days_remaining_at_setup": days_remaining,
+                "generated_at": now,
                 "cram": cram,
-                "exam_kind": data.exam_kind,
-                "board": _text(data.board),
-                "exam_details": _text(data.exam_details),
+                "board": merged.board,
+                "exam_details": merged.exam_details,
                 "research_brief": brief,
                 "research_sources": sources,
+                "edited_at": now,
+                "edit_count": int(meta.get("edit_count") or 0) + 1,
+                "last_edit": {
+                    "fields_changed": fields_changed,
+                    "covered_count": len(covered),
+                    **carried,
+                },
             },
         }
-        plan: dict[str, Any] | None = None
-        archived: list[str] = []
+        # The rows to put back if the swap fails half-way.
+        old_days = self.repo.list_days(plan_id)
         try:
-            plan = self.repo.insert_plan(row)
-            self.repo.insert_roadmap(plan["id"], today, roadmap["days"])
-            plan = self.ensure_session(user_id, plan)
-            plan = self._activate_plan(user_id, plan, archived)
+            self.repo.delete_days(plan_id)
+            self.repo.insert_roadmap(plan_id, today, roadmap["days"])
+            updated = self.repo.update_plan(plan_id, user_id, plan_fields)
         except Exception as exc:
-            logger.exception("Exam plan persistence failed")
-            if plan is not None:
-                self._discard_plan(user_id, str(plan["id"]), archived)
+            logger.exception("Exam plan edit persistence failed")
+            self._restore_roadmap(plan_id, old_days, old_topics)
             raise CustomError(ERROR_CODES["INTERNAL_ERROR"]) from exc
-        return self._dashboard(plan)
+        return self._dashboard(updated or {**plan, **plan_fields})
+
+    def _restore_roadmap(
+        self,
+        plan_id: str,
+        days: list[dict[str, Any]],
+        topics: list[dict[str, Any]],
+    ) -> None:
+        """Best-effort rollback of a half-swapped roadmap (same ids)."""
+        try:
+            self.repo.delete_days(plan_id)
+            self.repo.restore_roadmap(days, topics)
+        except Exception:
+            logger.exception("Exam plan edit rollback failed")
+
+    def _existing_plan_for_request(
+        self, user_id: str, data: CreateExamPlanData
+    ) -> dict[str, Any] | None:
+        """The plan an earlier request of this attempt created, if any.
+
+        Best effort: a database without migration 045 has no column to
+        look up, and the lookup must never block creating a plan.
+        """
+        if not data.client_request_id:
+            return None
+        try:
+            return self.repo.get_plan_by_request(
+                user_id, str(data.client_request_id)
+            )
+        except Exception:  # noqa: BLE001 — see docstring
+            logger.warning("Exam plan idempotency lookup failed", exc_info=True)
+            return None
 
     def _activate_plan(
         self, user_id: str, plan: dict[str, Any], archived: list[str]

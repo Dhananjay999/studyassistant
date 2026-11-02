@@ -174,9 +174,10 @@ export function ExamPrepOfferCard({
     if (!visible || !markOfferSeen(messageId)) return;
     analytics.track(AnalyticsEvent.EXAM_PREP_OFFER_SHOWN, {
       date_hint_kind: offer.date_hint,
-      days_until: daysUntil(prefilledDate),
+      days_until: prefilledDate ? daysUntil(prefilledDate) : null,
       has_exam_name: !!offer.exam_name,
       subject_count: offer.subjects.length,
+      source: offer.source ?? "deadline",
     });
   }, [visible, messageId, offer, prefilledDate]);
 
@@ -196,6 +197,7 @@ export function ExamPrepOfferCard({
     analytics.track(AnalyticsEvent.EXAM_PREP_OFFER_DISMISSED, {
       date_hint_kind: offer.date_hint,
       days_until: days ?? 0,
+      source: offer.source ?? "deadline",
     });
     snoozeOffers();
     setDismissed(true);
@@ -206,6 +208,7 @@ export function ExamPrepOfferCard({
     if (!valid || days === null || phase === "creating") return;
     analytics.track(AnalyticsEvent.EXAM_PREP_OFFER_ACCEPTED, {
       date_hint_kind: offer.date_hint,
+      source: offer.source ?? "deadline",
       days_until: days,
       subject_count: subjects.length,
       date_edited: examDate !== prefilledDate,
@@ -303,12 +306,18 @@ export function ExamPrepOfferCard({
           </span>
           <div className="min-w-0">
             <p className="font-display text-sm font-bold leading-snug">
-              {cram ? "Want a last-day plan?" : "Want a plan for this exam?"}
+              {cram
+                ? "Want a last-day plan?"
+                : offer.date_hint === "none"
+                  ? "Want a day-by-day study plan?"
+                  : "Want a plan for this exam?"}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {cram
                 ? "One focused day: what to revise, in what order, with quick quizzes."
-                : "A day-by-day plan up to your exam date."}
+                : offer.date_hint === "none"
+                  ? "Tell me the exam and its date; I'll plan every day up to it."
+                  : "A day-by-day plan up to your exam date."}
             </p>
           </div>
         </div>

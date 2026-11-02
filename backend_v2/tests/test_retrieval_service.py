@@ -127,7 +127,7 @@ class TestPipeline:
         assert result.diagnostics["query_variants"] == 1
 
     def test_rerank_timeout_keeps_order(self, app: Flask):
-        rows = [_row("a", "m1", 0, 0.9), _row("b", "m1", 3, 0.8)]
+        rows = [_row("a", "m1", 0, 0.9), _row("b", "m1", 3, 0.8), _row("c", "m1", 6, 0.7)]
         service, _ = _service(rows)
 
         def slow(*_a: Any, **_k: Any) -> dict:
@@ -180,8 +180,18 @@ class TestPipeline:
             result = service.retrieve("u1", "q", [{"id": "m1", "file_name": "n.pdf"}], options=opts)
         assert result.diagnostics["after_threshold"] == 3
 
-    def test_rerank_reorders(self, app: Flask):
+    def test_rerank_is_skipped_when_candidates_fit_the_final_cut(self, app: Flask):
         rows = [_row("a", "m1", 0, 0.9), _row("b", "m1", 3, 0.8)]
+        service, _ = _service(rows)
+        opts = RetrievalOptions(top_k=2, multi_query=False, rerank="llm", rerank_timeout_s=2)
+        with app.app_context():
+            result = service.retrieve("u1", "q", [{"id": "m1", "file_name": "n.pdf"}], options=opts)
+        service.rewrite_llm.generate_structured.assert_not_called()
+        assert [c.id for c in result.chunks] == ["a", "b"]
+        assert result.diagnostics["reranked"] is False
+
+    def test_rerank_reorders(self, app: Flask):
+        rows = [_row("a", "m1", 0, 0.9), _row("b", "m1", 3, 0.8), _row("c", "m1", 6, 0.7)]
         service, _ = _service(rows)
         service.rewrite_llm.generate_structured.return_value = {
             "scores": [{"index": 1, "score": 9}, {"index": 0, "score": 2}]

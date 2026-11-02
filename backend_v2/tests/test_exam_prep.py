@@ -24,11 +24,13 @@ from aeva.exam_prep.exam_prep_orchestrator import (
 )
 from aeva.exam_prep.exam_prep_service import ExamPrepService
 from aeva.exam_prep.schema.exam_prep_schema import (
+    CreateExamPlanData,
     CreateExamPlanSchema,
     ExamChatRequestSchema,
     LessonStreamSchema,
     TopicFlashcardsData,
     TopicQuizData,
+    UpdateExamPlanSchema,
 )
 from aeva.feature_flag import feature_flag_service
 from aeva.llm import prompts
@@ -1048,6 +1050,373 @@ class TestCreatePlan:
         assert repo.plans[PLAN_ID]["status"] == "active"
 
 
+# ------------------------------------------------------------- update_plan
+
+
+TOPIC_2 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2"
+TOPIC_3 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"
+TOPIC_4 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4"
+OLD_TOPICS = [
+    {**TOPIC, "status": "completed", "status_updated_at": "t1",
+     "lesson_md": "## Kinematics", "quiz_id": "q1"},
+    {**TOPIC, "id": TOPIC_2, "title": "Laws of Motion", "status": "in_progress",
+     "status_updated_at": "t2", "flashcard_set_id": "f1"},
+    {**TOPIC, "id": TOPIC_3, "subject": "Chemistry", "title": "Mole concept",
+     "status": "not_started"},
+    {**TOPIC, "id": TOPIC_4, "title": "Work and Energy", "status": "not_started"},
+]
+
+
+def _llm_days(*titles, subject="Physics"):
+    return {
+        "summary": "Edited", "strategy_tips": ["Tip"], "days": [
+            {"day_number": 1, "title": "D1", "subjects": [
+                {"subject": subject, "topics": [{"title": t} for t in titles]}
+            ]}
+        ],
+    }
+
+
+class _EditRepo:
+    """Records the calls update_plan makes, in order."""
+
+    def __init__(self, plan=None, topics=None, fail_at=None):
+        self.plan = dict(plan or PLAN)
+        self.topics = [dict(t) for t in (topics if topics is not None else OLD_TOPICS)]
+        self.days = [{"id": DAY_ID, "plan_id": PLAN_ID, "day_number": 1,
+                      "date": "2026-10-01", "detail": {"overview": "x"}}]
+        self.calls: list[tuple] = []
+        self.fail_at = fail_at
+        self.inserted_topics: list[dict] = []
+        self.inserted_days: list[dict] = []
+
+    def _hit(self, name, *args):
+        self.calls.append((name, *args))
+        if name == self.fail_at:
+            raise RuntimeError(f"{name} failed")
+
+    def get_plan(self, plan_id, user_id):
+        ok = self.plan["id"] == plan_id and self.plan["user_id"] == user_id
+        return dict(self.plan) if ok else None
+
+    def list_topics(self, plan_id):
+        self._hit("list_topics")
+        return [dict(t) for t in self.topics]
+
+    def list_days(self, plan_id):
+        return [dict(d) for d in self.days]
+
+    def owned_media(self, user_id, media_ids):
+        self._hit("owned_media")
+        return [{"id": m, "file_name": "notes.pdf"} for m in media_ids]
+
+    def delete_days(self, plan_id):
+        self._hit("delete_days", plan_id)
+        self.days, self.topics = [], []
+
+    def insert_roadmap(self, plan_id, start, days):
+        self._hit("insert_roadmap", plan_id)
+        # Mirror the repository's row shape (incl. carried columns).
+        for day in days:
+            self.days.append({"id": f"d{day['day_number']}", "plan_id": plan_id,
+                              "day_number": day["day_number"], "date": "x"})
+            for pos, topic in enumerate(day["topics"]):
+                self.topics.append({
+                    "plan_id": plan_id, "day_id": f"d{day['day_number']}",
+                    "subject": topic["subject"], "title": topic["title"],
+                    "description": topic["description"],
+                    "est_minutes": topic["est_minutes"], "sort_order": pos,
+                    **dict(topic.get("carry") or {}),
+                })
+        return [], []
+
+    def update_plan(self, plan_id, user_id, fields):
+        self._hit("update_plan", plan_id)
+        self.plan.update(fields)
+        return dict(self.plan)
+
+    def restore_roadmap(self, days, topics):
+        self._hit("restore_roadmap", len(days), len(topics))
+        self.days, self.topics = [dict(d) for d in days], [dict(t) for t in topics]
+
+    def quiz_summaries(self, user_id, quiz_ids):
+        return {}
+
+
+def _edit_service(repo, llm_result=None):
+    service, supabase = _create_service(repo)
+    service.llm.generate_structured.return_value = llm_result or _llm_days(
+        "Kinematics", "LAWS OF MOTION", "Rotational motion"
+    )
+    return service, supabase
+
+
+def _edit(**body):
+    return UpdateExamPlanSchema().load(body)
+
+
+class TestUpdatePlanSchema:
+    def test_requires_something_to_change(self):
+        with pytest.raises(Exception, match="Nothing to change"):
+            _edit()
+
+    def test_only_provided_fields_count(self):
+        data = _edit(class_level=" Class 7 ", target_score=None)
+        assert data.provided == frozenset({"class_level", "target_score"})
+        assert data.changes() == {"class_level": "Class 7", "target_score": None}
+        assert data.research is None
+
+    def test_same_bounds_as_create(self):
+        with pytest.raises(Exception, match="exam_date"):
+            _edit(exam_date="2000-01-01")
+        with pytest.raises(Exception, match="daily_minutes"):
+            _edit(daily_minutes=5)
+        with pytest.raises(Exception, match="subjects"):
+            _edit(subjects=[" ", ""])
+        with pytest.raises(Exception, match="exam_name"):
+            _edit(exam_name="   ")
+        with pytest.raises(Exception, match="covered_topic_ids"):
+            _edit(covered_topic_ids=["not-a-uuid"])
+        data = _edit(subjects=[" Maths ", "Maths", "Physics"],
+                     covered_topic_ids=[TOPIC_ID, TOPIC_ID])
+        assert data.subjects == ["Maths", "Physics"]
+        assert data.covered_topic_ids == [TOPIC_ID]
+
+
+class TestCarryProgress:
+    def test_matches_by_subject_and_title_case_insensitively(self):
+        days = _llm_days("kinematics", "Laws of Motion", "Rotational motion")["days"]
+        days = svc.normalize_plan({"days": days}, 1, ["Physics"])["days"]
+        counts = svc.carry_progress(OLD_TOPICS, days, [], "now")
+        carried = {t["title"]: t["carry"] for t in days[0]["topics"]}
+        assert counts == {"carried": 2, "completed": 1, "in_progress": 1}
+        assert carried["kinematics"]["id"] == TOPIC_ID
+        assert carried["kinematics"]["status"] == "completed"
+        assert carried["kinematics"]["lesson_md"] == "## Kinematics"
+        assert carried["kinematics"]["quiz_id"] == "q1"
+        assert carried["kinematics"]["status_updated_at"] == "t1"
+        assert carried["Laws of Motion"]["id"] == TOPIC_2
+        assert carried["Laws of Motion"]["flashcard_set_id"] == "f1"
+        fresh = carried["Rotational motion"]
+        assert fresh["status"] == "not_started"
+        assert fresh["lesson_md"] is None
+        assert fresh["id"] not in {TOPIC_ID, TOPIC_2, TOPIC_3, TOPIC_4}
+        # Every row carries the same keys (one uniform batch insert).
+        assert len({tuple(sorted(c)) for c in carried.values()}) == 1
+
+    def test_covered_ids_become_completed_now(self):
+        days = svc.normalize_plan(
+            {"days": _llm_days("Work and Energy")["days"]}, 1, ["Physics"]
+        )["days"]
+        counts = svc.carry_progress(OLD_TOPICS, days, [TOPIC_4], "now")
+        carry = days[0]["topics"][0]["carry"]
+        assert counts["completed"] == 1
+        assert carry == {
+            "id": TOPIC_4, "status": "completed", "status_updated_at": "now",
+            "lesson_md": None, "lesson_generated_at": None, "quiz_id": None,
+            "flashcard_set_id": None,
+        }
+
+    def test_subject_must_match_and_an_old_topic_is_reused_once(self):
+        raw = _llm_days("Kinematics", "Kinematics")
+        raw["days"][0]["subjects"].append(
+            {"subject": "Chemistry", "topics": [{"title": "Kinematics"}]}
+        )
+        days = svc.normalize_plan(raw, 1, ["Physics", "Chemistry"])["days"]
+        svc.carry_progress(OLD_TOPICS, days, [], "now")
+        ids = [t["carry"]["id"] for t in days[0]["topics"]]
+        assert ids.count(TOPIC_ID) == 1
+        assert len(set(ids)) == 3
+
+    def test_untouched_topics_are_not_kept(self):
+        days = svc.normalize_plan(
+            {"days": _llm_days("Mole concept", subject="Chemistry")["days"]},
+            1, ["Chemistry"],
+        )["days"]
+        counts = svc.carry_progress(OLD_TOPICS, days, [], "now")
+        assert counts["carried"] == 0
+        assert days[0]["topics"][0]["carry"]["id"] != TOPIC_3
+
+
+class TestProgressNote:
+    def test_names_done_and_in_progress_topics(self):
+        note = svc.progress_note(OLD_TOPICS, [TOPIC_4])
+        assert "Physics: Kinematics" in note
+        assert "Physics: Work and Energy" in note
+        assert "In progress" in note
+        assert "Physics: Laws of Motion" in note
+        assert "Mole concept" not in note
+
+    def test_empty_without_progress(self):
+        assert svc.progress_note([OLD_TOPICS[2]], []) == ""
+
+    def test_is_bounded(self):
+        many = [{**TOPIC, "id": f"t{i}", "title": f"T{i}", "status": "completed"}
+                for i in range(60)]
+        note = svc.progress_note(many, [])
+        assert "T39" in note
+        assert "T40" not in note
+        assert "(+20 more)" in note
+
+
+class TestMergePlanEdit:
+    def test_reports_only_real_changes_in_field_order(self):
+        merged, changed = svc.merge_plan_edit(
+            {**PLAN, "plan_meta": {"board": "CBSE", "exam_kind": "board"}},
+            _edit(class_level="Class 7", exam_name="JEE Main 2027",
+                  subjects=["Physics", "Chemistry", "Maths"], board="ICSE",
+                  daily_minutes=90),
+        )
+        assert changed == ["class_level", "board", "daily_minutes"]
+        assert merged.class_level == "Class 7"
+        assert merged.board == "ICSE"
+        assert merged.exam_kind == "board"
+        assert merged.exam_date == date(2027, 1, 20)
+        assert merged.stream == "PCM"
+
+    def test_clearing_an_optional_field_is_a_change(self):
+        _, changed = svc.merge_plan_edit(PLAN, _edit(target_score=None))
+        assert changed == ["target_score"]
+
+
+class TestUpdatePlan:
+    def test_regenerates_in_place_and_carries_progress(self):
+        repo = _EditRepo()
+        service, supabase = _edit_service(repo)
+        dash = service.update_plan(
+            USER, PLAN_ID, _edit(class_level="Class 7", covered_topic_ids=[TOPIC_4])
+        )
+        names = [c[0] for c in repo.calls]
+        # Read, (generate), swap, patch; the last read builds the dashboard.
+        assert names == [
+            "list_topics", "delete_days", "insert_roadmap", "update_plan",
+            "list_topics",
+        ]
+        # Same plan, same session, still active.
+        assert dash["plan"]["id"] == PLAN_ID
+        assert dash["plan"]["session_id"] == "s1"
+        assert dash["plan"]["status"] == "active"
+        assert dash["plan"]["class_level"] == "Class 7"
+        supabase.create_session.assert_not_called()
+        meta = dash["plan"]["plan_meta"]
+        assert meta["edit_count"] == 1
+        assert meta["edited_at"]
+        assert meta["summary"] == "Edited"
+        assert meta["last_edit"] == {
+            "fields_changed": ["class_level"], "covered_count": 1,
+            "carried": 2, "completed": 1, "in_progress": 1,
+        }
+        by_title = {t["title"]: t for t in repo.topics}
+        assert by_title["Kinematics"]["id"] == TOPIC_ID
+        assert by_title["Kinematics"]["status"] == "completed"
+        assert by_title["Kinematics"]["lesson_md"] == "## Kinematics"
+        assert by_title["Kinematics"]["quiz_id"] == "q1"
+        assert by_title["LAWS OF MOTION"]["id"] == TOPIC_2
+        assert by_title["LAWS OF MOTION"]["status"] == "in_progress"
+        assert by_title["Rotational motion"]["status"] == "not_started"
+        assert "Mole concept" not in by_title
+        # The prompt carries the merged fields and the progress note.
+        prompt = service.llm.generate_structured.call_args.args[0]
+        assert "Class / grade: Class 7" in prompt
+        assert "PROGRESS SO FAR" in prompt
+        assert "Physics: Work and Energy" in prompt
+
+    def test_nothing_changed_skips_the_model(self):
+        repo = _EditRepo()
+        service, _ = _edit_service(repo)
+        dash = service.update_plan(
+            USER, PLAN_ID, _edit(class_level="Class 12", covered_topic_ids=[TOPIC_ID])
+        )
+        service.llm.generate_structured.assert_not_called()
+        assert [c[0] for c in repo.calls] == ["list_topics"]
+        assert dash["plan"]["id"] == PLAN_ID
+
+    def test_unknown_covered_ids_are_ignored(self):
+        repo = _EditRepo()
+        service, _ = _edit_service(repo)
+        service.update_plan(USER, PLAN_ID, _edit(covered_topic_ids=[DAY_ID]))
+        service.llm.generate_structured.assert_not_called()
+
+    def test_covering_an_open_topic_alone_regenerates(self):
+        repo = _EditRepo()
+        service, _ = _edit_service(repo, _llm_days("Work and Energy"))
+        dash = service.update_plan(USER, PLAN_ID, _edit(covered_topic_ids=[TOPIC_4]))
+        service.llm.generate_structured.assert_called_once()
+        assert dash["plan"]["plan_meta"]["last_edit"]["fields_changed"] == []
+        assert repo.topics[0]["id"] == TOPIC_4
+        assert repo.topics[0]["status"] == "completed"
+
+    def test_llm_failure_touches_nothing(self):
+        repo = _EditRepo()
+        service, _ = _edit_service(repo)
+        service.llm.generate_structured.side_effect = RuntimeError("down")
+        with pytest.raises(CustomError) as err:
+            service.update_plan(USER, PLAN_ID, _edit(daily_minutes=60))
+        assert err.value.code == "LLM_ERROR"
+        assert [c[0] for c in repo.calls] == ["list_topics"]
+        assert repo.plan["daily_minutes"] == 120
+        assert len(repo.topics) == 4
+
+    def test_write_failure_restores_the_old_roadmap(self):
+        repo = _EditRepo(fail_at="insert_roadmap")
+        service, _ = _edit_service(repo)
+        with pytest.raises(CustomError) as err:
+            service.update_plan(USER, PLAN_ID, _edit(daily_minutes=60))
+        assert err.value.code == "INTERNAL_ERROR"
+        assert [c[0] for c in repo.calls] == [
+            "list_topics", "delete_days", "insert_roadmap", "delete_days",
+            "restore_roadmap",
+        ]
+        assert repo.calls[-1] == ("restore_roadmap", 1, 4)
+        assert [t["id"] for t in repo.topics] == [TOPIC_ID, TOPIC_2, TOPIC_3, TOPIC_4]
+        assert repo.plan["daily_minutes"] == 120
+
+    def test_research_runs_only_when_the_exam_identity_changes(self):
+        repo = _EditRepo(plan={**PLAN, "plan_meta": {"research_brief": "Old brief"}})
+        service, _ = _edit_service(repo)
+        service.update_plan(USER, PLAN_ID, _edit(daily_minutes=60))
+        service.research_llm.generate.assert_not_called()
+        assert "Old brief" in service.llm.generate_structured.call_args.args[0]
+
+        repo = _EditRepo(plan={**PLAN, "plan_meta": {"research_brief": "Old brief"}})
+        service, _ = _edit_service(repo)
+        service.update_plan(USER, PLAN_ID, _edit(class_level="Class 7"))
+        service.research_llm.generate.assert_called_once()
+        assert "Unit 1 Kinematics" in service.llm.generate_structured.call_args.args[0]
+        assert repo.plan["plan_meta"]["research_brief"].startswith("Unit 1")
+
+    def test_research_can_be_forced_off(self):
+        repo = _EditRepo()
+        service, _ = _edit_service(repo)
+        service.update_plan(USER, PLAN_ID, _edit(exam_name="New exam", research=False))
+        service.research_llm.generate.assert_not_called()
+
+    def test_archived_or_foreign_plans_are_not_found(self):
+        repo = _EditRepo(plan={**PLAN, "status": "archived"})
+        service, _ = _edit_service(repo)
+        with pytest.raises(CustomError) as err:
+            service.update_plan(USER, PLAN_ID, _edit(daily_minutes=60))
+        assert err.value.code == "EXAM_PLAN_NOT_FOUND"
+        repo = _EditRepo()
+        service, _ = _edit_service(repo)
+        with pytest.raises(CustomError):
+            service.update_plan("someone-else", PLAN_ID, _edit(daily_minutes=60))
+        service.llm.generate_structured.assert_not_called()
+
+    def test_edit_count_accumulates(self):
+        repo = _EditRepo(plan={**PLAN, "plan_meta": {"edit_count": 2, "exam_kind": "school"}})
+        service, _ = _edit_service(repo)
+        dash = service.update_plan(USER, PLAN_ID, _edit(daily_minutes=60))
+        assert dash["plan"]["plan_meta"]["edit_count"] == 3
+        assert dash["plan"]["plan_meta"]["exam_kind"] == "school"
+
+    def test_create_path_prompt_has_no_progress_note(self):
+        repo = _CreateRepo()
+        service, _ = _create_service(repo)
+        service.create_plan(USER, _plan_data())
+        assert "PROGRESS SO FAR" not in service.llm.generate_structured.call_args.args[0]
+
+
 # ----------------------------------------------------------------- schemas
 
 
@@ -1141,6 +1510,7 @@ class TestWiring:
         }
         assert rules == {
             "/exam-prep/plan": {"GET", "POST"},
+            "/exam-prep/plan/<plan_id>": {"PATCH"},
             "/exam-prep/plan/<plan_id>/archive": {"POST"},
             "/exam-prep/plan/<plan_id>/days/<day_id>": {"GET"},
             "/exam-prep/topics/<topic_id>": {"PATCH"},
@@ -1436,3 +1806,53 @@ class TestExamChatRequestMediaIds:
         many = [f"11111111-1111-4111-8111-1111111111{i:02d}" for i in range(21)]
         with pytest.raises(ValidationError):
             self._load({"message": "hi", "media_ids": many})
+
+
+class TestCreatePlanIdempotency:
+    """A repeated ``client_request_id`` returns the plan already created
+    (the browser timed out at 50-150 s while the server finished) instead of
+    generating and archiving again."""
+
+    def _data(self, request_id=None):
+        return CreateExamPlanData(
+            exam_name="JEE Main 2027",
+            exam_date=date(2027, 1, 20),
+            subjects=["Physics"],
+            client_request_id=request_id,
+        )
+
+    def _service(self, existing):
+        repo = MagicMock()
+        repo.get_plan_by_request.return_value = existing
+        llm = MagicMock()
+        service = ExamPrepService(repo=repo, supabase=MagicMock(), llm=llm)
+        service._dashboard = MagicMock(side_effect=lambda plan: {"plan": plan})
+        return service, repo, llm
+
+    def test_same_attempt_returns_the_existing_plan_without_the_llm(self):
+        service, repo, llm = self._service(existing=PLAN)
+        out = service.create_plan(USER, self._data(PLAN_ID))
+        assert out == {"plan": PLAN}
+        repo.get_plan_by_request.assert_called_once_with(USER, PLAN_ID)
+        llm.generate_structured.assert_not_called()
+        repo.insert_plan.assert_not_called()
+        repo.archive_active_plans.assert_not_called()
+
+    def test_without_an_attempt_id_nothing_is_looked_up(self):
+        service, repo, _ = self._service(existing=PLAN)
+        assert service._existing_plan_for_request(USER, self._data()) is None
+        repo.get_plan_by_request.assert_not_called()
+
+    def test_lookup_failure_never_blocks_creation(self):
+        service, repo, _ = self._service(existing=None)
+        repo.get_plan_by_request.side_effect = RuntimeError("column missing")
+        assert service._existing_plan_for_request(USER, self._data(PLAN_ID)) is None
+
+    def test_schema_accepts_and_rejects_the_attempt_id(self):
+        schema = CreateExamPlanSchema()
+        base = {"exam_name": "x", "subjects": ["Physics"]}
+        loaded = schema.load({**base, "client_request_id": PLAN_ID})
+        assert str(loaded.client_request_id) == PLAN_ID
+        assert schema.load(base).client_request_id is None
+        with pytest.raises(Exception):
+            schema.load({**base, "client_request_id": "not-a-uuid"})

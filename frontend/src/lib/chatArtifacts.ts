@@ -27,6 +27,7 @@ const HINT_KINDS: ReadonlySet<string> = new Set([
   "in_days",
   "weekday",
   "date",
+  "none",
 ]);
 const NOTE_SOURCES: ReadonlySet<string> = new Set(["files", "topic", "answer"]);
 const MAX_OFFER_SUBJECTS = 12;
@@ -74,6 +75,7 @@ function mapOffer(raw: unknown): ExamPrepOffer | undefined {
           .filter((s): s is string => typeof s === "string" && !!s.trim())
           .slice(0, MAX_OFFER_SUBJECTS)
       : [],
+    source: o.source === "plan_intent" ? "plan_intent" : "deadline",
   };
 }
 

@@ -179,6 +179,9 @@ class _ChunkBuilder:
         self._buffer = ""
         self._start_page: int | None = None
         self._start_section: str | None = None
+        # Page of the most recently appended fragment: the page the carried
+        # overlap (the tail of the buffer) actually comes from.
+        self._last_page: int | None = None
         self._next_index = 0
         self.chunks: list[Chunk] = []
 
@@ -215,8 +218,13 @@ class _ChunkBuilder:
             else ""
         )
         self._buffer = overlap
-        self._start_page = None if not overlap else self._start_page
-        self._start_section = None if not overlap else self._start_section
+        # The carried overlap is the tail of the chunk just emitted, i.e. text
+        # from the LAST page appended, so the next chunk starts on that page.
+        # Keeping the previous chunk's start page here made every chunk in a
+        # long section inherit the section's first page: a third of chunk
+        # labels (and their citations) pointed up to 12 pages too early.
+        self._start_page = self._last_page if overlap else None
+        self._start_section = self._section() if overlap else None
 
     def _append(self, text: str, page_number: int) -> None:
         """Add a fragment, opening a chunk window and splitting when full.
@@ -244,6 +252,7 @@ class _ChunkBuilder:
         if not self._buffer.strip():
             self._start_page = page_number
             self._start_section = self._section()
+        self._last_page = page_number
         self._buffer = f"{self._buffer}\n\n{text}".strip()
         while len(self._buffer) >= self._target_chars:
             self._emit(carry_overlap=True)

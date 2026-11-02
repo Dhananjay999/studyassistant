@@ -78,7 +78,7 @@ import { qk, useCreateExamPlan, useLearningProfile, useMedia } from "@/hooks/api
 import { useMediaProcessing } from "@/hooks/useMediaProcessing";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { noteProValueMoment } from "@/lib/plan";
-import { uploadMedia } from "@/lib/api";
+import { getExamDashboard, uploadMedia } from "@/lib/api";
 import { errorKind, friendlyErrorMessage } from "@/lib/errorMessage";
 import { setExamPlanHint } from "@/lib/examPrepHome";
 import {
@@ -92,8 +92,11 @@ import {
 import { cn } from "@/lib/utils";
 import { compressFile } from "@/utils/compress";
 import {
+  hasExamPlan,
   isMediaReady,
   type CreateExamPlanRequest,
+  type ExamDashboard,
+  type ExamDashboardResponse,
   type LearningProfile,
   type MediaItem,
 } from "@/types";
@@ -151,6 +154,43 @@ interface UploadRow {
 
 const uid = () => crypto.randomUUID();
 
+/** UUID for one "Create plan" attempt (see `attemptId` in the form). */
+function newAttemptId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  // Insecure contexts (plain-http dev hosts) have no randomUUID.
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+    (
+      Number(c) ^
+      (Math.floor(Math.random() * 256) & (15 >> (Number(c) / 4)))
+    ).toString(16),
+  );
+}
+
+/**
+ * After a request that died in the browser: the plan the server created for
+ * this attempt, if it did. Matched by the attempt id, or (older backends
+ * without the column) by a plan created since the attempt started.
+ */
+async function findPlanFromAttempt(
+  attempt: string | undefined,
+  startedAt: number,
+): Promise<ExamDashboard | null> {
+  try {
+    const dashboard = await getExamDashboard();
+    if (!hasExamPlan(dashboard)) return null;
+    const plan = dashboard.plan;
+    const sameAttempt = !!attempt && plan.client_request_id === attempt;
+    const createdSince =
+      !plan.client_request_id &&
+      new Date(plan.created_at).getTime() >= startedAt - 5_000;
+    return sameAttempt || createdSince ? dashboard : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ExamSetupForm() {
   const navigate = useNavigate();
   const reduce = useReducedMotion();
@@ -192,6 +232,13 @@ export function ExamSetupForm() {
   // Step 3 "completed" is reported once per pass through the form, not on
   // every retry of a failed generation.
   const step3Tracked = useRef(false);
+  // One id per "Create plan" attempt, kept across retries of that attempt:
+  // plan building takes 1-2.5 minutes and mobile connections dropped at
+  // 50-150 s while the server finished, so a retry used to create a second,
+  // identical plan that archived the first (9 of 44 plans in one week). The
+  // backend returns the existing plan for a repeated id (migration 045).
+  const attemptId = useRef<string | null>(null);
+  const queryClient = useQueryClient();
   // Plan generation outlives the form when the user navigates away through
   // the bottom nav; the success path must not yank them back then.
   const alive = useRef(true);
@@ -497,7 +544,9 @@ export function ExamSetupForm() {
         exam_kind: answers.kind ?? undefined,
       });
     }
+    attemptId.current ??= newAttemptId();
     const body: CreateExamPlanRequest = {
+      client_request_id: attemptId.current,
       exam_name: examName.trim().slice(0, EXAM_NAME_LEN),
       exam_date: dateUnknown ? undefined : examDate,
       exam_kind: answers.kind ?? "other",
@@ -515,8 +564,8 @@ export function ExamSetupForm() {
     setPhase("building");
     setErrorMsg(null);
     const t0 = performance.now();
-    try {
-      const dashboard = await create.mutateAsync(body);
+    const startedAt = Date.now();
+    const created = (dashboard: ExamDashboard, recovered: boolean) => {
       noteProValueMoment("exam_plan_created");
       analytics.track(AnalyticsEvent.EXAM_PREP_SETUP_COMPLETED, {
         exam_kind: answers.kind ?? "other",
@@ -530,16 +579,46 @@ export function ExamSetupForm() {
         material_count: body.material_media_ids?.length ?? 0,
         total_days: dashboard.plan.total_days,
         latency_ms: Math.round(performance.now() - t0),
+        setup_attempt_id: body.client_request_id,
+        recovered,
       });
+      attemptId.current = null;
       if (user?.id) setExamPlanHint(user.id, true);
-      // The dashboard cache is already seeded by useCreateExamPlan.
+      // The dashboard cache is already seeded by useCreateExamPlan (or by
+      // the recovery below).
       if (alive.current) navigate("/exam", { replace: true });
+    };
+    try {
+      created(await create.mutateAsync(body), false);
     } catch (err) {
+      // No HTTP status means the request never completed in the browser
+      // (dropped connection, timeout): the server may still have finished.
+      // Ask for the plan before calling it a failure, so the student is not
+      // sent back to a button that would archive the plan just built.
+      if (!(err as { status?: number }).status) {
+        const recovered = await findPlanFromAttempt(
+          body.client_request_id,
+          startedAt,
+        );
+        if (recovered) {
+          queryClient.setQueryData<ExamDashboardResponse>(
+            qk.examPlan,
+            recovered,
+          );
+          queryClient.invalidateQueries({
+            queryKey: qk.examPrep,
+            refetchType: "none",
+          });
+          created(recovered, true);
+          return;
+        }
+      }
       analytics.track(AnalyticsEvent.EXAM_PREP_SETUP_FAILED, {
         error_kind: errorKind(err),
         latency_ms: Math.round(performance.now() - t0),
         step: 3,
         exam_kind: answers.kind ?? "other",
+        setup_attempt_id: body.client_request_id,
       });
       setErrorMsg(friendlyErrorMessage(err));
       setPhase("error");

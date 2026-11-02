@@ -7,12 +7,15 @@
 // so a crash during boot is still reported.
 
 import { API_BASE_URL } from "./api";
+import { getDeviceContext } from "./analytics/context";
 
 type SentryModule = typeof import("@sentry/react");
 
 interface ErrorContext {
   /** React component stack, from an error boundary. */
   componentStack?: string;
+  /** Searchable tags (enums and booleans only; never user text). */
+  tags?: Record<string, string | boolean>;
 }
 
 const MAX_BUFFERED = 10;
@@ -44,8 +47,13 @@ function send(error: unknown, context?: ErrorContext) {
   if (!sdk) return;
   sdk.captureException(
     error,
-    context?.componentStack
-      ? { contexts: { react: { componentStack: context.componentStack } } }
+    context?.componentStack || context?.tags
+      ? {
+          contexts: context.componentStack
+            ? { react: { componentStack: context.componentStack } }
+            : undefined,
+          tags: context.tags,
+        }
       : undefined,
   );
 }
@@ -56,6 +64,27 @@ function onEarlyError(event: ErrorEvent) {
 
 function onEarlyRejection(event: PromiseRejectionEvent) {
   captureException(event.reason);
+}
+
+/** Browser, OS and device class as Sentry tags (ids and enums only). */
+function deviceTags(): Record<string, string> {
+  try {
+    const device = getDeviceContext();
+    return {
+      "browser.name": device.browser,
+      "browser.version": device.browser_version,
+      "os.name": device.os,
+      device_type: device.device_type,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/** Whether Chrome / Safari page translation is active on this page. */
+function pageTranslated(): boolean {
+  const classes = document.documentElement.classList;
+  return classes.contains("translated-ltr") || classes.contains("translated-rtl");
 }
 
 /** Start Sentry. Safe to call once at boot; a no-op without a DSN. */
@@ -86,11 +115,19 @@ export function initSentry(): void {
           urlQueryParams: false,
           genAI: { inputs: false, outputs: false },
         },
+        // Header collection is off above, so Sentry cannot derive the
+        // browser or OS from the User-Agent. Set them (and the device class)
+        // as tags from the analytics device context instead, so crashes can
+        // be split by browser again.
+        initialScope: { tags: deviceTags() },
         // The OAuth callback carries tokens in the URL fragment.
         beforeSend(event) {
           if (event.request?.url) {
             event.request.url = stripFragment(event.request.url);
           }
+          // Browser page translation rewrites text nodes under React; tag
+          // every event so translation-linked crashes are filterable.
+          event.tags = { ...event.tags, translated: pageTranslated() };
           return event;
         },
         beforeBreadcrumb(crumb) {

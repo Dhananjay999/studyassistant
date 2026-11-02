@@ -109,7 +109,16 @@ function LoadingSkeleton({ hint }: { hint?: ThinkingHint }) {
  * shape below the status line matches the task being generated (chat, quiz, or
  * flashcards).
  */
-export function ThinkingIndicator({ hint }: { hint?: ThinkingHint }) {
+export function ThinkingIndicator({
+  hint,
+  note,
+}: {
+  hint?: ThinkingHint;
+  /** Live progress from the backend ("Searching your files…", "Drafting
+   *  10 questions…"). Shown instead of the timed copy while present, so a
+   *  30-65 s generator run reads as working, not stuck. */
+  note?: string;
+}) {
   const steps = THINKING_PROGRESSIONS[hint ?? "thinking"];
   const { icon: Icon, anim } = HINT_ICON[hint ?? "thinking"];
   const reduce = useReducedMotion();
@@ -133,7 +142,7 @@ export function ThinkingIndicator({ hint }: { hint?: ThinkingHint }) {
         <span className="relative inline-block">
           <AnimatePresence mode="wait">
             <motion.span
-              key={step}
+              key={note ?? step}
               initial={{ y: 6, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -6, opacity: 0 }}
@@ -142,7 +151,7 @@ export function ThinkingIndicator({ hint }: { hint?: ThinkingHint }) {
             >
               {/* Clamped: the hint can switch to a shorter progression
                   (`image` has 4 steps) before the reset effect runs. */}
-              {steps[Math.min(step, steps.length - 1)].text}
+              {note ?? steps[Math.min(step, steps.length - 1)].text}
             </motion.span>
           </AnimatePresence>
         </span>

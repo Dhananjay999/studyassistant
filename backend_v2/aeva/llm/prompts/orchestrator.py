@@ -23,14 +23,16 @@ JSON; all routing knowledge lives in the user channel.
 
 from aeva.llm.prompts.builder import PromptTemplate
 
+# Channel layout matters for cost and latency: everything that is the same
+# on every turn (rules, tool list, examples, image skills) is the SYSTEM
+# prompt, so the provider's prompt-prefix cache serves it; only the per-turn
+# parts (media hint, clarification state, date, the student's message) are
+# the user turn, which sits after the varying conversation history. Before
+# 2026-11 the whole ~6k-token block followed the history and was never cached.
 PLAN_TURN_TEMPLATE = PromptTemplate(
     name="plan_turn",
-    system=(
-        "You are a routing layer, not the assistant. Decide the next action "
-        "and return only JSON matching the provided schema. Never write a "
-        "reply to the student."
-    ),
-    user="""{CONVERSATION_CONTEXT}
+    system="""You are a routing layer, not the assistant. Decide the next action and return only JSON matching the provided schema. Never write a reply to the student.
+
 You are Aeva's planning layer.
 
 Never answer the student. Decide the next action and return only JSON matching the provided schema.
@@ -38,14 +40,7 @@ Never answer the student. Decide the next action and return only JSON matching t
 Available tools:
 {AVAILABLE_TOOLS}
 
-{MEDIA_HINT}
-{CLARIFICATION_HINT}
-Today's date: {CURRENT_DATE}. Judge "latest", "current", and years in the message against this date.
-
-Student message:
-{USER_MESSAGE}
-
-The conversation above is in chronological order (oldest first). Every assistant turn that ran a tool is tagged `[tool: NAME]` at the start of its content, naming the tool that produced that answer — e.g. `[tool: quiz_generator]` or `[tool: media_llm]`. Use these tags to self-determine the tool for the current message:
+The conversation (attached as history) is in chronological order (oldest first). Every assistant turn that ran a tool is tagged `[tool: NAME]` at the start of its content, naming the tool that produced that answer — e.g. `[tool: quiz_generator]` or `[tool: media_llm]`. Use these tags to self-determine the tool for the current message:
 - Resolve follow-up references ("explain more", "quiz me", "summarize this", "in simpler terms", "another one", "again") against the most recent tagged turns.
 - A keyword-less continuation ("do that again", "one more", "another") should reuse the tool of the most recent tagged assistant turn unless the current message clearly asks for something else.
 - The current message has highest priority, then the recent tagged conversation, then selected media. When the message itself is explicit, follow it even if earlier turns used a different tool.
@@ -255,7 +250,17 @@ If the user closes or skips clarification, treat it as skipped and continue with
 
 Return only JSON matching the supplied schema.
 """,
-    optional=("CLARIFICATION_HINT",),
+    user="""{CONVERSATION_CONTEXT}
+{MEDIA_HINT}
+{CLARIFICATION_HINT}{PLAN_INTENT_HINT}
+Today's date: {CURRENT_DATE}. Judge "latest", "current", and years in the message against this date.
+
+Student message:
+{USER_MESSAGE}
+
+Return only JSON matching the supplied schema.
+""",
+    optional=("CLARIFICATION_HINT", "PLAN_INTENT_HINT"),
     markers=("CONVERSATION_CONTEXT",),
     uses_history=True,
 )

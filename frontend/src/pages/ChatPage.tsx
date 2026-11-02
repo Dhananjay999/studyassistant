@@ -274,6 +274,9 @@ export default function ChatPage() {
     quizDraftRef.current = draft;
   }, []);
   const [thinkingHint, setThinkingHint] = useState<ThinkingHint | undefined>();
+  // Latest backend progress note while a single-agent answer is pending
+  // (multi-agent turns show notes on the workboard instead).
+  const [thinkingNote, setThinkingNote] = useState<string | undefined>();
   const [mediaOpen, setMediaOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
@@ -516,6 +519,7 @@ export default function ChatPage() {
     });
     stop();
     setThinkingHint(undefined);
+            setThinkingNote(undefined);
     setMessages((prev) =>
       prev.flatMap((m) => {
         if (m.id !== streamIdRef.current) return [m];
@@ -707,6 +711,7 @@ export default function ChatPage() {
             prev.filter((m) => m.id !== userMsgId && m.id !== streamId),
           );
           setThinkingHint(undefined);
+            setThinkingNote(undefined);
           toast.error("Couldn't start a new chat");
           return;
         }
@@ -762,6 +767,7 @@ export default function ChatPage() {
           ),
         );
         setThinkingHint(undefined);
+            setThinkingNote(undefined);
       };
 
       start(
@@ -798,7 +804,15 @@ export default function ChatPage() {
           },
           onAgentStatus: (update) => {
             const agent = team.find((a) => a.id === update.id);
-            if (!agent || team.length < 2) return;
+            if (team.length < 2) {
+              // One agent: its progress note replaces the timed copy in the
+              // thinking indicator ("Searching your files…").
+              if (update.status === "running" && update.note) {
+                setThinkingNote(update.note);
+              }
+              return;
+            }
+            if (!agent) return;
             const status = update.status as AgentInfo["status"];
             const settled = status === "done" || status === "failed";
             if (
@@ -1077,6 +1091,7 @@ export default function ChatPage() {
                   );
                   streamIdRef.current = last.id;
                   setThinkingHint(undefined);
+            setThinkingNote(undefined);
                   sessionsQuery.refetch();
                   return;
                 }
@@ -1993,6 +2008,7 @@ export default function ChatPage() {
                   mediaAvailable={selected.size > 0}
                   quizBusy={streaming}
                   thinkingHint={thinkingHint}
+                  thinkingNote={thinkingNote}
                   onRetryAgent={handleRetryAgent}
                   onSaveNote={async (messageId, content, topic) => {
                     try {

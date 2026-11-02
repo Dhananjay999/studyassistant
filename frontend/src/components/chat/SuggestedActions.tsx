@@ -46,9 +46,13 @@ const FOOTER_BUTTON = cn(
   "before:absolute before:-inset-1 before:content-['']",
   "disabled:pointer-events-none disabled:opacity-50",
 );
+// On touch devices there is no hover, so the label is always shown: the
+// icon-only row read as decoration on phones (0 ratings and 1 save in 349
+// answers, 2026-10-22 → 10-30).
 const FOOTER_LABEL = cn(
   "max-w-0 overflow-hidden whitespace-nowrap text-xs opacity-0 transition-all",
   "duration-200 ease-out group-hover:ml-1.5 group-hover:max-w-[90px] group-hover:opacity-100",
+  "touch:ml-1.5 touch:max-w-[90px] touch:opacity-100",
 );
 
 // "Keep this answer" actions: Aeva writes a note from this card and saves it

@@ -22,6 +22,7 @@ import type {
   QuizGenerateRequest,
   Session,
   StudyRating,
+  UpdateExamPlanRequest,
 } from "@/types";
 
 export const qk = {
@@ -610,6 +611,21 @@ export function useCreateExamPlan() {
     mutationFn: (body: CreateExamPlanRequest) => api.createExamPlan(body),
     onSuccess: (dashboard) => {
       // The POST returns the full dashboard: seed the cache, no second GET.
+      qc.setQueryData<ExamDashboardResponse>(qk.examPlan, dashboard);
+      qc.invalidateQueries({ queryKey: qk.examPrep, refetchType: "none" });
+    },
+  });
+}
+
+/** "Edit plan": the PATCH returns the full dashboard, so the cache is seeded
+ * the same way `useCreateExamPlan` does. Day and lesson caches are dropped
+ * (the roadmap was rebuilt; carried topics keep their ids). */
+export function useUpdateExamPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { planId: string; body: UpdateExamPlanRequest }) =>
+      api.updateExamPlan(v.planId, v.body),
+    onSuccess: (dashboard) => {
       qc.setQueryData<ExamDashboardResponse>(qk.examPlan, dashboard);
       qc.invalidateQueries({ queryKey: qk.examPrep, refetchType: "none" });
     },

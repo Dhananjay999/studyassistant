@@ -5,6 +5,8 @@ import json
 import logging
 import re
 import time
+from dataclasses import replace as dc_replace
+from datetime import UTC, datetime
 from collections.abc import Generator
 from typing import Any
 
@@ -23,7 +25,7 @@ from aeva.mcp.base import (
     ToolDefinition,
 )
 from aeva.mcp.registry import ToolRegistry
-from aeva.orchestration import exam_offer, heartbeat, notes_intent
+from aeva.orchestration import exam_offer, heartbeat, notes_intent, plan_intent
 from aeva.orchestration.agent_runner import AgentRunner, TeamOutcome
 from aeva.orchestration.model_candidates import models_for, resolve_model
 from aeva.orchestration.models import (
@@ -79,6 +81,32 @@ _ALL_FILES_RE = re.compile(
     r"(?:\w+\s+)?(?:files|pdfs|documents|docs|pictures|pics|photos|images|"
     r"screenshots|notes|pages|slides|uploads|attachments)\b",
 )
+# An identical message re-sent within this window is a duplicate send (the
+# first answer took long, the student pressed Stop or sent again), not a
+# new question: 14 exact repeats by 5 users in one week produced 4
+# duplicate quizzes and 3 duplicate notes. The previous answer is replayed.
+_REPLAY_WINDOW_S = 120
+_REPLAY_NOTE = "_You sent this a moment ago — here is that answer again._"
+_WS_RE = re.compile(r"\s+")
+_PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
+
+
+def _normalize_text(text: str) -> str:
+    """Lower-case, punctuation-free, single-spaced form for comparisons."""
+    return _WS_RE.sub(" ", _PUNCT_RE.sub("", (text or "").lower())).strip()
+
+
+def _parse_ts(value: object) -> datetime | None:
+    """Parse a Supabase timestamp (ISO 8601) to an aware datetime."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
 _MEDIA_CHOICE_REASON = (
     "You have several files selected. Which one should I use?"
 )
@@ -422,6 +450,8 @@ class AssistantOrchestrator:
         self._repeat_cache: dict[str, str | None] = {}
         # Exam-soon hand-off for this turn ("my exam is tomorrow"), or None.
         self._exam_offer: dict[str, Any] | None = None
+        # "Make me a study plan" said in chat (``plan_intent``).
+        self._plan_intent: plan_intent.PlanIntent = plan_intent.NONE
 
     @property
     def llm(self) -> LLMClient:
@@ -452,6 +482,9 @@ class AssistantOrchestrator:
         )
         planning_ms = int((time.perf_counter() - t_start) * 1000)
         debug_enabled = self._debug_enabled
+
+        if plan.get("action") == "replay":
+            return self._replay_result(ctx, session, plan["replay"])
 
         if self._should_open_quiz_setup(
             plan, ctx, enriched_message, history=history
@@ -512,6 +545,11 @@ class AssistantOrchestrator:
             plan.get("action"),
             [s.get("tool") for s in self._plan_steps(plan)],
         )
+
+        if plan.get("action") == "replay":
+            logger.info("Turn → replay of the previous identical answer")
+            yield from self._replay_stream(ctx, session, plan["replay"])
+            return
 
         # Quiz requested but not yet configured -> open the setup popover
         # first, pre-filled with whatever the planner detected. Explicit
@@ -591,6 +629,101 @@ class AssistantOrchestrator:
                 # client deselects them so the note is not repeated.
                 "dropped_media_ids": self._dropped_media_ids,
             },
+        )
+
+    # ------------------------------------------------------------ replay
+
+    def _duplicate_send_replay(
+        self, ctx: AssistantContext, history: list[dict[str, str]]
+    ) -> dict[str, Any] | None:
+        """The previous assistant message to replay for a duplicate send.
+
+        A typed message identical (ignoring case, spacing and punctuation)
+        to the session's last user message, sent within ``_REPLAY_WINDOW_S``
+        of a completed answer to it, replays that answer instead of running
+        the tools again. Costs nothing on an ordinary turn: the two rows
+        are fetched only when the in-memory history already matches.
+        """
+        if not exam_offer.is_typed_turn(ctx) or len(history) < 2:
+            return None
+        prev_user, prev_assistant = history[-2], history[-1]
+        if prev_user.get("role") != "user" or prev_assistant.get("role") != "assistant":
+            return None
+        wanted = _normalize_text(ctx.message)
+        if not wanted or _normalize_text(prev_user.get("content", "")) != wanted:
+            return None
+        try:
+            rows = self.supabase.get_messages(ctx.session_id, limit=2)
+        except Exception:  # noqa: BLE001 — a replay is an optimisation only
+            logger.warning("Replay lookup failed; running the turn", exc_info=True)
+            return None
+        if len(rows) != 2 or rows[0].get("role") != "user" or rows[1].get("role") != "assistant":
+            return None
+        if _normalize_text(str(rows[0].get("content") or "")) != wanted:
+            return None
+        meta = rows[1].get("metadata") or {}
+        if meta.get("status") != "completed" or not rows[1].get("content"):
+            return None
+        answered_at = _parse_ts(rows[1].get("created_at"))
+        if answered_at is None:
+            return None
+        if (datetime.now(tz=UTC) - answered_at).total_seconds() > _REPLAY_WINDOW_S:
+            return None
+        return {"message": rows[1]}
+
+    def _replay_payload(
+        self, ctx: AssistantContext, session: dict[str, Any], replay: dict[str, Any]
+    ) -> tuple[str, dict[str, Any], str, list[str], dict[str, Any]]:
+        """Persist the replayed answer; return what both run paths send."""
+        prev = replay["message"]
+        meta = prev.get("metadata") or {}
+        content = dict(meta.get("content") or {})
+        text = f"{_REPLAY_NOTE}\n\n{prev.get('content') or ''}".strip()
+        content["answer"] = text
+        content["replayed_from"] = prev.get("id")
+        tool_used = str(meta.get("tool_used") or "general")
+        tools_used = [str(t) for t in (meta.get("tools_used") or [tool_used])]
+        msg = self._persist_answer(
+            ctx, session, tool_used, content, text, tools_used=tools_used
+        )
+        return text, content, tool_used, tools_used, msg
+
+    def _replay_stream(
+        self, ctx: AssistantContext, session: dict[str, Any], replay: dict[str, Any]
+    ) -> Generator[str, None, None]:
+        """Stream a replayed answer and its terminal frame."""
+        text, content, tool_used, tools_used, msg = self._replay_payload(
+            ctx, session, replay
+        )
+        yield LLMClient.format_sse_chunk(text)
+        yield LLMClient.format_sse_chunk(
+            "",
+            done=True,
+            extra={
+                "tool_used": tool_used,
+                "tools_used": tools_used,
+                "content": content,
+                "assistant_message_id": _row_id(msg),
+                "user_message_id": self._user_message_id,
+                "dropped_media_ids": self._dropped_media_ids,
+            },
+        )
+
+    def _replay_result(
+        self, ctx: AssistantContext, session: dict[str, Any], replay: dict[str, Any]
+    ) -> AssistantResult:
+        """Non-streaming form of ``_replay_stream``."""
+        text, content, tool_used, tools_used, msg = self._replay_payload(
+            ctx, session, replay
+        )
+        return AssistantResult(
+            status=RunStatus.COMPLETED,
+            tool_used=tool_used,
+            tools_used=tools_used,
+            content=content,
+            message_id=msg["id"],
+            user_message_id=self._user_message_id,
+            display_text=text,
         )
 
     # ------------------------------------------------------------ agents
@@ -780,7 +913,9 @@ class AssistantOrchestrator:
                     dropped.append(name)
                     continue
             purpose = str(item.get("purpose") or "")
-            if name in ANSWER_TOOLS:
+            # The notes tool writes the chat answer itself (the note's
+            # markdown), so it runs as the answer step and streams.
+            if name in ANSWER_TOOLS or name == notes_intent.TOOL:
                 if answer is None:
                     answer = Step(
                         id="answer",
@@ -902,6 +1037,14 @@ class AssistantOrchestrator:
         self._drop_stale_media(ctx)
         # "My exam is tomorrow" -> a cram-plan offer that rides the answer.
         self._exam_offer = exam_offer.for_turn(ctx, self.supabase)
+        # "Make me a study plan" -> the setup card rides the answer (or the
+        # answer points at the plan the student already has).
+        self._plan_intent = plan_intent.resolve(ctx, self.supabase)
+        if self._plan_intent.wants_card and self._exam_offer is None:
+            self._exam_offer = self._plan_intent.offer
+        enriched_message += plan_intent.hint_for(self._plan_intent)
+        # An identical message a moment after its answer: replay, don't rerun.
+        replay = self._duplicate_send_replay(ctx, history)
 
         # An action targeting a specific card carries its own content. Ground
         # the turn ONLY on that content and drop conversation history so the
@@ -957,6 +1100,10 @@ class AssistantOrchestrator:
                 )
             )
 
+        if replay is not None:
+            plan = {"action": "replay", "replay": replay, "_source": "replay"}
+            return session, history, enriched_message, plan, personalization
+
         # Deterministic plans (resolved file choice, popover-driven quiz/flash)
         # skip LLM planning entirely. Each path stamps `_source` (internal,
         # never persisted) so Developer Mode can show WHY a tool was chosen.
@@ -1010,6 +1157,7 @@ class AssistantOrchestrator:
         )
         plan = self._refine_plan(plan, ctx, enriched_message, history)
         plan["_source"] = "planner"
+        plan = self._plan_intent_guard(plan, enriched_message)
         plan = self._general_without_media(
             self._media_routing_guard(plan, ctx, enriched_message),
             ctx,
@@ -1017,6 +1165,26 @@ class AssistantOrchestrator:
         )
         plan = self._text_practice_guard(plan, ctx, enriched_message)
         return session, history, enriched_message, plan, personalization
+
+    def _plan_intent_guard(
+        self, plan: dict[str, Any], message: str
+    ) -> dict[str, Any]:
+        """A study-plan ask never ends in a clarification.
+
+        The Exam Prep setup card (or the student's existing plan) collects
+        the class, board, subjects and date the planner would ask for, so a
+        ``clarify`` plan becomes a brief ``general`` answer beside the card.
+        """
+        intent = self._plan_intent
+        if not (intent.wants_card or (intent.detected and intent.has_plan)):
+            return plan
+        if plan.get("action") != "clarify":
+            return plan
+        logger.info("Turn → general: study-plan ask, setup card carries the questions")
+        new_plan = self._single_step("general", {"query": message})
+        source = plan.get("_source", "planner")
+        new_plan["_source"] = f"{source}+plan_intent"
+        return new_plan
 
     def _text_practice_guard(
         self, plan: dict[str, Any], ctx: AssistantContext, message: str
@@ -1143,6 +1311,18 @@ class AssistantOrchestrator:
                     generator,
                     {"topic": media_choice_query, "use_media": True},
                 )
+            # "notes" / "important questions" asked with several files: the
+            # chosen (or skipped = all) files feed the notes tool, instead of
+            # a media_llm answer that saves nothing.
+            if media_choice_query:
+                original = dc_replace(
+                    ctx, message=media_choice_query, clarification=None, run_id=None
+                )
+                notes = notes_intent.forced_params(original)
+                if notes is not None:
+                    ctx.media_ids = list(media_choice_ids)
+                    notes["use_media"] = bool(media_choice_ids)
+                    return self._single_step(notes_intent.TOOL, notes)
             params: dict[str, Any] = {"media_ids": media_choice_ids}
             if media_choice_query:
                 params["query"] = media_choice_query
@@ -2071,6 +2251,7 @@ class AssistantOrchestrator:
             AVAILABLE_TOOLS=tools_desc,
             MEDIA_HINT=media_hint,
             CLARIFICATION_HINT=clar_hint,
+            PLAN_INTENT_HINT=plan_intent.planner_hint(self._plan_intent),
             CURRENT_DATE=prompts.current_date(),
             IMAGE_SKILLS=prompts.skills_for_planner(),
         )

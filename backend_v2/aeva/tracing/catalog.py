@@ -345,15 +345,17 @@ PROMPT_USAGE: dict[str, PromptUsage] = {
     "notes_generation": PromptUsage(
         stage="generators",
         description=(
-            "One plain-text call that writes a note the student keeps (a "
+            "One streamed call that writes a note the student keeps (a "
             "revision sheet, a formula sheet, important questions with "
             "model answers) from the answer an action was tapped on, the "
-            "selected files or the topic, in a worker thread. The planner "
-            "never routes here: only the forced notes route does."
+            "selected files or the topic. The note is the turn's answer "
+            "text, so it streams into the chat as it is written (since "
+            "2026-11). The planner never routes here: only the forced "
+            "notes route does."
         ),
         tool="notes_generator",
-        site=(f"{_TOOLS}/notes_generator.py", "execute"),
-        llm_method="generate",
+        site=(f"{_TOOLS}/notes_generator.py", "execute_stream"),
+        llm_method="generate_stream",
         config_key="LLM_MEDIA_MODEL",
         upstream=(
             "Forced plan",
@@ -422,7 +424,7 @@ PROMPT_USAGE: dict[str, PromptUsage] = {
             "exam, date, subjects, daily time and optional syllabus into a "
             "day-by-day list of topics. Not part of a chat turn."
         ),
-        site=(_EXAM_SERVICE, "create_plan"),
+        site=(_EXAM_SERVICE, "_generate_roadmap"),
         llm_method="generate_structured",
         config_key="LLM_EXAM_PLAN_MODEL",
         upstream=("POST /exam-prep/plan",),

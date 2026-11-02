@@ -12,6 +12,7 @@ idx_exam_topics_plan_status; one batched quiz_attempts read by quiz_id (IN)
 → idx_quiz_attempts_quiz. Four queries, no per-day or per-topic reads.
 """
 
+import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -20,6 +21,9 @@ from aeva.supabase.supabase_service import SupabaseService
 # PostgREST ``in_`` filters travel in the URL; keep batches small.
 _IN_BATCH = 100
 
+
+
+logger = logging.getLogger(__name__)
 
 def _now() -> str:
     """UTC timestamp for ``updated_at`` / ``status_updated_at``."""
@@ -107,9 +111,38 @@ class ExamPrepRepository:
         )
         return [str(row["id"]) for row in result.data or []]
 
+    def get_plan_by_request(
+        self, user_id: str, client_request_id: str
+    ) -> dict[str, Any] | None:
+        """The plan a previous attempt with this client id already created.
+
+        Served by the partial unique index idx_exam_plans_client_request
+        (migration 045): one indexed row, any status.
+        """
+        rows = (
+            self.client.table("exam_plans")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("client_request_id", client_request_id)
+            .limit(1)
+            .execute()
+        ).data or []
+        return dict(rows[0]) if rows else None
+
     def insert_plan(self, row: dict[str, Any]) -> dict[str, Any]:
-        """Insert the plan row and return it."""
-        result = self.client.table("exam_plans").insert(row).execute()
+        """Insert the plan row and return it.
+
+        Tolerates a database without migration 045 (no ``client_request_id``
+        column) so plan creation keeps working while it is being applied.
+        """
+        try:
+            result = self.client.table("exam_plans").insert(row).execute()
+        except Exception as exc:
+            if "client_request_id" not in str(exc) or "client_request_id" not in row:
+                raise
+            logger.warning("exam_plans.client_request_id missing (migration 045)")
+            slim = {k: v for k, v in row.items() if k != "client_request_id"}
+            result = self.client.table("exam_plans").insert(slim).execute()
         return dict(result.data[0])
 
     def update_plan(
@@ -160,7 +193,9 @@ class ExamPrepRepository:
         ``days`` is the service's normalised shape: ``day_number``, ``title``,
         ``focus`` and ``topics`` (``subject``, ``title``, ``description``,
         ``est_minutes``). Day 1 is ``start``; ``sort_order`` is the topic's
-        position within its day.
+        position within its day. A topic may carry extra columns under
+        ``carry`` (progress and artefacts kept across a plan edit: ``id``,
+        ``status``, ``lesson_md``, ``quiz_id``…); they are written as given.
         """
         day_rows = [
             {
@@ -188,6 +223,7 @@ class ExamPrepRepository:
                 "description": str(topic.get("description") or ""),
                 "est_minutes": int(topic.get("est_minutes") or 30),
                 "sort_order": position,
+                **dict(topic.get("carry") or {}),
             }
             for day in days
             if int(day["day_number"]) in id_by_number
@@ -203,6 +239,33 @@ class ExamPrepRepository:
                 or []
             )
         return inserted_days, inserted_topics
+
+    def delete_days(self, plan_id: str) -> None:
+        """Delete every day of a plan (its topics cascade).
+
+        One statement served by the UNIQUE (plan_id, day_number) index; the
+        topic cascade uses idx_exam_topics_day. Used by the plan edit, which
+        rebuilds the roadmap in place.
+        """
+        (
+            self.client.table("exam_plan_days")
+            .delete()
+            .eq("plan_id", plan_id)
+            .execute()
+        )
+
+    def restore_roadmap(
+        self, days: list[dict[str, Any]], topics: list[dict[str, Any]]
+    ) -> None:
+        """Re-insert day / topic rows exactly as they were read (rollback).
+
+        Two inserts with the original ids, so links to the topics (quizzes,
+        topic-page history) survive a failed edit.
+        """
+        if days:
+            self.client.table("exam_plan_days").insert(days).execute()
+        if topics:
+            self.client.table("exam_plan_topics").insert(topics).execute()
 
     # --------------------------------------------------------------- days
 

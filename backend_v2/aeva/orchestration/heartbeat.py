@@ -33,6 +33,28 @@ PING_INTERVAL_S = 15.0
 
 _T = TypeVar("_T")
 
+# The frame queue of the ``keep_alive`` call running in this context. Code
+# executing inside the wrapped generator (a tool reporting progress) can
+# push a frame through it immediately, instead of waiting for the next
+# answer token to carry it out (see ``push_frame``).
+_side_channel: contextvars.ContextVar[queue.Queue | None] = (
+    contextvars.ContextVar("sse_side_channel", default=None)
+)
+
+
+def push_frame(frame: str) -> bool:
+    """Emit ``frame`` to the client now, from inside a ``keep_alive`` turn.
+
+    Returns False (and does nothing) outside a keep-alive stream, so callers
+    fall back to their own path. Ordering with the generator's own frames
+    is preserved: both go through the same queue.
+    """
+    channel = _side_channel.get()
+    if channel is None:
+        return False
+    channel.put((_FRAME, frame))
+    return True
+
 _FRAME = "frame"
 _DONE = "done"
 _ERROR = "error"
@@ -56,7 +78,11 @@ def keep_alive(
     """
     events: queue.Queue[tuple[str, Any]] = queue.Queue()
     stop = threading.Event()
+    # Set before the context is copied, so the worker (and the tools it
+    # drives) can ``push_frame`` into this stream.
+    token = _side_channel.set(events)
     context = contextvars.copy_context()
+    _side_channel.reset(token)
 
     def drive() -> None:
         try:

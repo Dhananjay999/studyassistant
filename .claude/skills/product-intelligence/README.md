@@ -44,8 +44,8 @@ the flow.
    `agent-7.md`, merges duplicates, re-runs the key query or re-reads the code
    for every P0/P1 before endorsing it, prioritizes, and writes
    `final-report.md`.
-4. **Delivery.** The orchestrator posts Agent 8's report unedited, with at most
-   three lines above it: the window, which agents reported, and what went wrong
+4. **Delivery.** The orchestrator posts Agent 8's single consolidated table
+   unedited (never the prose form), with at most three lines above it: the window, which agents reported, and what went wrong
    (a failed agent, an unreachable source). Then it stops; it never starts
    implementing.
 
@@ -121,19 +121,20 @@ window, your input files, your output file.
 
 ### Final report format (Agent 8)
 
+One consolidated Markdown table, nothing else in the posted message. Section
+separator rows split it into: SUMMARY, CRITICAL PROBLEMS, OPPORTUNITIES,
+ALL RECOMMENDATIONS P0 → P3 (R1, R2, …), DO FIRST, DATA GAPS,
+MERGED / DOWNGRADED / DROPPED.
+
 ```
-# Product Intelligence Report — StudyAssistant (Aeva)
-Window, amount of real-user data, missing analysts or sources, validation note.
-## 1. Executive Summary
-## 2. Critical Problems        (Observed data, Analysis, Root cause / Hypothesis, Recommendation)
-## 3. Product Opportunities    (with demand evidence)
-## 4. Prioritized Recommendations
-   | Priority | Problem | Recommendation (R1, R2, …) | Type | Severity | Confidence | Evidence | Expected Impact |
-## 5. What Should We Do First? (5–10 actions, in order, with reason and impact)
-## Appendix A — Evidence trail  (R-id → finding ids → behaviour → source → cause)
-## Appendix B — Merged, downgraded and dropped findings
-## Appendix C — Data gaps
+# Product Intelligence Report — StudyAssistant (Aeva) — <window>
+| # | Section | Priority | Problem / Finding | Recommendation | Type | Severity | Confidence | Evidence | Impact / Effort |
 ```
+
+The full evidence trail (R-id → finding ids → behaviour → exact query / trace /
+issue / file:line → cause) is written to `final-report.md` under
+`## Evidence trail` and is not posted. The owner asked for this format
+explicitly; it is the only accepted delivery form.
 
 Priority: P0 fix now, P1 next sprint, P2 this quarter, P3 backlog, Monitor.
 Severity: 🔴 Critical, 🟠 High, 🟡 Medium, 🟢 Low. Every P0/P1 is re-verified by

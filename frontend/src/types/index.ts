@@ -609,7 +609,14 @@ export type ExamDateHintKind =
   | "tomorrow"
   | "in_days"
   | "weekday"
-  | "date";
+  | "date"
+  /** No date in the message (a "make me a study plan" ask): the student
+   * picks the date on the card. */
+  | "none";
+
+/** What put the offer card under the answer: a near deadline in the
+ * message, or a study-plan / "how do I prepare" ask. */
+export type ExamOfferSource = "deadline" | "plan_intent";
 
 /** "My exam is tomorrow" spotted in a chat message: the prefill for the
  * one-screen cram setup card. The date is a hint the client resolves on its
@@ -625,6 +632,8 @@ export interface ExamPrepOffer {
   month: number | null;
   year: number | null;
   subjects: string[];
+  /** Absent on answers persisted before 2026-11 (all were deadline offers). */
+  source?: ExamOfferSource;
 }
 
 export interface MessageMeta {
@@ -1374,6 +1383,10 @@ export interface ExamPlanMeta {
   /** Web-researched official syllabus / pattern brief ("" when none). */
   research_brief?: string;
   research_sources?: { title: string; url: string }[];
+  /** Set by "Edit plan" (`PATCH /exam-prep/plan/:id`): when the plan was
+   * last regenerated in place and how many times. */
+  edited_at?: string;
+  edit_count?: number;
 }
 
 export interface ExamPlan {
@@ -1393,6 +1406,9 @@ export interface ExamPlan {
   session_id: string | null;
   total_days: number;
   plan_meta: ExamPlanMeta;
+  /** Id of the setup-form attempt that created it (null for older plans
+   * and plans from the chat offer card). */
+  client_request_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1436,6 +1452,9 @@ export function hasExamPlan(
 }
 
 export interface CreateExamPlanRequest {
+  /** UUID for this create attempt. A retry of the same attempt (the browser
+   * gave up while the server finished) returns the plan already created. */
+  client_request_id?: string;
   exam_name: string;
   /** ISO date (yyyy-mm-dd), today or later. Omitted when the student does
    * not know it yet: the backend plans two weeks ahead. */
@@ -1454,6 +1473,30 @@ export interface CreateExamPlanRequest {
   /** Anything specific the student told us (medium, attempt, paper…). */
   exam_details?: string;
   /** Let Aeva research the official syllabus online first (default true). */
+  research?: boolean;
+}
+
+/** Body of `PATCH /exam-prep/plan/:id` ("Edit plan"). Every key is
+ * optional; a missing key leaves that field as it is. The roadmap is
+ * regenerated in place (same plan id and session) and progress on topics
+ * whose subject + title still exist is carried over. */
+export interface UpdateExamPlanRequest {
+  exam_name?: string;
+  /** ISO date (yyyy-mm-dd), today or later. */
+  exam_date?: string;
+  class_level?: string;
+  stream?: string;
+  board?: string;
+  subjects?: string[];
+  daily_minutes?: number;
+  target_score?: string | null;
+  syllabus_text?: string | null;
+  exam_details?: string;
+  /** Ids of this plan's topics the student has already covered; they are
+   * marked completed and kept in the new roadmap. */
+  covered_topic_ids?: string[];
+  /** Re-research the syllabus online. Omitted = only when the exam name,
+   * class, stream or board changed. */
   research?: boolean;
 }
 

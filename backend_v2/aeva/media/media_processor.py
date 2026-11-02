@@ -63,6 +63,9 @@ Event = dict[str, Any]
 # something to point at.
 TEXT_PAGE_CHARS = 2500
 
+# Chunks embedded per provider request (see ``MediaProcessor._embed``).
+_EMBED_BATCH = 64
+
 
 def split_text_pages(text: str, max_chars: int = TEXT_PAGE_CHARS) -> list[str]:
     """Split plain text into pseudo-pages at paragraph boundaries."""
@@ -82,6 +85,11 @@ def split_text_pages(text: str, max_chars: int = TEXT_PAGE_CHARS) -> list[str]:
     if current.strip():
         pages.append(current)
     return pages or [text]
+
+def _exception_detail(exc: BaseException) -> str:
+    """``ClassName: message`` for the diagnostic column (bounded)."""
+    return f"{type(exc).__name__}: {str(exc)[:300]}"
+
 
 class MediaProcessingError(Exception):
     """A processing stage failed; carries a user-facing message.
@@ -206,31 +214,69 @@ class MediaProcessor:
             yield self._event("ready", 100, "Image ready!")
             return
 
+        # The last stage announced to the client; on a failure it is stored
+        # on the row and tagged on the Sentry event so an outage can be
+        # placed (download, parsing, extracting, chunking, embedding,
+        # indexing) without a stack trace.
+        stage = "start"
         try:
             sources = [str(x) for x in (record.get("scan_source_ids") or [])]
-            if sources:
-                yield from self._run_scan(user_id, record, sources)
-            else:
-                yield from self._run(user_id, record)
+            run = (
+                self._run_scan(user_id, record, sources)
+                if sources
+                else self._run(user_id, record)
+            )
+            for event in run:
+                stage = str(event.get("stage") or stage)
+                yield event
         except MediaProcessingError as exc:
             logger.exception("Media processing failed for %s", media_id)
-            sentry.capture_exception(exc)
+            sentry.capture_exception(
+                exc,
+                tags=self._failure_tags(stage, exc.reason),
+                extras=self._failure_extras(record),
+            )
             yield from self._handle_failure(
                 user_id,
                 record,
                 exc.user_message,
                 recoverable=exc.recoverable,
                 reason=exc.reason,
+                detail=_exception_detail(exc),
+                stage=stage,
             )
         except Exception as exc:
             logger.exception("Unexpected processing error for %s", media_id)
-            sentry.capture_exception(exc)
+            sentry.capture_exception(
+                exc,
+                tags=self._failure_tags(stage, "unexpected"),
+                extras=self._failure_extras(record),
+            )
             yield from self._handle_failure(
                 user_id,
                 record,
                 "Processing failed unexpectedly.",
                 recoverable=False,
+                detail=_exception_detail(exc),
+                stage=stage,
             )
+
+    @staticmethod
+    def _failure_tags(stage: str, reason: str) -> dict[str, str]:
+        """Searchable Sentry tags for a processing failure."""
+        return {"media_stage": stage, "media_reason": reason}
+
+    @staticmethod
+    def _failure_extras(record: dict[str, Any]) -> dict[str, Any]:
+        """Ids, sizes and counts for the Sentry event (no file names)."""
+        return {
+            "media_id": record.get("id"),
+            "mime_type": record.get("mime_type"),
+            "size_bytes": record.get("size_bytes"),
+            "page_count": record.get("page_count"),
+            "parse_tier": record.get("parse_tier"),
+            "has_parse_job": bool(record.get("llamaparse_job_id")),
+        }
 
     def _handle_failure(
         self,
@@ -240,6 +286,8 @@ class MediaProcessor:
         *,
         recoverable: bool,
         reason: str = "unexpected",
+        detail: str | None = None,
+        stage: str | None = None,
     ) -> Generator[Event, None, None]:
         """Persist the failure, then emit the error event.
 
@@ -247,6 +295,10 @@ class MediaProcessor:
         resumes the job. An unrecoverable one is marked ``failed`` — the
         original file, parsed artifacts, and pages are all kept, so the
         student can retry later or still get answers from the raw file.
+
+        ``detail`` (exception class and message) and ``stage`` go to the
+        diagnostic columns added by migration 044; ``processing_error``
+        keeps the student-facing message.
         """
         media_id = record["id"]
         fields: dict[str, Any] = {"processing_error": message[:500]}
@@ -254,8 +306,38 @@ class MediaProcessor:
             fields["processing_status"] = "failed"
             # A retry must submit a fresh parse, not poll the dead job.
             fields["llamaparse_job_id"] = None
-        self.supabase.update_media_processing(media_id, user_id, **fields)
+        if detail or stage:
+            self._update_with_diagnostics(
+                media_id, user_id, fields, detail=detail, stage=stage
+            )
+        else:
+            self.supabase.update_media_processing(media_id, user_id, **fields)
         yield self._error_event(message, recoverable=recoverable, reason=reason)
+
+    def _update_with_diagnostics(
+        self,
+        media_id: str,
+        user_id: str,
+        fields: dict[str, Any],
+        *,
+        detail: str | None,
+        stage: str | None,
+    ) -> None:
+        """Patch the row with the diagnostic columns; tolerate a DB without
+        migration 044 so a failure is still recorded as before."""
+        diagnostics = {
+            "processing_error_detail": (detail or "")[:400] or None,
+            "processing_error_stage": (stage or "")[:40] or None,
+        }
+        try:
+            self.supabase.update_media_processing(
+                media_id, user_id, **fields, **diagnostics
+            )
+        except Exception as exc:
+            if "processing_error_" not in str(exc):
+                raise
+            logger.warning("media diagnostic columns missing (migration 044)")
+            self.supabase.update_media_processing(media_id, user_id, **fields)
 
     def _mark_unindexed(
         self, user_id: str, record: dict[str, Any], reason: str
@@ -597,12 +679,24 @@ class MediaProcessor:
         )
 
     def _embed(self, chunks: list[Chunk]) -> list[list[float]]:
-        """Embed the header-prefixed text of every chunk."""
-        return self.embed_llm.embed(
-            [c.embed_text for c in chunks],
-            task_type="RETRIEVAL_DOCUMENT",
-            output_dimensionality=current_app.config["RAG_EMBEDDING_DIM"],
-        )
+        """Embed the header-prefixed text of every chunk, in batches.
+
+        One request per ``_EMBED_BATCH`` chunks: a 759-page book is a few
+        thousand chunks, and a single oversized embedding request is one of
+        the ways a long document can fail at the very end of the pipeline.
+        """
+        vectors: list[list[float]] = []
+        dim = current_app.config["RAG_EMBEDDING_DIM"]
+        for start in range(0, len(chunks), _EMBED_BATCH):
+            batch = chunks[start : start + _EMBED_BATCH]
+            vectors.extend(
+                self.embed_llm.embed(
+                    [c.embed_text for c in batch],
+                    task_type="RETRIEVAL_DOCUMENT",
+                    output_dimensionality=dim,
+                )
+            )
+        return vectors
 
     def _ocr_tier_for(
         self, record: dict[str, Any], doc: ParsedDocument

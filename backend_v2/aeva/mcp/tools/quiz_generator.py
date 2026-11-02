@@ -214,12 +214,14 @@ class QuizGeneratorTool(BaseTool):
         # Material, in priority order: what an earlier agent produced this
         # turn, excerpts retrieved from the indexed uploads, then whole files
         # for anything that cannot be searched (images, unindexed docs).
+        llm = self.resolve_llm(ctx, "LLM_QUIZ_MODEL")
         grounding = ground_generator(
             ctx,
             topic=str(params.get("topic") or ""),
             wants_media=self._wants_media(params, ctx),
             supabase=self.supabase,
             retrieval=self.retrieval,
+            llm=llm,
         )
         attachments = grounding.attachments
         source_context = grounding.source_context
@@ -259,7 +261,7 @@ class QuizGeneratorTool(BaseTool):
             SOURCE_CONTEXT=source_context,
         )
         ctx.note(f"Drafting {count} questions…")
-        quiz_data = self.resolve_llm(ctx, "LLM_QUIZ_MODEL").generate_structured(
+        quiz_data = llm.generate_structured(
             rendered.user_message,
             prompts.QUIZ_GENERATION_SCHEMA,
             system_prompt=rendered.system_prompt,

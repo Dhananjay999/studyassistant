@@ -122,6 +122,15 @@ export function MediaProcessingCard({
                 {label}
               </motion.p>
             </AnimatePresence>
+            {isError && (
+              // A failed file is not a dead end: the student can scan the
+              // pages as photos or paste the text (both read without the
+              // parser). 6 of 21 first uploads failed in one week and the
+              // card only offered Retry.
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                Or scan the pages as photos, or paste the text instead.
+              </p>
+            )}
           </div>
         </div>
 

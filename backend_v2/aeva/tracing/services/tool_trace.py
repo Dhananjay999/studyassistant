@@ -65,7 +65,12 @@ _EARLY_NO_MEDIA = "no_media"
 _EARLY_NOTHING_RETRIEVABLE = "nothing_retrievable"
 _EARLY_STILL_PROCESSING = "still_processing"
 _EARLY_NOTHING_USABLE = "nothing_usable"
+_EARLY_FAILED_FILES = "failed_files"
 _EARLY_REASONS = {
+    _EARLY_FAILED_FILES: (
+        "Every selected document failed to process and has no parsed text; "
+        "the student was told which files and what to do instead."
+    ),
     _EARLY_NO_MEDIA: "No files are in scope for this turn.",
     _EARLY_NOTHING_RETRIEVABLE: (
         "The indexed files were searched but no excerpt matched, and "
@@ -567,13 +572,12 @@ def _early_answer(call: _MediaCall, prepared: Any) -> str | None:
         return _EARLY_NO_MEDIA
     if call.searched:
         return _EARLY_NOTHING_RETRIEVABLE
-    still_processing = any(
-        str(r.get("processing_status") or "") in IN_PROGRESS_STATUSES
-        for r in call.raw_docs
-    )
-    return (
-        _EARLY_STILL_PROCESSING if still_processing else _EARLY_NOTHING_USABLE
-    )
+    statuses = [str(r.get("processing_status") or "") for r in call.raw_docs]
+    if any(s in IN_PROGRESS_STATUSES for s in statuses):
+        return _EARLY_STILL_PROCESSING
+    if statuses and all(s == "failed" for s in statuses):
+        return _EARLY_FAILED_FILES
+    return _EARLY_NOTHING_USABLE
 
 
 @_quiet

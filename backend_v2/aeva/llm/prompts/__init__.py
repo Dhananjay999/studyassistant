@@ -61,6 +61,9 @@ from aeva.llm.prompts.media import (
     NO_MEDIA_MESSAGE,
     PROCESSING_MESSAGE,
     attached_files_block,
+    failed_media_message,
+    failed_media_notice,
+    inline_text_block,
     no_context_message,
 )
 from aeva.llm.prompts.notes import (
@@ -174,6 +177,9 @@ __all__ = [
     "PromptTemplate",
     "RenderedPrompt",
     "attached_files_block",
+    "failed_media_message",
+    "failed_media_notice",
+    "inline_text_block",
     "build_exam_prep_block",
     "build_identity_block",
     "build_personalization_block",

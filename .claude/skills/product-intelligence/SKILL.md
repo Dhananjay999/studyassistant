@@ -37,11 +37,20 @@ Tell the user in one line what is starting before each step.
 2. **Agents 1–7 (analysts).** Start all seven in a single message so they run
    at the same time. Each writes `<work folder>/agent-<n>.md`.
 3. **Agent 8 (decision maker).** Start it after all seven have returned. It
-   writes `<work folder>/final-report.md` and returns the full report.
-4. **Deliver.** Post Agent 8's report to the user in full, unedited. Above it,
-   add at most three lines: the window, which agents reported, and anything
-   that went wrong (an agent that failed, a data source that was unreachable).
-   Then stop. Do not start implementing any recommendation.
+   writes `<work folder>/final-report.md` and returns the consolidated table.
+4. **Deliver.** Post Agent 8's consolidated table to the user: the title
+   line and ONE table only, unedited. Never post prose chapters, appendices or
+   the evidence trail; those stay in `final-report.md` (give its absolute
+   path). Above the table add at most three lines: the window, which agents
+   reported, and anything that went wrong (an agent that failed, a data source
+   that was unreachable). If Agent 8 returns anything other than a single
+   table, do not post it; send Agent 8 back to rewrite it as one table. Then
+   stop. Do not start implementing any recommendation.
+
+   The owner has asked for this repeatedly: the output is always one
+   consolidated table with section separator rows that contains every section
+   (summary, critical problems, opportunities, all recommendations, do first,
+   data gaps, merged/dropped). Do not ask again and do not fall back to prose.
 
 Use the `general-purpose` agent type for all nine.
 

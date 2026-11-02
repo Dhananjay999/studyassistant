@@ -276,6 +276,8 @@ def _retrieve_finished(call: _RetrieveCall, result: Any) -> None:
                 "reason": (
                     "reranking is off for this call"
                     if off
+                    else "no more candidates than the final cut keeps"
+                    if (diag.get("after_quota") or 0) > 1
                     else "fewer than two chunks to order"
                 )
             },

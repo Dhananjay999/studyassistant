@@ -60,6 +60,28 @@ def _uuid_field(**kwargs: object) -> fields.Str:
 
 # Planning horizon used when the student does not know the exam date yet.
 DEFAULT_DAYS_AHEAD = 14
+# Topics one edit may mark as already covered (a plan holds ≤~200 topics).
+MAX_COVERED_TOPICS = 400
+
+
+def reject_past_date(value: date | None) -> None:
+    """Reject an exam date in the past (UTC, one day of grace)."""
+    if value is None:
+        return
+    if value < datetime.now(tz=UTC).date() - _DATE_GRACE:
+        raise ValidationError("Exam date must be today or later.")
+
+
+def clean_subjects(raw: list[str]) -> list[str]:
+    """Trim and de-duplicate subject names; raise when none are left."""
+    subjects = list(
+        dict.fromkeys(s.strip() for s in raw if s and s.strip())
+    )
+    if not subjects:
+        raise ValidationError(
+            "Add at least one subject.", field_name="subjects"
+        )
+    return subjects
 
 
 @dataclass(frozen=True)
@@ -84,6 +106,10 @@ class CreateExamPlanData:
     exam_details: str = ""
     # Research the official syllabus / pattern online before planning.
     research: bool = True
+    # Client-generated id for one "Create plan" attempt. A retry of the same
+    # attempt (the browser timed out while the server finished) returns the
+    # plan already created instead of archiving it under a duplicate.
+    client_request_id: str | None = None
 
 
 class CreateExamPlanSchema(Schema):
@@ -128,16 +154,14 @@ class CreateExamPlanSchema(Schema):
         load_default="", validate=validate.Length(max=300)
     )
     research = fields.Bool(load_default=True)
+    client_request_id = fields.UUID(load_default=None, allow_none=True)
 
     @validates("exam_date")
     def _not_in_the_past(
         self, value: date | None, **_kwargs: object
     ) -> None:
         """Reject an exam date in the past (UTC, one day of grace)."""
-        if value is None:
-            return
-        if value < datetime.now(tz=UTC).date() - _DATE_GRACE:
-            raise ValidationError("Exam date must be today or later.")
+        reject_past_date(value)
 
     @post_load
     def make_data(self, data: dict, **_kwargs: object) -> CreateExamPlanData:
@@ -146,16 +170,7 @@ class CreateExamPlanSchema(Schema):
             data["exam_date"] = (
                 datetime.now(tz=UTC).date() + timedelta(days=DEFAULT_DAYS_AHEAD)
             )
-        subjects = list(
-            dict.fromkeys(
-                s.strip() for s in data["subjects"] if s and s.strip()
-            )
-        )
-        if not subjects:
-            raise ValidationError(
-                "Add at least one subject.", field_name="subjects"
-            )
-        data["subjects"] = subjects
+        data["subjects"] = clean_subjects(data["subjects"])
         # Length was validated on the raw value; a whitespace-only name
         # would otherwise be stored as "".
         exam_name = data["exam_name"].strip()
@@ -170,6 +185,121 @@ class CreateExamPlanSchema(Schema):
         data["board"] = (data.get("board") or "").strip()
         data["exam_details"] = (data.get("exam_details") or "").strip()
         return CreateExamPlanData(**data)
+
+
+# Plan fields an edit may change (``UpdateExamPlanSchema``); the order is the
+# order of ``fields_changed`` in the response.
+EDITABLE_PLAN_FIELDS = (
+    "exam_name",
+    "exam_date",
+    "class_level",
+    "stream",
+    "board",
+    "subjects",
+    "daily_minutes",
+    "target_score",
+    "syllabus_text",
+    "exam_details",
+)
+
+
+@dataclass(frozen=True)
+class UpdateExamPlanData:
+    """Validated edit-plan payload.
+
+    Every plan field is optional; ``provided`` names the ones the request
+    carried, so ``target_score=None`` can mean "clear it" when it was sent
+    and "leave it" when it was not.
+    """
+
+    provided: frozenset[str]
+    exam_name: str | None = None
+    exam_date: date | None = None
+    class_level: str | None = None
+    stream: str | None = None
+    board: str | None = None
+    subjects: list[str] | None = None
+    daily_minutes: int | None = None
+    target_score: str | None = None
+    syllabus_text: str | None = None
+    exam_details: str | None = None
+    # Ids of this plan's topics the student has already covered; they are
+    # marked completed and carried into the regenerated roadmap.
+    covered_topic_ids: list[str] = field(default_factory=list)
+    # Re-research the syllabus online. None = only when the exam, class,
+    # stream or board changed (the stored brief is reused otherwise).
+    research: bool | None = None
+
+    def changes(self) -> dict[str, object]:
+        """Return the plan fields this edit sets (only the ones provided)."""
+        return {
+            name: getattr(self, name)
+            for name in EDITABLE_PLAN_FIELDS
+            if name in self.provided
+        }
+
+
+class UpdateExamPlanSchema(Schema):
+    """Edit the active plan in place (``PATCH /exam-prep/plan/<id>``).
+
+    Same bounds as ``CreateExamPlanSchema``; a missing key leaves that
+    field as it is. ``covered_topic_ids`` marks topics already covered.
+    """
+
+    exam_name = fields.Str(validate=validate.Length(min=1, max=80))
+    exam_date = fields.Date()
+    class_level = fields.Str(validate=validate.Length(max=60))
+    stream = fields.Str(validate=validate.Length(max=60))
+    board = fields.Str(validate=validate.Length(max=80))
+    subjects = fields.List(
+        fields.Str(validate=validate.Length(min=1, max=40)),
+        validate=validate.Length(min=1, max=MAX_SUBJECTS),
+    )
+    daily_minutes = fields.Int(validate=validate.Range(min=15, max=720))
+    target_score = fields.Str(
+        allow_none=True, validate=validate.Length(max=60)
+    )
+    syllabus_text = fields.Str(
+        allow_none=True, validate=validate.Length(max=8000)
+    )
+    exam_details = fields.Str(validate=validate.Length(max=300))
+    covered_topic_ids = fields.List(
+        _uuid_field(),
+        load_default=list,
+        validate=validate.Length(max=MAX_COVERED_TOPICS),
+    )
+    research = fields.Bool(load_default=None, allow_none=True)
+
+    @validates("exam_date")
+    def _not_in_the_past(self, value: date, **_kwargs: object) -> None:
+        """Reject an exam date in the past (UTC, one day of grace)."""
+        reject_past_date(value)
+
+    @post_load
+    def make_data(self, data: dict, **_kwargs: object) -> UpdateExamPlanData:
+        """Convert to dataclass; trims text the way the create schema does."""
+        provided = frozenset(k for k in EDITABLE_PLAN_FIELDS if k in data)
+        if not provided and not data.get("covered_topic_ids"):
+            raise ValidationError("Nothing to change.")
+        if "subjects" in data:
+            data["subjects"] = clean_subjects(data["subjects"])
+        if "exam_name" in data:
+            exam_name = data["exam_name"].strip()
+            if not exam_name:
+                raise ValidationError(
+                    "Enter the exam name.", field_name="exam_name"
+                )
+            data["exam_name"] = exam_name
+        for key in ("class_level", "stream", "board", "exam_details"):
+            if key in data:
+                data[key] = (data[key] or "").strip()
+        for key in ("target_score", "syllabus_text"):
+            if key in data:
+                data[key] = (data[key] or "").strip() or None
+        data["covered_topic_ids"] = list(
+            dict.fromkeys(data.get("covered_topic_ids") or [])
+        )
+        return UpdateExamPlanData(provided=provided, **data)
 
 
 @dataclass(frozen=True)

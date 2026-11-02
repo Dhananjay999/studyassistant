@@ -38,6 +38,9 @@ export function resolveOfferDate(
   offer: ExamPrepOffer,
   today: string = isoToday(),
 ): string {
+  // A study-plan ask names no date: the card starts empty and the student
+  // picks one (tomorrow would silently build a one-day plan).
+  if (offer.date_hint === "none") return "";
   const tomorrow = addDays(today, 1);
   const now = parsePlanDate(today);
   if (offer.days_ahead !== null && offer.days_ahead >= 0) {

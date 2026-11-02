@@ -49,6 +49,10 @@ KIND_TOMORROW = "tomorrow"
 KIND_IN_DAYS = "in_days"
 KIND_WEEKDAY = "weekday"
 KIND_DATE = "date"
+# No date in the message (plan-intent hand-off): the student picks one.
+KIND_NONE = "none"
+# Where an offer came from (``payload["source"]``, an analytics prop).
+SOURCE_DEADLINE = "deadline"
 
 _SENTENCE_SPLIT_RE = re.compile(r"[.!?;\n]+(?:\s+|$)")
 _WORD_RE = re.compile(r"[^\s,]+")
@@ -312,6 +316,7 @@ class ExamOffer:
             "month": hint.month,
             "year": hint.year,
             "subjects": list(self.subjects),
+            "source": SOURCE_DEADLINE,
         }
 
 
@@ -633,31 +638,61 @@ def detect(message: str, today: date | None = None) -> ExamOffer | None:
 # ------------------------------------------------------------------- turn
 
 
-def for_turn(ctx: Any, supabase: SupabaseService) -> dict[str, Any] | None:
-    """Offer payload for this chat turn, or None.
+def is_typed_turn(ctx: Any) -> bool:
+    """Whether the turn is a message the student typed.
 
-    Only a message the student typed can carry an offer: a clarification
-    reply, a card action (``source_content``) and the quiz / flashcard forms
-    never do. Never raises; a failure here must not cost the answer.
+    A clarification reply, a card action (``source_content``) and the quiz
+    / flashcard forms never carry an offer.
     """
-    if (
+    return not (
         ctx.clarification is not None
         or ctx.run_id
         or ctx.source_content
         or ctx.quiz_options is not None
         or ctx.flashcard_options is not None
-    ):
+    )
+
+
+def feature_enabled() -> bool:
+    """Whether Exam Prep is switched on."""
+    return feature_flag_service.is_enabled("exam_prep")
+
+
+def has_active_plan(user_id: str, supabase: SupabaseService) -> bool:
+    """Whether the student already has an active plan (one indexed row)."""
+    # Imported here: the exam-prep package builds on the orchestrator.
+    from aeva.exam_prep.exam_prep_repository import ExamPrepRepository
+
+    return ExamPrepRepository(supabase).has_active_plan(user_id)
+
+
+def prefill(message: str) -> tuple[str | None, list[str]]:
+    """Exam name and subjects named anywhere in ``message`` (no date needed).
+
+    For the plan-intent hand-off (``plan_intent``): "study plan for class 10
+    physics and chemistry" prefills the card's subjects even though no
+    deadline was said.
+    """
+    lowered = (message or "").lower().replace("\u2019", "'")
+    subjects = _subjects(lowered)
+    return _exam_name(lowered, "exam", subjects), subjects
+
+
+def for_turn(ctx: Any, supabase: SupabaseService) -> dict[str, Any] | None:
+    """Offer payload for this chat turn, or None.
+
+    Only a message the student typed can carry an offer (``is_typed_turn``).
+    Never raises; a failure here must not cost the answer.
+    """
+    if not is_typed_turn(ctx):
         return None
     try:
         offer = detect(ctx.message)
         if offer is None:
             return None
-        if not feature_flag_service.is_enabled("exam_prep"):
+        if not feature_enabled():
             return None
-        # Imported here: the exam-prep package builds on the orchestrator.
-        from aeva.exam_prep.exam_prep_repository import ExamPrepRepository
-
-        if ExamPrepRepository(supabase).has_active_plan(ctx.user_id):
+        if has_active_plan(ctx.user_id, supabase):
             return None
         return offer.to_payload()
     except Exception:

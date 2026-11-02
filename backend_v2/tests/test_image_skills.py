@@ -25,7 +25,7 @@ class TestRegistry:
         listing = prompts.skills_for_planner()
         for skill_id in prompts.skill_ids():
             assert f"- {skill_id} — " in listing
-        assert "{IMAGE_SKILLS}" in prompts.PLAN_TURN_TEMPLATE.user
+        assert "{IMAGE_SKILLS}" in prompts.PLAN_TURN_TEMPLATE.system
 
 
 class TestPickSkill:

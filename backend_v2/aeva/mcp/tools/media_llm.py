@@ -29,6 +29,13 @@ from aeva.mcp.base import (
 )
 from aeva.media.attachments import download_attachments
 from aeva.media.citations import CitationFilter
+from aeva.media.raw_docs import (
+    IN_PROGRESS_STATUSES,
+    RawDocTriage,
+    documents_attachable,
+    inline_text_context,
+    triage_raw_docs,
+)
 from aeva.media.retrieval import (
     RetrievalResult,
     RetrievalService,
@@ -39,14 +46,7 @@ from aeva.supabase.supabase_service import SupabaseService
 from aeva.tracing.services import tool_trace
 
 # ``processing_status`` values that mean "the pipeline is still running".
-_IN_PROGRESS_STATUSES = frozenset({
-    "pending",
-    "parsing",
-    "extracting",
-    "chunking",
-    "embedding",
-    "indexing",
-})
+_IN_PROGRESS_STATUSES = IN_PROGRESS_STATUSES
 
 Records = list[dict[str, Any]]
 
@@ -70,6 +70,9 @@ class _Prepared:
     # Retrieval diagnostics for Developer Mode (popped by the orchestrator).
     diagnostics: dict[str, Any] | None = None
     suggested_followups: list[dict[str, str]] = field(default_factory=list)
+    # Streamed before the answer: names selected files that could not be
+    # read while other files still answered the question.
+    notice: str = ""
 
 
 class MediaLLMTool(BaseTool):
@@ -177,16 +180,24 @@ class MediaLLMTool(BaseTool):
 
     @tool_trace.media_whole_files
     def _whole_file_attachments(
-        self, ctx: ToolContext, images: Records, raw_docs: Records
+        self,
+        ctx: ToolContext,
+        images: Records,
+        raw_docs: Records,
+        attach_docs: Records | None = None,
     ) -> tuple[list[dict[str, Any]], list[str]]:
         """Download files that must travel whole, with their prompt labels.
 
         Images always attach (they have no other path). Un-indexed documents
         attach only while ``RAG_ATTACHMENT_FALLBACK`` is on — off means
-        retrieval-only answers once every upload is indexed.
+        retrieval-only answers once every upload is indexed. ``raw_docs`` is
+        every un-indexed document in scope (kept for the trace);
+        ``attach_docs`` narrows it to the ones the provider can read whole
+        (see ``_triage_raw_docs``).
         """
         fallback = current_app.config["RAG_ATTACHMENT_FALLBACK"]
-        docs = raw_docs if fallback else []
+        candidates = raw_docs if attach_docs is None else attach_docs
+        docs = candidates if fallback else []
         records = images + docs
         if not records:
             return [], []
@@ -197,6 +208,22 @@ class MediaLLMTool(BaseTool):
             [r["id"] for r in records],
         )
         return attachments, self._attached_labels(images, docs)
+
+    def _documents_attachable(self, ctx: ToolContext) -> bool:
+        """Whether the answer model's provider reads whole documents."""
+        return documents_attachable(self.resolve_llm(ctx, "LLM_MEDIA_MODEL"))
+
+    def _triage_raw_docs(
+        self, ctx: ToolContext, raw_docs: Records
+    ) -> RawDocTriage:
+        """Split un-indexed documents by what can still be done with them
+        (see ``aeva.media.raw_docs``). The provider is looked up only when
+        a document without parsed text has to be decided."""
+        if not raw_docs or all(r.get("parsed_text_path") for r in raw_docs):
+            return triage_raw_docs(raw_docs, attachable=False)
+        return triage_raw_docs(
+            raw_docs, attachable=self._documents_attachable(ctx)
+        )
 
     @tool_trace.media_prepare
     def _prepare(self, ctx: ToolContext, params: dict[str, Any]) -> _Prepared:
@@ -211,19 +238,55 @@ class MediaLLMTool(BaseTool):
             return _Prepared(early_answer=prompts.NO_MEDIA_MESSAGE)
 
         indexed, images, raw_docs = self._partition_records(records)
+        triage = self._triage_raw_docs(ctx, raw_docs)
+        if images or triage.attach:
+            ctx.note("Reading your files…")
         attachments, labels = self._whole_file_attachments(
-            ctx, images, raw_docs
+            ctx, images, raw_docs, triage.attach
         )
-        media_count = len(indexed) + len(attachments)
+        inline = inline_text_context(
+            self.supabase,
+            triage.inline,
+            budget=int(current_app.config.get("RAG_CONTEXT_MAX_CHARS", 24000)),
+        )
+        inline_context, inline_sources = inline.context, inline.sources
+        labels = labels + inline.labels
+        media_count = len(indexed) + len(attachments) + len(inline_sources)
+        failed_names = triage.failed_names
+        processing_docs = triage.processing
+
+        if not indexed and not attachments and not inline_context:
+            # Nothing readable among the selected files: say exactly why.
+            if failed_names:
+                return _Prepared(
+                    early_answer=prompts.failed_media_message(failed_names),
+                    suggested_followups=[
+                        {
+                            "title": "Answer from general knowledge",
+                            "prompt": (
+                                f"{query} (answer from general knowledge, "
+                                "not my files)"
+                            ),
+                        }
+                    ],
+                )
+            return _Prepared(
+                early_answer=(
+                    prompts.PROCESSING_MESSAGE
+                    if processing_docs
+                    else prompts.NO_MEDIA_MESSAGE
+                ),
+            )
 
         context = ""
         sources: list[dict[str, Any]] = []
         markers: set[str] = set()
         diagnostics: dict[str, Any] | None = None
         if indexed:
+            ctx.note("Searching your files…")
             retrieval = self._retrieve(ctx, query, indexed)
             diagnostics = retrieval.diagnostics
-            if retrieval.is_empty() and not attachments:
+            if retrieval.is_empty() and not attachments and not inline_context:
                 return _Prepared(
                     early_answer=prompts.no_context_message(
                         query,
@@ -248,18 +311,12 @@ class MediaLLMTool(BaseTool):
             context = retrieval.context_text
             sources = retrieval.sources
             markers = retrieval.allowed_markers
-        elif not attachments:
-            still_processing = any(
-                str(r.get("processing_status") or "") in _IN_PROGRESS_STATUSES
-                for r in raw_docs
-            )
-            return _Prepared(
-                early_answer=(
-                    prompts.PROCESSING_MESSAGE
-                    if still_processing
-                    else prompts.NO_MEDIA_MESSAGE
-                ),
-            )
+        if inline_context:
+            context = f"{context}\n{inline_context}".strip()
+            sources = sources + inline_sources
+            # The inlined files are cited by name only (no page markers).
+            for src in inline_sources:
+                markers.add(citation_marker(str(src["document_name"]), None))
 
         rendered = prompts.PromptBuilder.build(
             prompts.MEDIA_TEMPLATE,
@@ -278,6 +335,9 @@ class MediaLLMTool(BaseTool):
             media_count=media_count,
             allowed_markers=markers,
             diagnostics=diagnostics,
+            notice=(
+                prompts.failed_media_notice(failed_names) if failed_names else ""
+            ),
         )
 
     @staticmethod
@@ -343,6 +403,9 @@ class MediaLLMTool(BaseTool):
             else None
         )
         answer = ""
+        if prepared.notice:
+            answer = prepared.notice
+            yield prepared.notice
         for chunk in llm.generate_stream(
             prepared.rendered.user_message,
             system_prompt=prepared.rendered.system_prompt,

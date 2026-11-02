@@ -103,12 +103,14 @@ class FlashcardGeneratorTool(BaseTool):
             current_app.config.get("FLASHCARD_MAX_CARDS", 20),
         )
 
+        llm = self.resolve_llm(ctx, "LLM_FLASHCARD_MODEL")
         grounding = ground_generator(
             ctx,
             topic=str(params.get("topic") or ""),
             wants_media=self._wants_media(params, ctx),
             supabase=self.supabase,
             retrieval=self.retrieval,
+            llm=llm,
         )
         attachments = grounding.attachments
         source_context = grounding.source_context
@@ -129,9 +131,7 @@ class FlashcardGeneratorTool(BaseTool):
             SOURCE_CONTEXT=source_context,
         )
         ctx.note(f"Writing {count} cards…")
-        data = self.resolve_llm(
-            ctx, "LLM_FLASHCARD_MODEL"
-        ).generate_structured(
+        data = llm.generate_structured(
             rendered.user_message,
             prompts.FLASHCARD_GENERATION_SCHEMA,
             system_prompt=rendered.system_prompt,

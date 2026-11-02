@@ -199,6 +199,9 @@ export enum AnalyticsEvent {
   EXAM_PREP_RESPONSE_COMPLETED = "EXAM_PREP_RESPONSE_COMPLETED",
   EXAM_PREP_RESPONSE_FAILED = "EXAM_PREP_RESPONSE_FAILED",
   EXAM_PREP_PLAN_ARCHIVED = "EXAM_PREP_PLAN_ARCHIVED",
+  EXAM_PLAN_EDIT_OPENED = "EXAM_PLAN_EDIT_OPENED",
+  EXAM_PLAN_EDIT_COMPLETED = "EXAM_PLAN_EDIT_COMPLETED",
+  EXAM_PLAN_EDIT_FAILED = "EXAM_PLAN_EDIT_FAILED",
   EXAM_PREP_NEXT_UP_CLICKED = "EXAM_PREP_NEXT_UP_CLICKED",
   EXAM_PREP_TIMER_TOGGLED = "EXAM_PREP_TIMER_TOGGLED",
   EXAM_PREP_CONTEXT_MEDIA_TOGGLED = "EXAM_PREP_CONTEXT_MEDIA_TOGGLED",
@@ -224,6 +227,10 @@ export enum AnalyticsEvent {
 
   // ---- Errors ------------------------------------------------------------
   API_ERROR = "API_ERROR",
+  /** A React render crash reached an error boundary. */
+  APP_CRASHED = "APP_CRASHED",
+  /** A tab opened before a deploy failed to load a new chunk and reloaded. */
+  APP_STALE_CHUNK_RELOADED = "APP_STALE_CHUNK_RELOADED",
 }
 
 /* ------------------------------ shared types ------------------------------ */
@@ -237,7 +244,10 @@ export type ExamOfferDateHintKind =
   | "tomorrow"
   | "in_days"
   | "weekday"
-  | "date";
+  | "date"
+  | "none";
+/** What put the exam-prep offer card under an answer. */
+export type ExamOfferSource = "deadline" | "plan_intent";
 /** What a generated note was built from. */
 export type NotesSource = "files" | "topic" | "answer";
 /** What a return-hook notification points at (the chat strip). */
@@ -256,6 +266,15 @@ export type CreateMaterial = "topic" | "files" | "note";
 export interface ErrorKindProps {
   error_kind: ErrorKind;
 }
+
+/** A plan field the "Edit plan" sheet can change (ids, never values). */
+export type ExamPlanEditField =
+  | "exam_name"
+  | "exam_date"
+  | "class_level"
+  | "stream"
+  | "subjects"
+  | "daily_minutes";
 
 export type CtaLocation =
   | "hero"
@@ -1202,12 +1221,18 @@ export interface EventPropsMap {
     material_count: number;
     total_days: number;
     latency_ms: number;
+    /** Id of the create attempt; joins to `exam_plans.client_request_id`. */
+    setup_attempt_id?: string;
+    /** The request failed client-side but the plan was found on re-fetch. */
+    recovered?: boolean;
   };
   [AnalyticsEvent.EXAM_PREP_SETUP_FAILED]: ErrorKindProps & {
     latency_ms: number;
     /** Wizard step the failure happened on (plan creation is step 3). */
     step?: number;
     exam_kind?: string;
+    /** Id of the create attempt; joins to `exam_plans.client_request_id`. */
+    setup_attempt_id?: string;
   };
   [AnalyticsEvent.EXAM_PREP_SETUP_STEP_BLOCKED]: {
     step: number;
@@ -1218,12 +1243,16 @@ export interface EventPropsMap {
   };
   [AnalyticsEvent.EXAM_PREP_OFFER_SHOWN]: {
     date_hint_kind: ExamOfferDateHintKind;
-    days_until: number;
+    /** null when the offer carried no date (`date_hint_kind: none`). */
+    days_until: number | null;
     has_exam_name: boolean;
     subject_count: number;
+    /** deadline (near date in the message) or plan_intent (study-plan ask). */
+    source: ExamOfferSource;
   };
   [AnalyticsEvent.EXAM_PREP_OFFER_ACCEPTED]: {
     date_hint_kind: ExamOfferDateHintKind;
+    source: ExamOfferSource;
     days_until: number;
     subject_count: number;
     /** The student changed the prefilled date / name before accepting. */
@@ -1232,6 +1261,7 @@ export interface EventPropsMap {
   };
   [AnalyticsEvent.EXAM_PREP_OFFER_DISMISSED]: {
     date_hint_kind: ExamOfferDateHintKind;
+    source: ExamOfferSource;
     days_until: number;
   };
   [AnalyticsEvent.EXAM_PREP_OFFER_PLAN_CREATED]: {
@@ -1353,6 +1383,30 @@ export interface EventPropsMap {
     days_remaining: number;
     progress_percent: number;
   };
+  // "Edit plan" (regenerate in place, progress kept). `fields_changed` holds
+  // field ids only (exam_name, exam_date, class_level, stream, subjects,
+  // daily_minutes), never the values.
+  [AnalyticsEvent.EXAM_PLAN_EDIT_OPENED]: {
+    plan_id: string;
+    days_remaining: number;
+    progress_percent: number;
+  };
+  [AnalyticsEvent.EXAM_PLAN_EDIT_COMPLETED]: {
+    plan_id: string;
+    fields_changed: ExamPlanEditField[];
+    /** Topics newly ticked as already covered. */
+    covered_count: number;
+    subject_count: number;
+    latency_ms: number;
+    total_days: number;
+    days_remaining: number;
+  };
+  [AnalyticsEvent.EXAM_PLAN_EDIT_FAILED]: ErrorKindProps & {
+    plan_id: string;
+    fields_changed: ExamPlanEditField[];
+    covered_count: number;
+    latency_ms: number;
+  };
   [AnalyticsEvent.EXAM_PREP_NEXT_UP_CLICKED]: {
     plan_id: string;
     topic_id: string;
@@ -1407,6 +1461,15 @@ export interface EventPropsMap {
   };
 
   [AnalyticsEvent.API_ERROR]: ApiErrorProps;
+  [AnalyticsEvent.APP_CRASHED]: {
+    /** `error.name` (TypeError, NotFoundError, ...); never the message. */
+    error_name: string;
+    /** Which boundary caught it: a route (recoverable in place) or the app. */
+    scope: "route" | "app";
+    /** Chrome / Safari page translation was active (`translated-*` class). */
+    translated: boolean;
+  };
+  [AnalyticsEvent.APP_STALE_CHUNK_RELOADED]: Empty;
 }
 
 /** `track(event)` for `Empty` events, `track(event, props)` otherwise. */

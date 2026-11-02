@@ -23,6 +23,12 @@ from flask import current_app
 
 from aeva.mcp.base import ToolContext, source_context_block
 from aeva.media.attachments import download_attachments
+from aeva.media.raw_docs import (
+    RawDocTriage,
+    documents_attachable,
+    inline_text_context,
+    triage_raw_docs,
+)
 from aeva.media.retrieval import (
     RERANK_NONE,
     RetrievalOptions,
@@ -83,8 +89,16 @@ def ground_generator(
     wants_media: bool,
     supabase: SupabaseService,
     retrieval: RetrievalService,
+    llm: Any | None = None,
 ) -> Grounding:
-    """Resolve the material a quiz/flashcard generation should use."""
+    """Resolve the material a quiz/flashcard generation should use.
+
+    ``llm`` is the client the generator will call. Its provider decides
+    whether a document that cannot be searched may travel whole: the
+    OpenAI provider drops every non-image attachment, so for it the parsed
+    text is inlined instead (``aeva.media.raw_docs``). Without ``llm`` the
+    pre-2026-11 behaviour (attach whole) is kept.
+    """
     cfg = current_app.config
     prior = source_context_block(
         ctx.prior_results,
@@ -128,13 +142,37 @@ def ground_generator(
                 f"use:\n{result.context_text}\n"
             )
 
+    if llm is None:
+        # No provider to ask: the old path (attach every un-indexed file).
+        attachable = True
+        triage = RawDocTriage(attach=list(raw_docs))
+    else:
+        attachable = documents_attachable(llm)
+        triage = triage_raw_docs(raw_docs, attachable=attachable)
+    budget = int(cfg.get("RAG_CONTEXT_MAX_CHARS", 24000))
+    inline_docs = list(triage.inline)
     whole = list(images)
     if cfg.get("RAG_ATTACHMENT_FALLBACK", True):
-        whole += raw_docs
+        whole += triage.attach
     if indexed and not context:
         # Retrieval came back empty (or is unavailable): the files
-        # themselves are still better than generating from nothing.
-        whole += indexed
+        # themselves are still better than generating from nothing. A
+        # provider that drops documents gets their parsed text instead.
+        if attachable:
+            whole += indexed
+        else:
+            inline_docs += indexed
+    if inline_docs:
+        inline = inline_text_context(supabase, inline_docs, budget=budget)
+        if inline.context:
+            context = (
+                f"{context}\n{inline.context}"
+                if context
+                else (
+                    "Full text of the student's files that are not indexed "
+                    f"yet — the ONLY material to use:\n{inline.context}\n"
+                )
+            )
     attachments: list[dict[str, Any]] = []
     if whole:
         ctx.note("Reading your files…")

@@ -1,6 +1,33 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { captureException } from "@/lib/sentry";
+
+/** Chrome / Safari page translation marks the root element; it rewrites
+ *  text nodes under React's feet and is the main source of render crashes. */
+export function pageIsTranslated(): boolean {
+  if (typeof document === "undefined") return false;
+  const classes = document.documentElement.classList;
+  return classes.contains("translated-ltr") || classes.contains("translated-rtl");
+}
+
+/** Report a render crash to Sentry and analytics (name only, never the
+ *  message, which can carry user text). Shared by both boundaries. */
+export function reportRenderCrash(
+  error: Error,
+  info: ErrorInfo,
+  scope: "route" | "app",
+): void {
+  captureException(error, {
+    componentStack: info.componentStack ?? undefined,
+    tags: { crash_scope: scope, translated: pageIsTranslated() },
+  });
+  analytics.track(AnalyticsEvent.APP_CRASHED, {
+    error_name: error?.name || "Error",
+    scope,
+    translated: pageIsTranslated(),
+  });
+}
 
 interface Props {
   children: ReactNode;
@@ -22,9 +49,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    captureException(error, {
-      componentStack: info.componentStack ?? undefined,
-    });
+    reportRenderCrash(error, info, "app");
   }
 
   render() {

@@ -118,6 +118,11 @@ class RetrievalOptions:
     rerank: str = RERANK_LLM
     rerank_candidates: int = 20
     rerank_timeout_s: float = 2.5
+    # Rerank only when there are more candidates than ``top_k`` keeps. With
+    # fewer, the reranker could only reorder passages the answer model
+    # reads anyway, at ~1-2.5 s per turn (it timed out on 6.6% of
+    # retrievals in the week of 2026-10-22).
+    rerank_only_over_top_k: bool = True
     embedding_dim: int = 768
     chunk_overlap_chars: int = 256
 
@@ -167,6 +172,11 @@ class RetrievalOptions:
             ),
             rerank_timeout_s=float(
                 cfg.get("RAG_RERANK_TIMEOUT_S", defaults.rerank_timeout_s)
+            ),
+            rerank_only_over_top_k=bool(
+                cfg.get(
+                    "RAG_RERANK_ONLY_OVER_TOP_K", defaults.rerank_only_over_top_k
+                )
             ),
             embedding_dim=int(
                 cfg.get("RAG_EMBEDDING_DIM", defaults.embedding_dim)
@@ -557,7 +567,11 @@ class RetrievalService:
             min_results=opts.min_results,
         )
         diag["after_threshold"] = len(chunks)
-        use_rerank = opts.rerank == RERANK_LLM and len(chunks) > 1
+        use_rerank = (
+            opts.rerank == RERANK_LLM
+            and len(chunks) > 1
+            and (not opts.rerank_only_over_top_k or len(chunks) > opts.top_k)
+        )
         limit = opts.rerank_candidates if use_rerank else opts.top_k
         chunks = diversify_by_document(chunks, limit, opts.per_doc_min)
         diag["after_quota"] = len(chunks)

@@ -66,6 +66,7 @@ export type {
   PopupClosedProps,
   ExamPrepCtaSource,
   ExamPrepActionSource,
+  ExamPlanEditField,
 } from "./events";
 export type { AnalyticsUser, TrackPayload } from "./types";
 export { publicPath, routeName } from "./routeName";

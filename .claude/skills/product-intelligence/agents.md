@@ -279,46 +279,48 @@ Severity: 🔴 Critical, 🟠 High, 🟡 Medium, 🟢 Low.
 Confidence: High (strong evidence), Medium (reasonable evidence with some
 uncertainty), Low (mostly a hypothesis needing validation).
 
-Write the report in plain language and full sentences, defining any internal
-label you use, in this format:
+Write the report as ONE consolidated Markdown table and nothing else. The
+owner reads the report on a phone and will not read prose chapters; every
+section lives inside the same table, separated by section rows. Plain
+language, full sentences inside cells, define any internal label you use.
 
-```
-# Product Intelligence Report — StudyAssistant (Aeva)
-(The analysis window, the amount of real-user data it rests on, and any analyst
-or data source that was missing.)
+Table columns (fixed, in this order):
 
-## 1. Executive Summary
-Overall product health, the biggest problems and the biggest opportunities.
+| # | Section | Priority | Problem / Finding | Recommendation | Type | Severity | Confidence | Evidence | Impact / Effort |
 
-## 2. Critical Problems
-For each: Observed data, Analysis, Root cause or Hypothesis (labelled),
-Recommendation.
+Section rows are a single bold cell spanning the first column, for example
+`| **1. SUMMARY** | | | | | | | | | |`, in this order:
 
-## 3. Product Opportunities
-Features or improvements supported by user behaviour, with the demand evidence.
+1. **SUMMARY** — one row for overall health, one for the window and the real-
+   user data volume, one for missing analysts or sources, one per strength
+   worth keeping (max 3).
+2. **CRITICAL PROBLEMS** — one row per critical problem. Problem cell: observed
+   data in 1–2 sentences with the key numbers. Recommendation cell: what to do.
+   Evidence cell: source and the root cause or hypothesis, labelled as such.
+3. **OPPORTUNITIES** — one row per opportunity: demand evidence in the Problem
+   cell, what exists today and what to build in the Recommendation cell.
+4. **ALL RECOMMENDATIONS P0 → P3** — one row per recommendation id (R1, R2,
+   ...), ordered by priority. The Problem cell says in one plain sentence what
+   is going wrong for the user or the business today. For an Add row state the
+   unmet need; for a Monitor row state what is suspected. Evidence: the key
+   number, its source, and the analyst finding ids merged into it (e.g.
+   A1-F1, A7-F3). Impact / Effort: expected effect plus Small/Medium/Large.
+5. **DO FIRST** — 5–10 rows, in order, each naming the R-ids, the reason and
+   the expected impact.
+6. **DATA GAPS** — one row per gap: what could not be measured and what
+   tracking or access would close it.
+7. **MERGED / DOWNGRADED / DROPPED** — one row per reconciliation worth
+   knowing (a disagreement between analysts, a downgraded finding, a dropped
+   one and why).
 
-## 4. Prioritized Recommendations
-| Priority | Problem | Recommendation | Type | Severity | Confidence | Evidence | Expected Impact |
-(Give each row an id, R1, R2, ..., in the Recommendation cell. The Problem
-column is required on every row: say in one plain sentence what is actually
-going wrong for the user or the business today, before any fix is mentioned.
-For an Add row, state the unmet need; for a Monitor row, state what is
-suspected. Keep Evidence to the key number plus its source.)
+Rules for the table: every cell on one line (no line breaks inside cells, use
+";" to separate points); keep Evidence to numbers plus source plus file:line
+or issue id; no text outside the table except the H1 title line
+`# Product Intelligence Report — StudyAssistant (Aeva) — <window>`. Put the
+full evidence trail (R-id → finding ids → behaviour → exact query, trace id,
+issue id or file:line → root cause or hypothesis) in the report FILE below the
+table under `## Evidence trail`, but do NOT include it in your returned
+message; the orchestrator posts only the table.
 
-## 5. What Should We Do First?
-The top 5–10 actions to consider first, in order, each with the reason and the
-expected impact.
-
-## Appendix A — Evidence trail
-For every recommendation id: Recommendation -> analyst finding ids -> user
-behaviour observed -> source (analytics / Sentry / DB / trace, with the exact
-query, issue id, trace id or file:line) -> root cause or hypothesis.
-
-## Appendix B — Merged, downgraded and dropped findings
-
-## Appendix C — Data gaps
-What could not be measured and what tracking would close each gap.
-```
-
-Write the report to the file named in your prompt, and also return the full
-report as your final message.
+Write the report (table + evidence trail) to the file named in your prompt,
+and return the title line and the table only as your final message.

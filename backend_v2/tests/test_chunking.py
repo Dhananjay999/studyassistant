@@ -68,6 +68,29 @@ class TestChunkDocument:
         assert all(c.embed_text.startswith("notes.pdf | p.1\n") for c in chunks)
         assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
 
+    def test_overlap_chunks_are_labelled_with_the_page_their_text_is_from(self):
+        # Five long pages, no headings: every chunk after the first starts
+        # with overlap carried from the previous one. Before the fix every
+        # chunk inherited page 1 (the page the first chunk started on).
+        pages = [
+            ParsedPage(page_number=n, text=_sentences(40), markdown="", items=[])
+            for n in range(1, 6)
+        ]
+        chunks = chunk_parsed_document(
+            _doc(pages),
+            target_tokens=120,
+            overlap_tokens=20,
+            max_tokens=160,
+            file_name="book.pdf",
+        )
+        labels = [c.page_number for c in chunks]
+        assert labels == sorted(labels), labels
+        assert set(labels) == {1, 2, 3, 4, 5}, labels
+        assert labels[-1] == 5
+        # A chunk's label is the page its leading text was appended from.
+        for chunk in chunks:
+            assert chunk.embed_text.startswith(f"book.pdf | p.{chunk.page_number}\n")
+
     def test_heading_resets_and_seeds_section(self):
         items = [
             {"type": "heading", "lvl": 1, "value": "Chapter 3"},

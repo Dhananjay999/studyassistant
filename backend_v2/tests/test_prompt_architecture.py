@@ -388,11 +388,14 @@ class TestWebSearchTemplate:
         assert enum == list(prompts.SEARCH_INTENTS)
 
     def test_planner_has_examples_date_and_no_fence(self):
-        planner = prompts.PLAN_TURN_TEMPLATE.user
+        # Static rules live in the system channel (prompt-prefix cache); the
+        # per-turn date and message in the user channel.
+        planner = prompts.PLAN_TURN_TEMPLATE.system
         assert "search_intent" in planner
         assert "iPhone 17" in planner
-        assert "{CURRENT_DATE}" in planner
-        assert "```" not in planner
+        assert "{CURRENT_DATE}" in prompts.PLAN_TURN_TEMPLATE.user
+        assert "{USER_MESSAGE}" in prompts.PLAN_TURN_TEMPLATE.user
+        assert "```" not in planner + prompts.PLAN_TURN_TEMPLATE.user
 
     def test_general_prompt_is_date_aware(self):
         text = _render_general().user_message

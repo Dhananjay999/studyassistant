@@ -286,6 +286,9 @@ def _llm(text: str = SHEET) -> MagicMock:
     llm = MagicMock()
     llm.model = "media-model"
     llm.generate.return_value = text
+    # The note streams: two chunks that join back to the same text.
+    half = max(1, len(text) // 2)
+    llm.generate_stream.side_effect = lambda *_a, **_k: iter([text[:half], text[half:]])
     return llm
 
 
@@ -345,9 +348,9 @@ class TestNotesGeneratorTool:
         assert notes == ["Collecting the formulas…", "Saving it to your notes…"]
 
         # One plain-text call, with the conversation for a topic request.
-        llm.generate.assert_called_once()
-        user_message = llm.generate.call_args.args[0]
-        kwargs = llm.generate.call_args.kwargs
+        llm.generate_stream.assert_called_once()
+        user_message = llm.generate_stream.call_args.args[0]
+        kwargs = llm.generate_stream.call_args.kwargs
         assert "Note type: Formula sheet" in user_message
         assert "give me a formula sheet for kinematics" in user_message
         assert kwargs["history"] == ctx.history
@@ -387,9 +390,9 @@ class TestNotesGeneratorTool:
         assert grounding_calls[0]["wants_media"] is False
         assert result["source"] == "answer"
         assert repo.create_generated.call_args.kwargs["source_type"] == "response"
-        assert "Osmosis moves water." in llm.generate.call_args.args[0]
+        assert "Osmosis moves water." in llm.generate_stream.call_args.args[0]
         # The card is the only source: the conversation is not sent.
-        assert llm.generate.call_args.kwargs["history"] is None
+        assert llm.generate_stream.call_args.kwargs["history"] is None
 
     def test_files_are_the_source_when_selected(self, app, monkeypatch):
         attachments = [{"mime_type": "image/png", "data": b"x"}]
@@ -415,10 +418,10 @@ class TestNotesGeneratorTool:
         assert result["source_media_ids"] == ["m1", "m2"]
         assert repo.create_generated.call_args.kwargs["source_type"] == "media"
         assert "Excerpts from the student's files" in (
-            llm.generate.call_args.args[0]
+            llm.generate_stream.call_args.args[0]
         )
-        assert llm.generate.call_args.kwargs["attachments"] == attachments
-        assert llm.generate.call_args.kwargs["history"] is None
+        assert llm.generate_stream.call_args.kwargs["attachments"] == attachments
+        assert llm.generate_stream.call_args.kwargs["history"] is None
 
     def test_prior_agent_output_counts_as_an_answer(self, app):
         llm, repo = _llm(), _repo()
@@ -433,7 +436,7 @@ class TestNotesGeneratorTool:
         tool = NotesGeneratorTool(llm=llm, note_repo=_repo(), supabase=MagicMock())
         result = tool.execute(_tool_ctx("notes on osmosis"), {"kind": "poem"})
         assert result["kind"] == "notes"
-        assert "Note type: Study notes" in llm.generate.call_args.args[0]
+        assert "Note type: Study notes" in llm.generate_stream.call_args.args[0]
 
     def test_an_empty_note_fails_instead_of_being_saved(self, app):
         repo = _repo()
@@ -449,7 +452,7 @@ class TestNotesGeneratorTool:
         assert tool.definition.name == notes_intent.TOOL == notes_generator.NAME
         assert tool.response_type == "NOTE_CREATED"
         assert tool.available_actions == [ACTION_QUIZ, ACTION_FLASHCARDS]
-        assert not tool.can_stream()
+        assert tool.can_stream()
 
     def test_registered_with_the_other_tools(self):
         registry = build_tool_registry(
@@ -671,7 +674,7 @@ class TestNotesTurn:
         assert saved["metadata"]["content"]["note_id"] == NOTE_ID
         repo.create_generated.assert_called_once()
         assert repo.create_generated.call_args.kwargs["space_id"] == "sp1"
-        assert llm.generate.call_count == 1
+        assert llm.generate_stream.call_count == 1
 
     def test_action_on_an_answer_that_mentions_a_quiz(self, app):
         # The card's own text must neither route the turn nor open the
@@ -685,21 +688,21 @@ class TestNotesTurn:
         assert planner.calls == 0
         assert frames[-1].get("type") != "quiz_setup"
         assert frames[-1]["content"]["source"] == "answer"
-        assert "Osmosis moves water." in llm.generate.call_args.args[0]
+        assert "Osmosis moves water." in llm.generate_stream.call_args.args[0]
 
     def test_this_with_nothing_to_resolve_it_is_left_to_the_planner(self, app):
         orch, _supabase, planner, llm, _repo_ = _setup(plan=CLARIFY_PLAN)
         frames = _frames(orch, "make notes for this")
         assert planner.calls == 1
         assert frames[-1]["type"] == "clarification"
-        llm.generate.assert_not_called()
+        llm.generate_stream.assert_not_called()
 
     def test_this_resolves_against_the_conversation(self, app):
         orch, _supabase, planner, llm, _repo_ = _setup(messages=HISTORY)
         frames = _frames(orch, "make notes for this")
         assert planner.calls == 0
         assert frames[-1]["content"]["note_id"] == NOTE_ID
-        assert llm.generate.call_args.kwargs["history"]
+        assert llm.generate_stream.call_args.kwargs["history"]
 
     def test_flag_off_keeps_the_old_route(self, app):
         self.flags["notes"] = False
@@ -708,7 +711,7 @@ class TestNotesTurn:
         assert planner.calls == 1
         assert frames[-1]["tool_used"] == "general"
         assert "note_id" not in frames[-1]["content"]
-        llm.generate.assert_not_called()
+        llm.generate_stream.assert_not_called()
         repo.create_generated.assert_not_called()
 
     def test_other_requests_are_untouched(self, app):
@@ -716,11 +719,11 @@ class TestNotesTurn:
         frames = _frames(orch, "explain osmosis in simple words")
         assert planner.calls == 1
         assert frames[-1]["tool_used"] == "general"
-        llm.generate.assert_not_called()
+        llm.generate_stream.assert_not_called()
 
     def test_a_failed_note_is_reported_not_saved(self, app):
         orch, supabase, _planner, llm, repo = _setup()
-        llm.generate.side_effect = RuntimeError("model down")
+        llm.generate_stream.side_effect = RuntimeError("model down")
         frames = _frames(orch, "give me a formula sheet for kinematics")
         status = [f for f in frames if f.get("type") == "agent_status"]
         assert status[-1]["status"] == "failed"

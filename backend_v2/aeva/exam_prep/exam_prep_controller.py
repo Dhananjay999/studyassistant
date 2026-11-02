@@ -31,6 +31,8 @@ from aeva.exam_prep.schema.exam_prep_schema import (
     TopicFlashcardsSchema,
     TopicQuizData,
     TopicQuizSchema,
+    UpdateExamPlanData,
+    UpdateExamPlanSchema,
     UpdateTopicStatusData,
     UpdateTopicStatusSchema,
 )
@@ -70,6 +72,24 @@ class ExamPlanEndpoint(MethodView):
         service.require_enabled()
         return success_response(
             "Exam plan created", service.create_plan(current_user.id, data)
+        )
+
+
+class ExamPlanItemEndpoint(MethodView):
+    """One plan: edit it in place (keeps its id, session and progress)."""
+
+    @staticmethod
+    @blueprint.arguments(UpdateExamPlanSchema)
+    @blueprint.response(200, ResponseEnvelopeSchema)
+    @user_required
+    def patch(
+        current_user: UserData, data: UpdateExamPlanData, plan_id: str
+    ) -> dict[str, Any]:
+        """Edit the active plan (regenerates the roadmap; carries progress)."""
+        service.require_enabled()
+        return success_response(
+            "Exam plan updated",
+            service.update_plan(current_user.id, plan_id, data),
         )
 
 
@@ -278,6 +298,11 @@ class ExamChatStreamEndpoint(MethodView):
 
 blueprint.add_url_rule(
     "/plan", view_func=ExamPlanEndpoint, endpoint="exam_plan"
+)
+blueprint.add_url_rule(
+    "/plan/<plan_id>",
+    view_func=ExamPlanItemEndpoint,
+    endpoint="exam_plan_item",
 )
 blueprint.add_url_rule(
     "/plan/<plan_id>/archive",

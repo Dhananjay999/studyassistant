@@ -1186,7 +1186,7 @@ class TestCatalogTemplates:
             "EVALUATION",
         ]
         plan = by_name["plan_turn"]["placeholders"]
-        assert plan["optional"] == ["CLARIFICATION_HINT"]
+        assert plan["optional"] == ["CLARIFICATION_HINT", "PLAN_INTENT_HINT"]
         assert plan["markers"] == ["CONVERSATION_CONTEXT"]
         assert "CONVERSATION_CONTEXT" not in plan["required"]
 

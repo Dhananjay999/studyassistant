@@ -35,6 +35,7 @@ import { SettingsExperience } from "@/components/settings/SettingsExperience";
 import { queryClient } from "@/lib/queryClient";
 import { useAnalyticsRouteTracker } from "@/hooks/useAnalyticsRouteTracker";
 import { isAppMode } from "@/lib/appMode";
+import { RouteErrorBoundary } from "@/components/common/RouteErrorBoundary";
 import LandingPage from "@/pages/LandingPage";
 import AuthCallback from "@/pages/AuthCallback";
 import NotFound from "@/pages/NotFound";
@@ -175,6 +176,10 @@ export default function App() {
                        after their first value moments (lib/plan.ts). */}
                     <ProAccessHost />
                     <Suspense fallback={<RouteFallback />}>
+                      {/* A crash inside one page shows a "try again" card in
+                         place (route-scoped); only a crash outside the routed
+                         page reaches the reload-only boundary in main.tsx. */}
+                      <RouteErrorBoundary>
                       <Routes>
                     <Route path="/" element={<HomeRoute />} />
                     <Route path="/features" element={<FeaturesPage />} />
@@ -313,6 +318,7 @@ export default function App() {
                     <Route path={ADMIN_ROUTE} element={<AdminApp />} />
                     <Route path="*" element={<NotFound />} />
                       </Routes>
+                      </RouteErrorBoundary>
                     </Suspense>
                   </BrowserRouter>
                   </ConfirmProvider>

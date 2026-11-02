@@ -34,7 +34,9 @@ from aeva.llm.llm_client import LLMClient
 from aeva.mcp.base import PriorResult, ToolContext
 from aeva.mcp.registry import ToolRegistry
 from aeva.orchestration.model_candidates import default_model_for
+from aeva.orchestration import heartbeat
 from aeva.orchestration.models import (
+    ANSWER_TOOLS,
     STEP_INPUT_ANSWER,
     STEP_KIND_ANSWER,
     STEP_KIND_GENERATOR,
@@ -243,6 +245,7 @@ class AgentRunner:
         yield self._status_frame(outcome)
         tool = self._registry.get(step.tool)
         ctx = self._build_ctx(step, [])
+        ctx.report = lambda note: self._note_answer(step, note)
         result: dict[str, Any] = {}
         meta: dict[str, Any] = {}
         text = ""
@@ -265,6 +268,7 @@ class AgentRunner:
                     )
                     retry_step = self._retry_step(step)
                     retry_ctx = self._build_ctx(retry_step, [])
+                    retry_ctx.report = lambda note: self._note_answer(step, note)
                     text, result, meta = yield from self._stream_once(
                         tool, retry_ctx, retry_step, sent
                     )
@@ -279,12 +283,17 @@ class AgentRunner:
             outcome.ms = int((time.perf_counter() - started) * 1000)
             outcome.error = type(exc).__name__
             text = text or "".join(sent)
-            if not text:
+            if not text and step.tool in ANSWER_TOOLS:
                 # Nothing reached the student yet: let the normal error
                 # path (controller error frame) handle it.
                 raise
             logger.exception("Answer agent %s failed mid-stream", step.tool)
-            note = "\n\n_I lost the thread there — ask me again to continue._"
+            if text:
+                note = "\n\n_I lost the thread there — ask me again to continue._"
+            else:
+                # A generator-style answer (a note) that produced nothing:
+                # its failure line is the whole answer, as for a generator.
+                note = self._failure_note(step)
             text += note
             yield LLMClient.format_sse_chunk(note)
             yield self._status_frame(outcome)
@@ -294,6 +303,22 @@ class AgentRunner:
         outcome.result = result
         yield self._status_frame(outcome)
         return text, result, meta, tool.can_stream()
+
+    def _note_answer(self, step: Step, note: str) -> None:
+        """Progress note from the answer agent ("Searching your files…").
+
+        The answer agent runs on the request generator itself, so a note
+        raised before its first token could not be yielded from here. It
+        goes out through the keep-alive stream's side channel at once; off
+        the streaming path it is queued like a generator's note and
+        emitted between tokens.
+        """
+        outcome = self._outcomes.get(step.id)
+        if outcome is None or outcome.status != STATUS_RUNNING:
+            return
+        outcome.note = str(note)
+        if not heartbeat.push_frame(self._status_frame(outcome)):
+            self._events.put(("note", step.id, str(note)))
 
     def _stream_once(
         self, tool: Any, ctx: ToolContext, step: Step, sent: list[str]

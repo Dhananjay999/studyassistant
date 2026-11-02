@@ -103,6 +103,49 @@ NO_CONTEXT_MESSAGE = (
     "Try rephrasing your question or ask a general question instead."
 )
 
+def failed_media_message(file_names: list[str]) -> str:
+    """Honest reply when every selected file failed to process.
+
+    Until 2026-10-31 a failed PDF was attached whole and the OpenAI provider
+    silently dropped it, so Aeva answered from general knowledge while
+    saying the file "was not included in readable form". Name the file(s)
+    and the ways forward instead.
+    """
+    names = ", ".join(f"**{name}**" for name in file_names) or "that file"
+    return (
+        f"I couldn't read {names} — processing failed, so I can't answer "
+        "from it yet.\n\n"
+        "What you can do:\n"
+        "- **Retry** the upload from the file list (tap the file, then Retry)\n"
+        "- **Scan the pages as photos** instead of uploading the PDF\n"
+        "- **Paste the text** of the part you need\n"
+        "- Or ask me the question without the file and I'll answer from "
+        "general knowledge"
+    )
+
+
+def failed_media_notice(file_names: list[str]) -> str:
+    """One-line heads-up when SOME selected files failed but others answer."""
+    names = ", ".join(f"**{name}**" for name in file_names)
+    return (
+        f"⚠️ I couldn't read {names} (processing failed), so this answer uses "
+        "your other files.\n\n"
+    )
+
+
+def inline_text_block(file_name: str, text: str) -> str:
+    """Render a document's parsed text as one un-numbered excerpt.
+
+    Used for files that have parsed text but no index (processing failed
+    after the parse, or is still embedding): the text is complete, so the
+    model cites the document name without a page.
+    """
+    return (
+        f"[Document: {file_name} — full text, not yet indexed; cite as "
+        f"[cite:{file_name}]]\n{text.strip()}\n"
+    )
+
+
 NO_MEDIA_MESSAGE = (
     "No study materials are available. Upload a PDF or image, or ask a general question."
 )
